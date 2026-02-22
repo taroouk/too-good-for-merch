@@ -1,3 +1,4 @@
+import "../marketing.css";
 type WorkItem = {
   title: string;
   years: string;
@@ -6,25 +7,11 @@ type WorkItem = {
 
 function WorkGrid({ items }: { items: WorkItem[] }) {
   return (
-    <section
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
-        gap: 18,
-      }}
-    >
+    <section className="workGrid">
       {items.map((x, i) => (
-        <article key={i} style={{ display: "grid", gap: 10 }}>
-          {/* Image placeholder */}
-          <div
-            style={{
-              height: 170,
-              background: "#d9d9d9",
-            }}
-          />
-
-          {/* Text */}
-          <div style={{ display: "grid", gap: 3, fontSize: 12 }}>
+        <article key={i} className="workCard">
+          <div className="workImg" />
+          <div className="workText">
             <div className="font-head" style={{ fontSize: 12, letterSpacing: 0.4 }}>
               {x.title}
             </div>
@@ -51,22 +38,11 @@ export default function PortfolioPage() {
   ];
 
   return (
-    <main
-      style={{
-        height: "100%",
-        overflowY: "auto", // ✅ scroll جوه المحتوى فقط
-        paddingRight: 6,   // ✅ عشان scrollbar مايكسرش layout
-        display: "grid",
-        gap: 28,
-        alignContent: "start",
-      }}
-    >
-      {/* Section 1 */}
+    <main className="portfolioMain">
       <section style={{ display: "grid", gap: 10 }}>
         <h1 className="font-head" style={{ margin: 0, fontSize: 44, letterSpacing: 0.5 }}>
           we’ve done this at scale
         </h1>
-
         <p style={{ margin: 0, fontSize: 12, maxWidth: 900, lineHeight: 1.4 }}>
           We produce tour-level garments for artists, events, and licensed brands — where quality and timelines aren’t optional.
           From stadium tours to licensed global merch, we’ve delivered high-volume production under pressure without compromising finish,
@@ -76,12 +52,10 @@ export default function PortfolioPage() {
 
       <WorkGrid items={scaleItems} />
 
-      {/* Section 2 */}
       <section style={{ display: "grid", gap: 10 }}>
         <h1 className="font-head" style={{ margin: 0, fontSize: 44, letterSpacing: 0.5 }}>
           we’ve done boutique runs, too
         </h1>
-
         <p style={{ margin: 0, fontSize: 12, maxWidth: 900, lineHeight: 1.4 }}>
           Not every project needs a million units. Some need 30. We apply the same production standards, just at a different scale.
         </p>
