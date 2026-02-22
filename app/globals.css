@@ -1,17 +1,35 @@
 :root {
-  --bg: #fff;
-  --fg: #000;
+  --bg: #ffffff;
+  --fg: #000000;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
 }
 
 body {
   background: var(--bg);
   color: var(--fg);
   margin: 0;
-  font-family: var(--font-inter), system-ui, -apple-system, Segoe UI, Roboto,
-    Arial, sans-serif;
+  font-family: var(--font-inter), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+a, a:visited {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+::selection {
+  background: #000;
+  color: #fff;
 }
 
 .font-head {
-  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto,
-    Arial, sans-serif;
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }

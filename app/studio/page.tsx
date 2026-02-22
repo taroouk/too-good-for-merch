@@ -1,23 +1,54 @@
-import Link from "next/link";
-
-export default function StudioPlaceholderPage() {
-  return (
-    <main style={{ minHeight: "100vh", padding: 24, display: "grid", placeItems: "center" }}>
-      <div style={{ width: "100%", maxWidth: 800 }}>
-        <h1 className="font-head" style={{ fontSize: 56, margin: 0 }}>
-          ENTER<br />STUDIO
-        </h1>
-
-        <div style={{ marginTop: 16, height: 260, background: "#e5e5e5" }} />
-
-        <p style={{ marginTop: 12, fontSize: 12 }}>
-          Placeholder for Phase 2. Studio logic will be implemented in later phases.
-        </p>
-
-        <Link href="/" style={{ fontSize: 12, textDecoration: "underline" }}>
-          Back to home
-        </Link>
-      </div>
-    </main>
-  );
-}
+export default function StudioPage() {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          background: "#000",
+          color: "#fff",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          padding: 24,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 1000,
+            textAlign: "center",
+            display: "grid",
+            gap: 24,
+          }}
+        >
+          <h1
+            className="font-head"
+            style={{
+              fontSize: 60,
+              margin: 0,
+              letterSpacing: 2,
+            }}
+          >
+            ENTER
+          </h1>
+  
+          <div
+            style={{
+              height: 320,
+              background: "#d9d9d9",
+            }}
+          />
+  
+          <h1
+            className="font-head"
+            style={{
+              fontSize: 60,
+              margin: 0,
+              letterSpacing: 2,
+            }}
+          >
+            STUDIO
+          </h1>
+        </div>
+      </main>
+    );
+  }

@@ -4,70 +4,51 @@ export default function HomePage() {
   return (
     <main
       style={{
-        minHeight: "100vh",
-        padding: 24,
-        display: "grid",
-        gap: 20,
-        alignContent: "start",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        gap: 18,
+        overflow: "hidden",
       }}
     >
-      {/* Header */}
-      <header
+      {/* Hero fills available space */}
+      <section
+        style={{
+          border: "1px solid #000",
+          padding: 18,
+          flex: 1,
+          minHeight: 0, // مهم عشان flex ما يعملش overflow
+          display: "flex",
+        }}
+      >
+        <div style={{ flex: 1, background: "#d9d9d9" }} />
+      </section>
+
+      {/* Bottom row stays visible */}
+      <section
         style={{
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
-          gap: 16,
-        }}
-      >
-        <div className="font-head" style={{ fontSize: 18, letterSpacing: 0.5 }}>
-          TOO GOOD FOR MERCH
-        </div>
-
-        <nav style={{ display: "flex", gap: 16, fontSize: 12 }}>
-          <Link href="/portfolio" style={{ textDecoration: "none" }}>
-            SELECTED WORK
-          </Link>
-          <Link href="/contact" style={{ textDecoration: "none" }}>
-            CONTACT
-          </Link>
-        </nav>
-      </header>
-
-      {/* Hero image placeholder */}
-      <section
-        style={{
-          height: 360,
-          border: "1px solid #000",
-          background: "#e9e9e9",
-        }}
-      />
-
-      {/* Bottom bar */}
-      <section
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-end",
-          gap: 16,
           flexWrap: "wrap",
+          gap: 16,
         }}
       >
-        <p style={{ margin: 0, fontSize: 12, maxWidth: 520 }}>
+        <p style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>
           for artists. events. brands. that take merch seriously
         </p>
 
-        {/* Dominant CTA */}
         <Link
           href="/studio"
           className="font-head"
           style={{
-            textDecoration: "none",
             border: "1px solid #000",
-            padding: "16px 22px",
+            padding: "14px 20px",
             fontSize: 14,
             letterSpacing: 1,
             display: "inline-block",
+            whiteSpace: "nowrap",
+            textDecoration: "none",
           }}
         >
           ENTER STUDIO →
