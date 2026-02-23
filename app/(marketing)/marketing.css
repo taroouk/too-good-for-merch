@@ -1,3 +1,9 @@
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
 /* ===== Shell: FIX height issues on mobile by using flex ===== */
 .marketingShell {
   min-height: 100vh;
@@ -197,61 +203,49 @@
 
 /* ===== Mobile: still same system but stable ===== */
 @media (max-width: 640px) {
+  /* نخلي الشيل Full height ثابت */
   .marketingShell {
-    padding: 16px;
+    height: 100dvh; /* ✅ أفضل للموبايل من 100vh */
+    min-height: 100dvh;
+    overflow: hidden;
   }
 
-  .marketingHeader {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .marketingLogo {
-    justify-self: start;
-  }
-
-  .logoText {
-    font-size: 22px;
-    text-align: left;
-  }
-
-  .marketingNavRight {
-    justify-content: flex-start;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
+  /* المحتوى ياخد الباقي بدون أي scroll للصفحة */
   .marketingContent {
-    margin-top: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
-  .homeBottom {
-    flex-direction: column;
-    align-items: flex-start;
+  /* ===== Home: ممنوع scroll ===== */
+  .homeMain {
+    height: 100%;
+    overflow: hidden;
   }
 
-  .homeTagline {
-    font-size: 18px;
+  .homeHero {
+    flex: 1;
+    min-height: 0;
   }
 
-  /* Contact: عمودين جنب بعض زي الديسكتوب */
+  /* ===== Contact: ممنوع scroll ===== */
   .contactMain {
-    grid-template-columns: 1.2fr 0.8fr;
-    gap: 14px;
+    height: 100%;
+    overflow: hidden;
+    align-items: center;
   }
 
-  .contactTitle {
-    font-size: 54px !important;
+  /* ===== Studio: ممنوع scroll ===== */
+  .studioMain {
+    min-height: 100dvh;
+    height: 100dvh;
+    overflow: hidden;
   }
 
-  .contactRight {
-    justify-self: end;
-    text-align: left;
-    font-size: 11px;
-  }
-
-  /* Portfolio: one column */
-  .workGrid {
-    grid-template-columns: 1fr;
+  /* ✅ Portfolio فقط: scroll داخلي */
+  .portfolioMain {
+    height: 100%;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 }
