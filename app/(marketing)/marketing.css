@@ -200,52 +200,27 @@ body {
   height: 320px;
   background: #d9d9d9;
 }
+/* ============================= */
+/* MOBILE = DESKTOP ZOOM OUT    */
+/* ============================= */
 
-/* ===== Mobile: still same system but stable ===== */
 @media (max-width: 640px) {
-  /* نخلي الشيل Full height ثابت */
+
+  /* نخلي الصفحة تاخد كامل الشاشة */
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   .marketingShell {
-    height: 100dvh; /* ✅ أفضل للموبايل من 100vh */
-    min-height: 100dvh;
-    overflow: hidden;
-  }
-
-  /* المحتوى ياخد الباقي بدون أي scroll للصفحة */
-  .marketingContent {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  /* ===== Home: ممنوع scroll ===== */
-  .homeMain {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .homeHero {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* ===== Contact: ممنوع scroll ===== */
-  .contactMain {
-    height: 100%;
-    overflow: hidden;
-    align-items: center;
-  }
-
-  /* ===== Studio: ممنوع scroll ===== */
-  .studioMain {
-    min-height: 100dvh;
     height: 100dvh;
-    overflow: hidden;
+    min-height: 100dvh;
+
+    /* 👇 ده السحر */
+    transform: scale(0.78);   /* جرب 0.75 - 0.8 حسب اللي يعجبك */
+    transform-origin: top left;
+
+    width: 128%;  /* تعويض عن scale */
   }
 
-  /* ✅ Portfolio فقط: scroll داخلي */
-  .portfolioMain {
-    height: 100%;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
 }
