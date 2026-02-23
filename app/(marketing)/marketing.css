@@ -206,7 +206,10 @@ body {
 
 @media (max-width: 640px) {
 
-  /* نخلي الصفحة تاخد كامل الشاشة */
+  .contactHeading {
+  font-size: clamp(48px, 7vw, 80px);
+  }
+
   html, body {
     height: 100%;
     overflow: hidden;
@@ -216,11 +219,27 @@ body {
     height: 100dvh;
     min-height: 100dvh;
 
-    /* 👇 ده السحر */
-    transform: scale(0.78);   /* جرب 0.75 - 0.8 حسب اللي يعجبك */
+    transform: scale(0.80);  /* ممكن تزودها 0.82 لو حاسسها صغيرة */
     transform-origin: top left;
 
-    width: 128%;  /* تعويض عن scale */
+    width: 125%;
+  }
+
+  /* ===== Header Fix ===== */
+
+  .marketingHeader {
+    padding: 12px 20px;
+    align-items: center;
+  }
+
+  .marketingHeader nav {
+    font-size: 11px;
+    gap: 12px;
+  }
+
+  .marketingHeader h1 {
+    font-size: 18px;
+    line-height: 1;
   }
 
 }
