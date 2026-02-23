@@ -1,5 +1,4 @@
 import Link from "next/link";
-import "./marketing.css";
 
 export default function HomePage() {
   return (
@@ -9,10 +8,12 @@ export default function HomePage() {
       </section>
 
       <section className="homeBottom">
-        <p className="homeTagline">for artists. events. brands. that take merch seriously</p>
+        <p className="homeTagline">
+          for artists. events. brands. that take merch seriously
+        </p>
 
-        <Link href="/studio" className="font-head homeCta" style={{ textDecoration: "none" }}>
-          ENTER STUDIO →
+        <Link className="homeCta" href="/studio">
+          ENTER STUDIO <span aria-hidden>→</span>
         </Link>
       </section>
     </main>
