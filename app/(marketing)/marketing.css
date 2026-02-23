@@ -1,0 +1,266 @@
+/* ========== Marketing base ========== */
+.marketingShell {
+  height: 100vh;
+  padding: 24px;
+  overflow: hidden;
+}
+
+/* Header */
+.marketingHeader {
+  height: 64px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: start;
+  padding-top: 4px;
+}
+
+.marketingNav {
+  display: flex;
+  gap: 18px;
+  font-size: 12px;
+}
+
+.marketingNavRight {
+  justify-content: flex-end;
+}
+
+.marketingLogo {
+  justify-self: center;
+  display: inline-flex;
+}
+
+/* Content container under header */
+.marketingContent {
+  margin-top: 18px;
+  height: calc(100vh - 24px - 24px - 64px - 18px);
+  overflow: hidden;
+}
+
+/* ========== Home ========== */
+.homeMain {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow: hidden;
+}
+
+.homeHero {
+  border: 1px solid #000;
+  padding: 18px;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.homeHeroInner {
+  flex: 1;
+  background: #d9d9d9;
+}
+
+.homeBottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.homeTagline {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.homeCta {
+  border: 1px solid #000;
+  padding: 14px 20px;
+  font-size: 14px;
+  letter-spacing: 1px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* ========== Portfolio ========== */
+.portfolioMain {
+  height: 100%;
+  overflow-y: auto; /* ✅ scroll داخلي */
+  padding-right: 6px;
+  display: grid;
+  gap: 28px;
+  align-content: start;
+}
+
+.workGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.workCard {
+  display: grid;
+  gap: 10px;
+}
+
+.workImg {
+  height: 170px;
+  background: #d9d9d9;
+}
+
+.workText {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+
+/* ========== Contact ========== */
+.contactMain {
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 24px;
+  overflow: hidden;
+}
+
+.contactTitle {
+  margin: 0;
+  line-height: 0.95;
+  letter-spacing: 0.5px;
+}
+
+.contactRight {
+  justify-self: center;
+  font-size: 12px;
+  line-height: 1.6;
+  display: grid;
+  gap: 4px;
+}
+
+/* ========== Studio ========== */
+.studioMain {
+  min-height: 100vh;
+  background: #000;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.studioWrap {
+  width: 100%;
+  max-width: 1000px;
+  text-align: center;
+  display: grid;
+  gap: 24px;
+}
+
+.studioTitle {
+  margin: 0;
+  letter-spacing: 2px;
+}
+
+.studioBox {
+  height: 320px;
+  background: #d9d9d9;
+}
+
+/* ========== Mobile rules (keeps same system) ========== */
+@media (max-width: 640px) {
+
+  /* منع أي scroll أفقي */
+  html, body {
+    overflow-x: hidden;
+  }
+
+  .marketingShell {
+    padding: 16px;
+  }
+
+  /* ===== Header Mobile ===== */
+  .marketingHeader {
+    grid-template-columns: 1fr;
+    row-gap: 12px;
+    height: auto;
+  }
+
+  .marketingLogo {
+    justify-self: start;
+  }
+
+  .marketingLogo img {
+    width: 150px !important;
+    height: auto !important;
+  }
+
+  .marketingNav {
+    gap: 14px;
+    font-size: 12px;
+  }
+
+  .marketingNavRight {
+    justify-content: flex-start;
+  }
+
+  .marketingContent {
+    height: auto;
+  }
+
+  /* ===== Home ===== */
+  .homeHero {
+    padding: 12px;
+  }
+
+  .homeBottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 14px;
+  }
+
+  .homeTagline {
+    font-size: 18px;
+  }
+
+  .homeCta {
+    padding: 12px 16px;
+  }
+
+  /* ===== Portfolio ===== */
+  .portfolioMain {
+    height: auto;
+    overflow: visible;
+  }
+
+  .workGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .workImg {
+    height: 220px;
+  }
+
+  /* ===== Contact ===== */
+  .contactMain {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .contactTitle {
+    font-size: 48px !important;
+  }
+
+  .contactRight {
+    justify-self: start;
+    font-size: 12px;
+  }
+
+  /* ===== Studio ===== */
+  .studioTitle {
+    font-size: 44px !important;
+  }
+
+  .studioBox {
+    height: 260px;
+  }
+}
