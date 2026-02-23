@@ -200,52 +200,46 @@ body {
   height: 320px;
   background: #d9d9d9;
 }
+/* ============================= */
+/* MOBILE = DESKTOP ZOOM OUT    */
+/* ============================= */
 
-/* ===== Mobile: still same system but stable ===== */
 @media (max-width: 640px) {
-  /* نخلي الشيل Full height ثابت */
+
+  .contactHeading {
+  font-size: clamp(48px, 7vw, 80px);
+  }
+
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   .marketingShell {
-    height: 100dvh; /* ✅ أفضل للموبايل من 100vh */
+    height: 100dvh;
     min-height: 100dvh;
-    overflow: hidden;
+
+    transform: scale(0.80);  /* ممكن تزودها 0.82 لو حاسسها صغيرة */
+    transform-origin: top left;
+
+    width: 125%;
   }
 
-  /* المحتوى ياخد الباقي بدون أي scroll للصفحة */
-  .marketingContent {
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
+  /* ===== Header Fix ===== */
 
-  /* ===== Home: ممنوع scroll ===== */
-  .homeMain {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  .homeHero {
-    flex: 1;
-    min-height: 0;
-  }
-
-  /* ===== Contact: ممنوع scroll ===== */
-  .contactMain {
-    height: 100%;
-    overflow: hidden;
+  .marketingHeader {
+    padding: 12px 20px;
     align-items: center;
   }
 
-  /* ===== Studio: ممنوع scroll ===== */
-  .studioMain {
-    min-height: 100dvh;
-    height: 100dvh;
-    overflow: hidden;
+  .marketingHeader nav {
+    font-size: 11px;
+    gap: 12px;
   }
 
-  /* ✅ Portfolio فقط: scroll داخلي */
-  .portfolioMain {
-    height: 100%;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
+  .marketingHeader h1 {
+    font-size: 18px;
+    line-height: 1;
   }
+
 }

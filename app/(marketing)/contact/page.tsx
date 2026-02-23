@@ -4,7 +4,7 @@ export default function ContactPage() {
   return (
     <main className="contactMain">
       <h1
-        className="font-head contactTitle"
+        className="font-head contactHeading"
         style={{
           fontSize: 82, // Desktop size
         }}
