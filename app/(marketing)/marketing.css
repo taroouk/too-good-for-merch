@@ -200,14 +200,17 @@ body {
   height: 320px;
   background: #d9d9d9;
 }
+
 /* ============================= */
 /* MOBILE = DESKTOP ZOOM OUT    */
+/* (بدون تغيير في مساحات الديسكتوب) */
 /* ============================= */
 
 @media (max-width: 640px) {
 
+  /* عنوان الكونتاكت (لو عندك class اسمه contactHeading) */
   .contactHeading {
-  font-size: clamp(48px, 7vw, 80px);
+    font-size: clamp(48px, 7vw, 80px);
   }
 
   html, body {
@@ -215,31 +218,98 @@ body {
     overflow: hidden;
   }
 
+  /* ✅ نخلي الشِل طبيعي على الموبايل */
   .marketingShell {
     height: 100dvh;
     min-height: 100dvh;
-
-    transform: scale(0.80);  /* ممكن تزودها 0.82 لو حاسسها صغيرة */
-    transform-origin: top left;
-
-    width: 125%;
+    padding: 16px;         /* ده للموبايل فقط */
+    overflow: hidden;
+    transform: none;
+    width: auto;
   }
 
-  /* ===== Header Fix ===== */
-
+  /* ✅ الهيدر يبقى منظم */
   .marketingHeader {
-    padding: 12px 20px;
+    align-items: start;
+    gap: 8px;
+  }
+
+  .marketingNav {
+    font-size: 11px;
+    gap: 12px;
+    white-space: nowrap;
+  }
+
+  .logoText {
+    font-size: 22px;
+    line-height: 0.95;
+  }
+
+  /* =========================
+     ✅ Zoom-out للـ CONTENT فقط
+     ========================= */
+
+  /* غير الرقم ده لو عايز Zoom اكتر/اقل:
+     0.80 = أصغر (يظهر أكتر)
+     0.85 = أكبر شوية
+  */
+  :root { --mScale: 0.82; }
+
+  .marketingContent {
+    margin-top: 12px;
+
+    /* نخليها تاخد مساحة الشاشة كلها */
+    height: calc(100dvh - 16px - 16px - 12px - 1px);
+    /* ↑ (100dvh - paddingTop - paddingBottom - marginTop - buffer) */
+
+    overflow: hidden;
+
+    /* Zoom out */
+    transform: scale(var(--mScale));
+    transform-origin: top left;
+
+    /* تعويض المقاس بعد الـ scale عشان مفيش قطع */
+    width: calc(100% / var(--mScale));
+    height: calc(100% / var(--mScale));
+  }
+
+  /* =========================
+     Home: يخلي CTA والكلام مايتقصوش
+     ========================= */
+  .homeTagline {
+    font-size: 20px;
+  }
+
+  .homeCta {
+    padding: 12px 18px;
+    font-size: 12px;
+  }
+
+  /* =========================
+     Contact: نخلي النص والـ info يبانوا جنب بعض
+     ========================= */
+  .contactMain {
+    grid-template-columns: 1fr 1fr; /* يفضل زي الديسكتوب */
+    gap: 18px;
     align-items: center;
   }
 
-  .marketingHeader nav {
-    font-size: 11px;
-    gap: 12px;
+  .contactRight {
+    justify-self: end;
+    font-size: 12px;
   }
 
-  .marketingHeader h1 {
-    font-size: 18px;
-    line-height: 1;
+  /* =========================
+     Studio: يمنع أي scroll برضو
+     ========================= */
+  .studioMain {
+    min-height: 100%;
+    height: 100%;
+    padding: 0;
   }
 
+  .studioWrap {
+    max-width: 900px;
+    padding: 18px;
+  }
 }
