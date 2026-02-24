@@ -1,315 +1,274 @@
-html,
-body {
-  height: 100%;
-  overflow: hidden;
-}
-
-/* ===== Shell: FIX height issues on mobile by using flex ===== */
+/* Shell */
 .marketingShell {
   min-height: 100vh;
-  height: 100vh;
-  padding: 24px;
-  overflow: hidden;
+  background: #fff;
+  color: #111;
+}
 
-  display: flex;
-  flex-direction: column;
+/* Header */
+.marketingHeader {
+  padding: 18px 0;
+}
+
+.marketingHeader > * {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 18px;
 }
 
 .marketingHeader {
+  display: block;
+}
+
+.marketingHeader {
+  position: relative;
+}
+
+.marketingHeader .marketingNav,
+.marketingHeader .marketingLogo {
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+.marketingHeader {
+  border-bottom: 0;
+}
+
+.marketingHeader {
+  /* grid row */
+}
+
+.marketingHeader {
+  /* layout grid container */
+}
+
+.marketingHeader {
+  /* use internal wrapper by applying grid on header itself */
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: start;
   gap: 12px;
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 18px;
 }
 
-.marketingContent {
-  flex: 1;
-  min-height: 0;       /* ✅ مهم جداً عشان flex children يشتغل */
-  margin-top: 18px;
-  overflow: hidden;
-}
-
-/* ===== Nav ===== */
 .marketingNav {
   display: flex;
-  gap: 18px;
+  gap: 22px;
+  align-items: center;
   font-size: 12px;
+  letter-spacing: 0.02em;
 }
 
 .marketingNav a {
-  color: #000;
-  text-decoration: none;
+  display: inline-flex;
+  padding: 6px 0;
 }
 
 .marketingNavRight {
   justify-content: flex-end;
 }
 
-.mutedNav {
-  font-size: 12px;
-  color: #000;
-  cursor: default;
-}
-
-/* ===== Logo ===== */
 .marketingLogo {
-  justify-self: center;
-}
-
-.logoText {
-  font-weight: 800;
-  line-height: 0.9;
-  font-size: 26px;
-  text-align: center;
-}
-
-/* ===== Home ===== */
-.homeMain {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 18px;
-  overflow: hidden;
-}
-
-.homeHero {
-  border: 1px solid #000;
-  padding: 18px;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-}
-
-.homeHeroInner {
-  flex: 1;
-  background: #d9d9d9;
-}
-
-.homeBottom {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-
-.homeTagline {
-  margin: 0;
-  font-size: 22px;
-  font-weight: 600;
-}
-
-.homeCta {
-  border: 1px solid #000;
-  padding: 14px 20px;
-  font-size: 14px;
-  letter-spacing: 1px;
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  white-space: nowrap;
-  color: #000;
-  text-decoration: none;
+  line-height: 0.95;
 }
 
-/* ===== Portfolio (scroll inside) ===== */
-.portfolioMain {
-  height: 100%;
-  overflow-y: auto;
-  padding-right: 6px;
-  display: grid;
-  gap: 28px;
-  align-content: start;
+.marketingLogo img {
+  display: block;
+  height: 34px;
+  width: auto;
 }
 
-.workGrid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+/* Content */
+.marketingContent {
+  display: block;
 }
 
-.workCard {
-  display: grid;
-  gap: 10px;
+/* Landing Page */
+.lp {
+  width: 100%;
 }
 
-.workImg {
-  height: 170px;
+.lpContainer {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 0 18px;
+}
+
+/* HERO 1 */
+.lpHeroOne {
+  padding: 24px 0 8px;
+}
+
+.lpHeroMedia {
+  width: 100%;
+  height: min(520px, 62vh);
   background: #d9d9d9;
 }
 
-.workText {
-  display: grid;
-  gap: 3px;
-  font-size: 12px;
+.lpHeroTagline {
+  margin: 18px 0 0;
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
 }
 
-/* ===== Contact ===== */
-.contactMain {
-  height: 100%;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  align-items: center;
-  gap: 24px;
-  overflow: hidden;
-}
-
-.contactTitle {
-  margin: 0;
-  line-height: 0.95;
-  letter-spacing: 0.5px;
-}
-
-.contactRight {
-  justify-self: center;
-  font-size: 12px;
-  line-height: 1.6;
-  display: grid;
-  gap: 4px;
-}
-
-.contactRight a {
-  color: #000;
-  text-decoration: none;
-}
-
-/* ===== Studio ===== */
-.studioMain {
-  min-height: 100vh;
+/* ENTER STUDIO */
+.lpEnter {
   background: #000;
   color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
+  padding: 40px 0;
 }
 
-.studioWrap {
-  width: 100%;
-  max-width: 1000px;
-  text-align: center;
+.lpEnterWrap {
+  min-height: 90vh;
   display: grid;
-  gap: 24px;
+  grid-template-rows: auto 1fr auto;
+  align-items: center;
+  justify-items: center;
+  gap: 18px;
 }
 
-.studioTitle {
-  margin: 0;
-  letter-spacing: 2px;
+.lpEnterTop,
+.lpEnterBottom {
+  font-size: clamp(56px, 7vw, 96px);
+  font-weight: 800;
+  letter-spacing: 0.02em;
 }
 
-.studioBox {
-  height: 320px;
+.lpEnterPanelLink {
+  display: block;
+  width: min(980px, 100%);
+}
+
+.lpEnterPanel {
+  width: 100%;
+  aspect-ratio: 16 / 9;
   background: #d9d9d9;
 }
 
-/* ============================= */
-/* MOBILE = DESKTOP ZOOM OUT    */
-/* (بدون تغيير في مساحات الديسكتوب) */
-/* ============================= */
+/* Sections */
+.lpSection {
+  padding: 64px 0;
+}
 
-@media (max-width: 640px) {
+.lpH2 {
+  margin: 0 0 12px;
+  font-size: clamp(42px, 5.5vw, 72px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
 
-  /* عنوان الكونتاكت (لو عندك class اسمه contactHeading) */
-  .contactHeading {
-    font-size: clamp(48px, 7vw, 80px);
+.lpP {
+  margin: 0 0 28px;
+  max-width: 920px;
+  font-size: 16px;
+  line-height: 1.45;
+  color: #2a2a2a;
+}
+
+.lpPCompact {
+  margin-bottom: 32px;
+}
+
+/* Grid cards */
+.lpGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 28px;
+}
+
+.lpCardMedia {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: #d9d9d9;
+}
+
+.lpCardBody {
+  padding-top: 14px;
+}
+
+.lpCardTitle {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
+.lpCardMeta {
+  margin-top: 6px;
+  color: #2a2a2a;
+}
+
+.lpCardStat {
+  margin-top: 6px;
+  font-weight: 800;
+}
+
+/* Contact block */
+.lpContact {
+  padding: 90px 0 110px;
+}
+
+.lpContactGrid {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 40px;
+  align-items: center;
+}
+
+.lpContactBig {
+  margin: 0;
+  font-size: clamp(54px, 7vw, 96px);
+  font-weight: 900;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+.lpContactLinks {
+  display: grid;
+  gap: 10px;
+  font-size: 16px;
+}
+
+.lpContactLinks a {
+  text-decoration: none;
+}
+
+.lpContactLinks a:hover {
+  text-decoration: underline;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .lpGrid {
+    grid-template-columns: 1fr;
   }
 
-  html, body {
-    height: 100%;
-    overflow: hidden;
-  }
-
-  /* ✅ نخلي الشِل طبيعي على الموبايل */
-  .marketingShell {
-    height: 100dvh;
-    min-height: 100dvh;
-    padding: 16px;         /* ده للموبايل فقط */
-    overflow: hidden;
-    transform: none;
-    width: auto;
-  }
-
-  /* ✅ الهيدر يبقى منظم */
-  .marketingHeader {
+  .lpContactGrid {
+    grid-template-columns: 1fr;
     align-items: start;
-    gap: 8px;
+  }
+}
+
+@media (max-width: 720px) {
+  .marketingHeader {
+    grid-template-columns: 1fr;
+    justify-items: center;
   }
 
   .marketingNav {
-    font-size: 11px;
-    gap: 12px;
-    white-space: nowrap;
+    justify-content: center;
+    flex-wrap: wrap;
   }
 
-  .logoText {
-    font-size: 22px;
-    line-height: 0.95;
+  .lpHeroTagline {
+    font-size: 26px;
   }
 
-  /* =========================
-     ✅ Zoom-out للـ CONTENT فقط
-     ========================= */
-
-  /* غير الرقم ده لو عايز Zoom اكتر/اقل:
-     0.80 = أصغر (يظهر أكتر)
-     0.85 = أكبر شوية
-  */
-  :root { --mScale: 0.82; }
-
-  .marketingContent {
-    margin-top: 12px;
-
-    /* نخليها تاخد مساحة الشاشة كلها */
-    height: calc(100dvh - 16px - 16px - 12px - 1px);
-    /* ↑ (100dvh - paddingTop - paddingBottom - marginTop - buffer) */
-
-    overflow: hidden;
-
-    /* Zoom out */
-    transform: scale(var(--mScale));
-    transform-origin: top left;
-
-    /* تعويض المقاس بعد الـ scale عشان مفيش قطع */
-    width: calc(100% / var(--mScale));
-    height: calc(100% / var(--mScale));
-  }
-
-  /* =========================
-     Home: يخلي CTA والكلام مايتقصوش
-     ========================= */
-  .homeTagline {
-    font-size: 20px;
-  }
-
-  .homeCta {
-    padding: 12px 18px;
-    font-size: 12px;
-  }
-
-  /* =========================
-     Contact: نخلي النص والـ info يبانوا جنب بعض
-     ========================= */
-  .contactMain {
-    grid-template-columns: 1fr 1fr; /* يفضل زي الديسكتوب */
-    gap: 18px;
-    align-items: center;
-  }
-
-  .contactRight {
-    justify-self: end;
-    font-size: 12px;
-  }
-
-  /* =========================
-     Studio: يمنع أي scroll برضو
-     ========================= */
-  .studioMain {
-    min-height: 100%;
-    height: 100%;
-    padding: 0;
-  }
-
-  .studioWrap {
-    max-width: 900px;
-    padding: 18px;
+  .lpSection {
+    padding: 48px 0;
   }
 }
