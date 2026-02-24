@@ -56,7 +56,7 @@
   display: flex;
   gap: 22px;
   align-items: center;
-  font-size: 12px;
+  font-size: 15px;
   letter-spacing: 0.02em;
 }
 
@@ -78,7 +78,7 @@
 
 .marketingLogo img {
   display: block;
-  height: 34px;
+  height: 65px;
   width: auto;
 }
 
@@ -100,18 +100,22 @@
 
 /* HERO 1 */
 .lpHeroOne {
-  padding: 24px 0 8px;
+  padding: 30px 0 10px; /* مسافة بسيطة من الهيدر */
 }
 
 .lpHeroMedia {
   width: 100%;
-  height: min(520px, 62vh);
+  max-width: 1100px;
+  margin: 0 auto;
+
+  aspect-ratio: 16 / 9;   /* ده المهم */
   background: #d9d9d9;
 }
 
 .lpHeroTagline {
-  margin: 18px 0 0;
-  font-size: 34px;
+  max-width: 1100px;     /* نفس عرض المربع */
+  margin: 18px auto 10px;   /* يبدأ من نفس بداية المربع */
+  font-size: 25px;
   font-weight: 600;
   letter-spacing: -0.02em;
 }
@@ -120,33 +124,48 @@
 .lpEnter {
   background: #000;
   color: #fff;
-  padding: 40px 0;
+
+  /* desktop padding */
+  padding: 80px 0 90px;
 }
 
 .lpEnterWrap {
-  min-height: 90vh;
+  width: 100%;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 0 18px;
+
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  align-items: center;
+  grid-template-rows: auto auto auto;
   justify-items: center;
-  gap: 18px;
+  gap: 28px;
 }
 
+/* ENTER / STUDIO text */
 .lpEnterTop,
 .lpEnterBottom {
-  font-size: clamp(56px, 7vw, 96px);
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.02em;
+  line-height: 0.95;
+  text-align: center;
+
+  /* desktop size */
+  font-size: clamp(64px, 6vw, 96px);
 }
 
+/* link wrapper should not shrink */
 .lpEnterPanelLink {
   display: block;
-  width: min(980px, 100%);
+  width: 100%;
+  max-width: 980px;   /* 👈 ده اللي هيصغره */
+  margin: 0 auto;     /* يخليه في النص */
 }
 
+/* the square itself (same behavior as Hero square) */
 .lpEnterPanel {
   width: 100%;
   aspect-ratio: 16 / 9;
+  height: 100%;
   background: #d9d9d9;
 }
 
@@ -209,7 +228,8 @@
 
 /* Contact block */
 .lpContact {
-  padding: 90px 0 110px;
+  padding: 140px 0 140px;   /* زوّدنا المسافة فوق */
+  margin-top: 80px;         /* يفصل بصريًا عن السكشن اللي قبله */
 }
 
 .lpContactGrid {
@@ -222,15 +242,17 @@
 .lpContactBig {
   margin: 0;
   font-size: clamp(54px, 7vw, 96px);
-  font-weight: 900;
+  font-weight: 800;
   line-height: 0.95;
   letter-spacing: -0.02em;
 }
 
 .lpContactLinks {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   font-size: 16px;
+
+  padding-left: 110px;   /* ده اللي هيزقهم يمين */
 }
 
 .lpContactLinks a {
@@ -270,5 +292,90 @@
 
   .lpSection {
     padding: 48px 0;
+  }
+}
+@media (max-width: 720px) {
+  /* HERO 1 - mobile */
+  .lpHeroOne {
+    padding: 18px 0 0;
+  }
+
+  .lpHeroMedia {
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .lpHeroTagline {
+    max-width: 100%;
+    margin: 14px auto 0;
+    padding: 0 18px;          /* نفس container padding */
+    font-size: 24px;
+    line-height: 1.15;
+  }
+}
+@media (max-width: 720px) {
+  /* CONTACT - mobile */
+  .lpContact {
+    padding: 72px 0 90px;
+    margin-top: 60px;
+  }
+
+  .lpContactGrid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+    align-items: start;
+  }
+
+  .lpContactBig {
+    font-size: 54px;
+  }
+
+  .lpContactLinks {
+    padding-left: 0;       /* شيل الزقّة بتاعة الديسكتوب */
+    justify-self: start;
+  }
+}
+@media (max-width: 720px) {
+  .lpEnter {
+    /* on mobile we avoid 100vh and keep it compact */
+    padding: 54px 0 64px;
+  }
+
+  .lpEnterWrap {
+    max-width: 100%;
+    padding: 0 18px;
+    gap: 18px;
+  }
+
+  .lpEnterTop,
+  .lpEnterBottom {
+    /* smaller + stable on 375px */
+    font-size: clamp(38px, 11vw, 54px);
+    line-height: 0.95;
+  }
+
+  .lpEnterPanelLink {
+    width: 100%;
+  }
+
+  .lpEnterPanel {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    height: auto;
+    background: #d9d9d9;
+  }
+}
+
+/* =========================
+   VERY SMALL PHONES
+   ========================= */
+@media (max-width: 360px) {
+  .lpEnterWrap {
+    padding: 0 14px;
+  }
+
+  .lpEnterTop,
+  .lpEnterBottom {
+    font-size: 36px;
   }
 }
