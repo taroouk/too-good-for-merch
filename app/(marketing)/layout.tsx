@@ -10,23 +10,20 @@ export default function MarketingLayout({
   return (
     <div className="marketingShell">
       <header className="marketingHeader">
-        <nav className="marketingNav">
+        <nav className="marketingNav marketingNavLeft" aria-label="Primary">
           <Link href="/">HOME</Link>
-          <Link href="/portfolio">OUR WORK</Link>
-          <Link href="/contact">CONTACT</Link>
+          <Link href="/#our-work">OUR WORK</Link>
         </nav>
 
-        <div className="marketingLogo" aria-label="Too Good For Merch logo">
-          {/* لو عندك logo image بدل النص، حط <img/> هنا */}
+        <Link className="marketingLogo" href="/" aria-label="Too Good For Merch">
           <img src="/logo.svg" alt="Too Good For Merch" />
-        </div>
+        </Link>
 
-        {/* يمين الهيدر: نخليه نص بس (مش Links) عشان مفيش 404 */}
-        <div className="marketingNav marketingNavRight">
-          <span className="mutedNav">ACCOUNT</span>
-          <span className="mutedNav">WISHLIST</span>
-          <span className="mutedNav">BAG (0)</span>
-        </div>
+        <nav className="marketingNav marketingNavRight" aria-label="Account links">
+          <Link href="/#account">ACCOUNT</Link>
+          <Link href="/#wishlist">WISHLIST</Link>
+          <Link href="/#bag">BAG (0)</Link>
+        </nav>
       </header>
 
       <div className="marketingContent">{children}</div>
