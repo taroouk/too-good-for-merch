@@ -1,381 +1,446 @@
-/* Shell */
-.marketingShell {
-  min-height: 100vh;
-  background: #fff;
-  color: #111;
+:root{
+  --container: 1320px;
+  --gutter: clamp(16px, 3.2vw, 40px);
+  --radius: 10px;
+  --shadow: 0 10px 30px rgba(0,0,0,.10);
+  --text: #000;
+  --muted: rgba(0,0,0,.72);
+  --muted2: rgba(0,0,0,.58);
+  --bg: #fff;
+  --bgDark: #000;
+  --white: #fff;
 }
 
-/* Header */
-.marketingHeader {
-  padding: 18px 0;
+*{ box-sizing: border-box; }
+
+html,body{ height: 100%; }
+
+body{
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.marketingHeader > * {
-  max-width: 1320px;
+a{ color: inherit; }
+
+.narrow{ max-width: 900px; }
+.borderTop{ border-top: 1px solid #000; }
+
+.lpContainer{
+  max-width: var(--container);
   margin: 0 auto;
-  padding: 0 18px;
+  padding: 0 var(--gutter);
 }
 
-.marketingHeader {
+.marketingHeader{
+  position: relative;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 18px var(--gutter);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: #fff;
+  border-bottom: 1px solid rgba(0,0,0,.08);
+  transition: background .35s ease, border .35s ease;
+}
+
+.marketingHeader.scrolled{
+  background: rgba(255,255,255,.98);
+  border-bottom: 1px solid rgba(0,0,0,.14);
+}
+
+.marketingNav{
+  display: flex;
+  gap: 26px;
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  flex-wrap: wrap;
+}
+
+.marketingNavRight{ justify-content: flex-end; }
+
+.marketingLogo img{ height: 24px; }
+
+.marketingHeader a,
+.marketingHeader a:visited{
+  color: #000 !important;
+  text-decoration: none !important;
+  opacity: .9;
+  transition: opacity .2s ease;
+}
+
+.marketingHeader a:hover,
+.marketingHeader a:focus-visible{
+  opacity: .6;
+  outline: none;
+}
+
+.hero{
+  height: calc(100svh - 72px);
+  position: relative;
+  overflow: hidden;
+  background: #000;
+  display: flex;
+  align-items: flex-end;
+}
+
+.heroMedia{
+  position: absolute;
+  inset: 0;
+  background: #000;
+  transform: scale(1.08);
+  animation: heroZoom 8s ease-out forwards;
+}
+
+@keyframes heroZoom{ to{ transform: scale(1); } }
+
+.heroInner{
+  position: relative;
+  width: 100%;
+  padding: 0 var(--gutter) 12vh var(--gutter);
+}
+
+.heroTagline{
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(44px, 6vw, 110px);
+  line-height: .9;
+  letter-spacing: -0.04em;
+  color: #fff;
+  max-width: 980px;
+  text-transform: uppercase;
+}
+
+.typewriter{
+  white-space: pre-line;
+  transition: opacity .18s ease;
+}
+
+.typewriter.flashOut{ opacity: 0; }
+
+.caret{
+  display: inline-block;
+  width: 10px;
+  height: .9em;
+  margin-left: 6px;
+  background: #fff;
+  vertical-align: -0.12em;
+  animation: blink .9s steps(1) infinite;
+}
+
+@keyframes blink{ 50%{ opacity: 0; } }
+
+.enter{
+  background: #fff;
+  color: #000;
+  padding: clamp(36px, 4vw, 60px) 0;
+  text-align: center;
+}
+
+.enterInner{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(26px, 3.2vw, 50px);
+}
+
+.enterWord{
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: clamp(56px, 7vw, 160px);
+  font-weight: 700;
+  letter-spacing: .18em;
+  transition: letter-spacing .5s ease;
+  text-transform: uppercase;
+}
+
+.enter:hover .enterWord{ letter-spacing: .28em; }
+
+.enterPanel{
   display: block;
+  width: 100vw;
+  height: clamp(240px, 40vw, 420px);
+  margin-left: calc(50% - 50vw);
+  background: #000;
+  transition: transform .8s cubic-bezier(.19,1,.22,1);
 }
 
-.marketingHeader {
+.enterPanel:hover{ transform: scale(1.04); }
+
+.section{
+  padding: clamp(28px, 4.5vw, 52px) 0;
+}
+
+.sectionTitle{
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-size: clamp(34px, 4.6vw, 90px) ;
+  font-weight: 700;
+  margin: 0 0 12px;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  text-transform: lowercase;
+}
+
+.sectionText{
+  font-size: clamp(15px, 1.4vw, 18px);
+  line-height: 1.65;
+  max-width: auto;
+  opacity: .78;
+  margin: 0;
+  font-weight: 400;
+}
+
+.section.our-work .grid,
+.section.borderTop .grid{
+  margin-top: clamp(18px, 2.4vw, 28px);
+}
+
+.grid .card{
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.grid .card h3{
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: .14em;
+  font-weight: 700;
+  text-transform: uppercase;
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+}
+
+.grid .card p{
+  margin: 8px 0 0;
+  font-size: 15px;
+  opacity: 5;
+  line-height: 1.55;
+}
+
+.grid .card strong{
+  font-weight: 700;
+  opacity: 1;
+}
+
+.grid .cardMedia{
+  width: 100%;
+  background: #000;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  transition: transform .45s cubic-bezier(.19,1,.22,1);
+}
+
+.grid .card:hover .cardMedia{ transform: scale(1.02); }
+
+.section.our-work .grid{
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: clamp(22px, 3.8vw, 52px);
+  align-items: start;
+}
+
+.section.our-work .card.featured .cardMedia{
+  aspect-ratio: 16 / 9;
+}
+
+.section.our-work .stack{
+  display: flex;
+  flex-direction: column;
+  gap: clamp(18px, 2.3vw, 28px);
+}
+
+.section.our-work .stack .card{
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.section.our-work .stack .card .cardMedia{
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+}
+
+.section.our-work .stack .card .meta{
+  padding-top: 4px;
+}
+
+.section.borderTop .grid{
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(18px, 3vw, 44px);
+  align-items: start;
+}
+
+.section.borderTop .grid .cardMedia{
+  aspect-ratio: 4 / 3;
+}
+
+.contact{
+  background: #000;
+  color: #fff;
+  padding: clamp(72px, 8vw, 140px) 0;
+  margin: 0;
+  overflow: hidden;
+}
+
+.contactGrid{
+  display: grid;
+  grid-template-columns: 1.35fr .65fr;
+  align-items: start;
+  gap: clamp(26px, 5vw, 88px);
+}
+
+.contact h2{
+  font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(54px, 7vw, 140px);
+  line-height: .86;
+  letter-spacing: -0.045em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.contactLinks{
+  justify-self: end;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: clamp(6px, 2vw, 18px);
+  font-size: 12px;
+  letter-spacing: .32em;
+  text-transform: uppercase;
+}
+
+.contactLinks a,
+.contactLinks a:visited{
+  color: #fff;
+  text-decoration: none;
+  opacity: .78;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 0;
+  transition: opacity .2s ease, transform .2s ease;
   position: relative;
 }
 
-.marketingHeader .marketingNav,
-.marketingHeader .marketingLogo {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-}
-
-.marketingHeader {
-  border-bottom: 0;
-}
-
-.marketingHeader {
-  /* grid row */
-}
-
-.marketingHeader {
-  /* layout grid container */
-}
-
-.marketingHeader {
-  /* use internal wrapper by applying grid on header itself */
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: start;
-  gap: 12px;
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 18px;
-}
-
-.marketingNav {
-  display: flex;
-  gap: 22px;
-  align-items: center;
-  font-size: 15px;
-  letter-spacing: 0.02em;
-}
-
-.marketingNav a {
-  display: inline-flex;
-  padding: 6px 0;
-}
-
-.marketingNavRight {
-  justify-content: flex-end;
-}
-
-.marketingLogo {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  line-height: 0.95;
-}
-
-.marketingLogo img {
-  display: block;
-  height: 65px;
-  width: auto;
-}
-
-/* Content */
-.marketingContent {
-  display: block;
-}
-
-/* Landing Page */
-.lp {
+.contactLinks a::after{
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 2px;
   width: 100%;
+  height: 1px;
+  background: rgba(255,255,255,.28);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .28s ease, background .28s ease;
 }
 
-.lpContainer {
-  max-width: 1320px;
-  margin: 0 auto;
-  padding: 0 18px;
+.contactLinks a:hover{
+  opacity: 1;
+  transform: translateX(-2px);
 }
 
-/* HERO 1 */
-.lpHeroOne {
-  padding: 30px 0 10px; /* مسافة بسيطة من الهيدر */
+.contactLinks a:hover::after{
+  transform: scaleX(1);
+  background: rgba(255,255,255,.55);
 }
 
-.lpHeroMedia {
-  width: 100%;
-  max-width: 1100px;
-  margin: 0 auto;
-
-  aspect-ratio: 16 / 9;   /* ده المهم */
-  background: #d9d9d9;
+.contactLinks a:focus-visible{
+  outline: 2px solid rgba(255,255,255,.35);
+  outline-offset: 6px;
+  border-radius: 6px;
 }
 
-.lpHeroTagline {
-  max-width: 1100px;     /* نفس عرض المربع */
-  margin: 18px auto 10px;   /* يبدأ من نفس بداية المربع */
-  font-size: 25px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
+.reveal{
+  opacity: 0;
+  transform: translateY(60px);
+  transition: all 1s cubic-bezier(.19,1,.22,1);
 }
 
-/* ENTER STUDIO */
-.lpEnter {
-  background: #000;
-  color: #fff;
-
-  /* desktop padding */
-  padding: 80px 0 90px;
+.reveal.visible{
+  opacity: 1;
+  transform: translateY(0);
 }
 
-.lpEnterWrap {
-  width: 100%;
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: 0 18px;
-
-  display: grid;
-  grid-template-rows: auto auto auto;
-  justify-items: center;
-  gap: 28px;
+@media (max-width: 1100px){
+  .heroInner{ padding: 0 var(--gutter) 10vh var(--gutter); }
+  .sectionTitle{ white-space: normal; }
+  .section.our-work .grid{ grid-template-columns: 1fr; }
+  .section.our-work .stack .card{ grid-template-columns: 1fr; }
+  .section.borderTop .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
-/* ENTER / STUDIO text */
-.lpEnterTop,
-.lpEnterBottom {
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 0.95;
-  text-align: center;
-
-  /* desktop size */
-  font-size: clamp(64px, 6vw, 96px);
+@media (max-width: 720px){
+  .marketingHeader{
+    grid-template-columns: 1fr auto;
+    row-gap: 10px;
+  }
+  .marketingLogo{ justify-self: center; }
+  .marketingNav{ gap: 18px; font-size: 11px; }
+  .hero{ height: auto; min-height: 70svh; }
+  .heroTagline{ max-width: 100%; }
+  .section.borderTop .grid{ grid-template-columns: 1fr; }
+  .contactGrid{ grid-template-columns: 1fr; }
+  .contactLinks{ justify-self: start; margin-top: 8px; }
+  .contact h2{ font-size: clamp(46px, 11vw, 92px); }
 }
 
-/* link wrapper should not shrink */
-.lpEnterPanelLink {
-  display: block;
-  width: 100%;
-  max-width: 980px;   /* 👈 ده اللي هيصغره */
-  margin: 0 auto;     /* يخليه في النص */
-}
 
-/* the square itself (same behavior as Hero square) */
-.lpEnterPanel {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  height: 100%;
-  background: #d9d9d9;
-}
+@media (max-width: 1100px){
+  :root{ --gutter: 24px; }
 
-/* Sections */
-.lpSection {
-  padding: 64px 0;
-}
-
-.lpH2 {
-  margin: 0 0 12px;
-  font-size: clamp(42px, 5.5vw, 72px);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.lpP {
-  margin: 0 0 28px;
-  max-width: 920px;
-  font-size: 16px;
-  line-height: 1.45;
-  color: #2a2a2a;
-}
-
-.lpPCompact {
-  margin-bottom: 32px;
-}
-
-/* Grid cards */
-.lpGrid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 28px;
-}
-
-.lpCardMedia {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  background: #d9d9d9;
-}
-
-.lpCardBody {
-  padding-top: 14px;
-}
-
-.lpCardTitle {
-  font-weight: 800;
-  letter-spacing: 0.02em;
-  text-transform: none;
-}
-
-.lpCardMeta {
-  margin-top: 6px;
-  color: #2a2a2a;
-}
-
-.lpCardStat {
-  margin-top: 6px;
-  font-weight: 800;
-}
-
-/* Contact block */
-.lpContact {
-  padding: 140px 0 140px;   /* زوّدنا المسافة فوق */
-  margin-top: 80px;         /* يفصل بصريًا عن السكشن اللي قبله */
-}
-
-.lpContactGrid {
-  display: grid;
-  grid-template-columns: 1.6fr 1fr;
-  gap: 40px;
-  align-items: center;
-}
-
-.lpContactBig {
-  margin: 0;
-  font-size: clamp(54px, 7vw, 96px);
-  font-weight: 800;
-  line-height: 0.95;
-  letter-spacing: -0.02em;
-}
-
-.lpContactLinks {
-  display: grid;
-  gap: 12px;
-  font-size: 16px;
-
-  padding-left: 110px;   /* ده اللي هيزقهم يمين */
-}
-
-.lpContactLinks a {
-  text-decoration: none;
-}
-
-.lpContactLinks a:hover {
-  text-decoration: underline;
-}
-
-/* Responsive */
-@media (max-width: 900px) {
-  .lpGrid {
+  .marketingHeader{
     grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    gap: 10px;
+    padding: 14px var(--gutter);
   }
 
-  .lpContactGrid {
-    grid-template-columns: 1fr;
-    align-items: start;
-  }
-}
-
-@media (max-width: 720px) {
-  .marketingHeader {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .marketingNav {
-    justify-content: center;
-    flex-wrap: wrap;
-  }
-
-  .lpHeroTagline {
-    font-size: 26px;
-  }
-
-  .lpSection {
-    padding: 48px 0;
-  }
-}
-@media (max-width: 720px) {
-  /* HERO 1 - mobile */
-  .lpHeroOne {
-    padding: 18px 0 0;
-  }
-
-  .lpHeroMedia {
-    max-width: 100%;
-    margin: 0 auto;
-  }
-
-  .lpHeroTagline {
-    max-width: 100%;
-    margin: 14px auto 0;
-    padding: 0 18px;          /* نفس container padding */
-    font-size: 24px;
-    line-height: 1.15;
-  }
-}
-@media (max-width: 720px) {
-  /* CONTACT - mobile */
-  .lpContact {
-    padding: 72px 0 90px;
-    margin-top: 60px;
-  }
-
-  .lpContactGrid {
-    grid-template-columns: 1fr;
-    gap: 22px;
-    align-items: start;
-  }
-
-  .lpContactBig {
-    font-size: 54px;
-  }
-
-  .lpContactLinks {
-    padding-left: 0;       /* شيل الزقّة بتاعة الديسكتوب */
+  .marketingLogo{
     justify-self: start;
   }
-}
-@media (max-width: 720px) {
-  .lpEnter {
-    /* on mobile we avoid 100vh and keep it compact */
-    padding: 54px 0 64px;
+
+  .marketingNav{
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 16px;
+    row-gap: 10px;
+    font-size: 11px;
+    letter-spacing: .10em;
   }
 
-  .lpEnterWrap {
-    max-width: 100%;
-    padding: 0 18px;
-    gap: 18px;
-  }
-
-  .lpEnterTop,
-  .lpEnterBottom {
-    /* smaller + stable on 375px */
-    font-size: clamp(38px, 11vw, 54px);
-    line-height: 0.95;
-  }
-
-  .lpEnterPanelLink {
-    width: 100%;
-  }
-
-  .lpEnterPanel {
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    height: auto;
-    background: #d9d9d9;
+  .marketingNavRight{
+    justify-content: flex-start;
   }
 }
 
-/* =========================
-   VERY SMALL PHONES
-   ========================= */
-@media (max-width: 360px) {
-  .lpEnterWrap {
-    padding: 0 14px;
+@media (max-width: 520px){
+  :root{ --gutter: 16px; }
+
+  .marketingHeader{
+    padding: 12px var(--gutter);
+    gap: 8px;
   }
 
-  .lpEnterTop,
-  .lpEnterBottom {
-    font-size: 36px;
+  .marketingLogo img{
+    height: 22px;
+  }
+
+  .marketingNav{
+    gap: 12px;
+    row-gap: 8px;
+    font-size: 10px;
+    letter-spacing: .10em;
   }
 }
