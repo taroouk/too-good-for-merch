@@ -10,71 +10,99 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
-
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
-    const handleScroll = () => {
-      setScrolled(window.scrollY > 40);
-    };
+    const handleScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+
+    const handleResize = () => {
+      if (window.innerWidth > 720) setMenuOpen(false);
+    };
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   useEffect(() => {
-    document.body.style.overflow = menuOpen ? "hidden" : "";
+    if (!menuOpen) return;
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenuOpen(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
+
+  const closeMenu = () => setMenuOpen(false);
 
   return (
     <div className="marketingShell">
-
       <header className={`marketingHeader ${scrolled ? "scrolled" : ""}`}>
-
-        <nav className="marketingNav marketingNavLeft">
+        <nav className="marketingNav marketingNavLeft" aria-label="Primary">
           <Link href="/#hero">HOME</Link>
           <Link href="/#our-work">OUR WORK</Link>
         </nav>
 
-        <button
-          className="navToggle"
-          aria-label="Toggle menu"
-          onClick={() => setMenuOpen(!menuOpen)}
-        >
-          <span className="navToggleIcon" />
-        </button>
-
-        <Link className="marketingLogo" href="/">
+        <Link className="marketingLogo" href="/" aria-label="Too Good For Merch">
           <img src="/logo.svg" alt="Too Good For Merch" />
         </Link>
 
-        <nav className="marketingNav marketingNavRight">
+        <nav className="marketingNav marketingNavRight" aria-label="Account links">
           <Link href="/#account">ACCOUNT</Link>
           <Link href="/#wishlist">WISHLIST</Link>
           <Link href="/#bag">BAG (0)</Link>
         </nav>
 
+        <button
+          type="button"
+          className={`navToggle ${menuOpen ? "open" : ""}`}
+          aria-label="Open menu"
+          aria-expanded={menuOpen}
+          aria-controls="mobileNav"
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <span />
+          <span />
+        </button>
       </header>
 
       <div
         className={`mobileMenuOverlay ${menuOpen ? "open" : ""}`}
-        onClick={() => setMenuOpen(false)}
+        onClick={closeMenu}
+        aria-hidden={!menuOpen}
       />
 
-      <aside className={`mobileMenu ${menuOpen ? "open" : ""}`}>
+      <aside
+        id="mobileNav"
+        className={`mobileMenu ${menuOpen ? "open" : ""}`}
+        aria-hidden={!menuOpen}
+      >
         <div className="mobileMenuInner">
-          <div className="mobileMenuGroup">
-            <Link href="/#hero" onClick={() => setMenuOpen(false)}>HOME</Link>
-            <Link href="/#our-work" onClick={() => setMenuOpen(false)}>OUR WORK</Link>
-          </div>
+          <nav className="mobileMenuNav" aria-label="Mobile navigation">
+            <Link href="/#hero" onClick={closeMenu}>
+              HOME
+            </Link>
+            <Link href="/#our-work" onClick={closeMenu}>
+              OUR WORK
+            </Link>
 
-          <div className="mobileMenuDivider" />
+            <div className="mobileMenuDivider" />
 
-          <div className="mobileMenuGroup">
-            <Link href="/#account" onClick={() => setMenuOpen(false)}>ACCOUNT</Link>
-            <Link href="/#wishlist" onClick={() => setMenuOpen(false)}>WISHLIST</Link>
-            <Link href="/#bag" onClick={() => setMenuOpen(false)}>BAG (0)</Link>
-          </div>
+            <Link href="/#account" onClick={closeMenu}>
+              ACCOUNT
+            </Link>
+            <Link href="/#wishlist" onClick={closeMenu}>
+              WISHLIST
+            </Link>
+            <Link href="/#bag" onClick={closeMenu}>
+              BAG (0)
+            </Link>
+          </nav>
         </div>
       </aside>
 
