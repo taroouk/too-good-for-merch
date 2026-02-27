@@ -30,7 +30,6 @@ export default function MarketingLayout({
 
   useEffect(() => {
     if (!menuOpen) return;
-
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") setMenuOpen(false);
     };
@@ -66,8 +65,10 @@ export default function MarketingLayout({
           aria-controls="mobileNav"
           onClick={() => setMenuOpen((v) => !v)}
         >
-          <span />
-          <span />
+          <span className="menuText" aria-hidden="true">
+            <span className="menuMe">ME</span>
+            <span className="menuNu">NU</span>
+          </span>
         </button>
       </header>
 
