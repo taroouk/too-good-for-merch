@@ -95,7 +95,7 @@ function HeroTypewriterRestart() {
 
 export default function HomePage() {
   return (
-    <main className="lp">
+    <main className="lp" id="hero">
       <section className="hero">
         <div className="heroMedia" />
         <div className="heroInner">
@@ -111,7 +111,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="section our-work">
+      <section className="section our-work" id="our-work">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done this at scale</h2>
           <p className="sectionText">
