@@ -227,6 +227,10 @@ export default function HomePage() {
             <a href="#">Email</a>
           </div>
         </div>
+
+        <div className="contactFooterLogo" aria-hidden="true">
+          <img src="/logo2.svg" alt="" />
+        </div>
       </section>
     </main>
   );
