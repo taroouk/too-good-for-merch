@@ -3,6 +3,12 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef } from "react";
 
+const WHATSAPP_PHONE = "201118399923";
+const WHATSAPP_MESSAGE =
+  "Hi TGFM, I’d love a quote!\nWhat info do you need from me?";
+
+const WHATSAPP_URL =
+  `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 function HeroTypewriterRestart() {
   const elRef = useRef<HTMLSpanElement | null>(null);
 
@@ -223,8 +229,8 @@ export default function HomePage() {
           <div className="contactLinks">
             <a href="#">Instagram</a>
             <a href="#">TikTok</a>
-            <a href="#">WhatsApp</a>
-            <a href="#">Email</a>
+            <a href={WHATSAPP_URL}>WhatsApp</a>
+            <a href="mailto:hello@toogoodformerch.com" target="_blank" rel="noopener">Email</a>
           </div>
         </div>
 
