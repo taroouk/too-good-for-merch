@@ -16,25 +16,14 @@ export default function MarketingLayout({
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 40);
     window.addEventListener("scroll", handleScroll);
-
-    const handleResize = () => {
-      if (window.innerWidth > 720) setMenuOpen(false);
-    };
-    window.addEventListener("resize", handleResize);
-
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleResize);
-    };
+    return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
   useEffect(() => {
-    if (!menuOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+    document.body.style.overflow = menuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
     };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
   }, [menuOpen]);
 
   const closeMenu = () => setMenuOpen(false);
@@ -42,6 +31,23 @@ export default function MarketingLayout({
   return (
     <div className="marketingShell">
       <header className={`marketingHeader ${scrolled ? "scrolled" : ""}`}>
+        <button
+          className="mobileMenuBtn"
+          type="button"
+          aria-expanded={menuOpen}
+          aria-controls="mobileMenu"
+          onClick={() => setMenuOpen((v) => !v)}
+        >
+          <span className="mobileMenuWord" aria-hidden="true">
+            <span className="full">MENU</span>
+            <span className="split">
+              <span className="me">ME</span>
+              <span className="nu">NU</span>
+            </span>
+          </span>
+          <span className="sr-only">Menu</span>
+        </button>
+
         <nav className="marketingNav marketingNavLeft" aria-label="Primary">
           <Link href="/#hero">HOME</Link>
           <Link href="/#our-work">OUR WORK</Link>
@@ -56,44 +62,26 @@ export default function MarketingLayout({
           <Link href="/#wishlist">WISHLIST</Link>
           <Link href="/#bag">BAG (0)</Link>
         </nav>
-
-        <button
-          type="button"
-          className={`navToggle ${menuOpen ? "open" : ""}`}
-          aria-label="Open menu"
-          aria-expanded={menuOpen}
-          aria-controls="mobileNav"
-          onClick={() => setMenuOpen((v) => !v)}
-        >
-          <span className="menuText" aria-hidden="true">
-            <span className="menuMe">ME</span>
-            <span className="menuNu">NU</span>
-          </span>
-        </button>
       </header>
 
-      <div
-        className={`mobileMenuOverlay ${menuOpen ? "open" : ""}`}
-        onClick={closeMenu}
-        aria-hidden={!menuOpen}
-      />
-
       <aside
-        id="mobileNav"
-        className={`mobileMenu ${menuOpen ? "open" : ""}`}
-        aria-hidden={!menuOpen}
+        id="mobileMenu"
+        className="mobileMenu"
+        data-open={menuOpen ? "true" : "false"}
       >
         <div className="mobileMenuInner">
-          <nav className="mobileMenuNav" aria-label="Mobile navigation">
+          <div className="mobileMenuGroup">
             <Link href="/#hero" onClick={closeMenu}>
               HOME
             </Link>
             <Link href="/#our-work" onClick={closeMenu}>
               OUR WORK
             </Link>
+          </div>
 
-            <div className="mobileMenuDivider" />
+          <div className="mobileMenuDivider" />
 
+          <div className="mobileMenuGroup">
             <Link href="/#account" onClick={closeMenu}>
               ACCOUNT
             </Link>
@@ -103,7 +91,7 @@ export default function MarketingLayout({
             <Link href="/#bag" onClick={closeMenu}>
               BAG (0)
             </Link>
-          </nav>
+          </div>
         </div>
       </aside>
 
