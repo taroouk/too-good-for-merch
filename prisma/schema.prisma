@@ -8,49 +8,86 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  email     String?  @unique
-  phone     String?  @unique
-
-  builds    Build[]
-  orders    Order[]
+  id           String    @id @default(cuid())
+  email        String?   @unique
+  createdAt    DateTime  @default(now())
+  phone        String?   @unique
+  updatedAt    DateTime  @updatedAt
+  passwordHash String?
+  role         Role      @default(USER)
+  accounts     Account[]
+  builds       Build[]
+  orders       Order[]
+  sessions     Session[]
 }
 
 model Build {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
   name      String?
-
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user      User?    @relation(fields: [userId], references: [id])
 }
 
 model Order {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  status    String   @default("draft")
-  total     Int      @default(0)
-
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  status    String      @default("draft")
+  total     Int         @default(0)
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-
+  user      User?       @relation(fields: [userId], references: [id])
   items     OrderItem[]
 }
 
 model OrderItem {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
-
   orderId   String
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
   qty       Int      @default(1)
   unitPrice Int      @default(0)
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+enum Role {
+  ADMIN
+  USER
 }
