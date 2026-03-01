@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/Desktop/Mac/Studio Project/too-good-for-merch/app/league_74a9c977.module.css"],"sourcesContent":["@font-face {\n    \nfont-family: 'league';\n    src: url('@vercel/turbopack-next/internal/font/local/font?{%22path%22:%22../src/assets/fonts/LeagueSpartan-SemiBold.ttf%22,%22preload%22:true,%22has_size_adjust%22:true}') format('truetype');\n    font-display: swap;\n    \nfont-weight: 600;\nfont-style: normal;\n}\n@font-face {\n    \nfont-family: 'league';\n    src: url('@vercel/turbopack-next/internal/font/local/font?{%22path%22:%22../src/assets/fonts/LeagueSpartan-Bold.ttf%22,%22preload%22:true,%22has_size_adjust%22:true}') format('truetype');\n    font-display: swap;\n    \nfont-weight: 700;\nfont-style: normal;\n}\n\n@font-face {\n    font-family: 'league Fallback';\n    src: local(\"Arial\");\n    ascent-override: 71.90%;\ndescent-override: 22.60%;\nline-gap-override: 0.00%;\nsize-adjust: 97.36%;\n\n}\n\n.className {\n    font-family: 'league', 'league Fallback';\n    \n}\n.variable {\n    --font-league: 'league', 'league Fallback';\n}\n\n"],"names":[],"mappings":"AAAA;;;;;;;;AASA;;;;;;;;AAUA;;;;;;;;;AAUA;;;;AAIA"}}]
+}

@@ -1,0 +1,23 @@
+{
+  "devFiles": [],
+  "ampDevFiles": [],
+  "polyfillFiles": [],
+  "lowPriorityFiles": [],
+  "rootMainFiles": [],
+  "pages": {
+    "/_error": [
+      "static/chunks/d1de1_next_dist_compiled_1dc1d655._.js",
+      "static/chunks/d1de1_next_dist_shared_lib_8c076811._.js",
+      "static/chunks/d1de1_next_dist_client_afe82241._.js",
+      "static/chunks/d1de1_next_dist_3b3deac4._.js",
+      "static/chunks/d1de1_next_error_61f2e224.js",
+      "static/chunks/[next]_entry_page-loader_ts_999c71fb._.js",
+      "static/chunks/d1de1_react-dom_902f56a2._.js",
+      "static/chunks/d1de1_2496c293._.js",
+      "static/chunks/[root-of-the-server]__405f824c._.js",
+      "static/chunks/Desktop_Mac_Studio Project_too-good-for-merch_pages__error_2da965e7._.js",
+      "static/chunks/turbopack-Desktop_Mac_Studio Project_too-good-for-merch_pages__error_6e95b51d._.js"
+    ]
+  },
+  "ampFirstPages": []
+}
