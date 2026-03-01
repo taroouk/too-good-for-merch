@@ -1,12 +1,8 @@
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../src/lib/prisma";
-import { Role } from "@prisma/client";
 import argon2 from "argon2";
 
-// مهم: تأكد إن الـ route ده شغال على Node.js (مش Edge)
-export const runtime = "nodejs";
-
-function parseAdminEmails() {
+function parseAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
     .split(",")
     .map((s) => s.trim().toLowerCase())
@@ -15,11 +11,14 @@ function parseAdminEmails() {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const emailRaw = (body?.email ?? "").toString();
+    const passwordRaw = (body?.password ?? "").toString();
 
-    const email = (body?.email ?? "").toString().toLowerCase().trim();
-    const password = (body?.password ?? "").toString();
+    const email = emailRaw.toLowerCase().trim();
+    const password = passwordRaw;
 
+    // Validation (production baseline)
     if (!email || !email.includes("@")) {
       return NextResponse.json({ error: "Invalid email" }, { status: 400 });
     }
@@ -30,21 +29,25 @@ export async function POST(req: Request) {
       );
     }
 
+    // Prevent duplicates
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return NextResponse.json({ error: "Email already in use" }, { status: 409 });
     }
 
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-
+    // Role bootstrap
     const admins = parseAdminEmails();
-    const role = admins.includes(email) ? Role.ADMIN : Role.USER;
+    const isAdmin = admins.includes(email);
+    const role = isAdmin ? "ADMIN" : "USER";
+
+    // Hash password (argon2id)
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
 
     const user = await prisma.user.create({
       data: {
         email,
         passwordHash,
-        role,
+        role, // Prisma enum accepts "ADMIN" | "USER"
       },
       select: {
         id: true,
