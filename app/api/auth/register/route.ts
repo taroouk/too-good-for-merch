@@ -1,3 +1,4 @@
+export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { prisma } from "../../../../src/lib/prisma";
 import argon2 from "argon2";

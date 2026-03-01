@@ -1,7 +1,7 @@
 // src/auth.ts
 import type { NextAuthOptions } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import { PrismaAdapter } from "@auth/prisma-adapter"; // سيبها زي ما هي عندك
 import { prisma } from "./lib/prisma";
 import argon2 from "argon2";
 
@@ -9,7 +9,7 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   secret: process.env.AUTH_SECRET,
 
-  // مهم عشان نقدر نحمي routes في middleware بعدين بدون DB في Edge
+  // ✅ مهم للـ middleware (Edge) من غير ما نعتمد على DB sessions
   session: { strategy: "jwt" },
 
   providers: [
@@ -38,7 +38,7 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = (user as any).role ?? "USER";
+      if (user) (token as any).role = (user as any).role ?? "USER";
       return token;
     },
     async session({ session, token }) {
