@@ -1,0 +1,6 @@
+{
+  "version": 3,
+  "sources": [],
+  "sections": [
+    {"offset": {"line": 1, "column": 0}, "map": {"version":3,"sources":["turbopack:///[project]/Desktop/Mac/Studio Project/too-good-for-merch/app/globals.css"],"sourcesContent":[":root{\n  --bg: #ffffff;\n  --fg: #000000;\n}\n\n*{\n  box-sizing: border-box;\n}\n\nhtml, body{\n  height: 100%;  margin: 0;background: var(--bg);\n  color: var(--fg);\n}\n\nbody{\n  font-family: var(--font-inter), system-ui, sans-serif;\n}\n\n.font-head{\n  font-family: var(--font-league), sans-serif;\n}\n\n/* ================= HEADERS ================= */\n\n/* League Spartan Bold / SemiBold */\nh1, h2, h3, h4, h5, h6,\n.heroTagline,\n.sectionTitle,\n.contact h2{\n  font-family: var(--font-league), system-ui, sans-serif;\n}\n\n/* Bold للـ H1 / Hero */\nh1,\n.heroTagline,\n.contact h2{\n  font-weight: 700;\n}\n\n/* SemiBold لباقي العناوين */\nh2, h3, h4, h5, h6,\n.sectionTitle{\n  font-weight: 600;\n}\n\n.sr-only{\n  position:absolute;\n  width:1px;\n  height:1px;\n  padding:0;\n  margin:-1px;\n  overflow:hidden;\n  clip:rect(0,0,0,0);\n  white-space:nowrap;\n  border:0;\n}"],"names":[],"mappings":"AAAA;;;;;AAKA;;;;AAIA;;;;;;;AAKA;;;;AAIA;;;;AAOA;;;;AAQA;;;;AAOA;;;;AAKA"}}]
+}

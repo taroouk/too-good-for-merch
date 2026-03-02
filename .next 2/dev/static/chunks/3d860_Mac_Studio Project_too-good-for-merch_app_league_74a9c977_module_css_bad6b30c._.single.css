@@ -1,0 +1,35 @@
+/* [project]/Desktop/Mac/Studio Project/too-good-for-merch/app/league_74a9c977.module.css [app-client] (css) */
+@font-face {
+  font-family: league;
+  src: url("../media/LeagueSpartan_SemiBold-s.p.60ac960f.ttf") format("truetype");
+  font-display: swap;
+  font-weight: 600;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: league;
+  src: url("../media/LeagueSpartan_Bold-s.p.1ae88fa7.ttf") format("truetype");
+  font-display: swap;
+  font-weight: 700;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: league Fallback;
+  src: local(Arial);
+  ascent-override: 71.9%;
+  descent-override: 22.6%;
+  line-gap-override: 0.0%;
+  size-adjust: 97.36%;
+}
+
+.league_74a9c977-module__mMt-NG__className {
+  font-family: league, league Fallback;
+}
+
+.league_74a9c977-module__mMt-NG__variable {
+  --font-league: "league", "league Fallback";
+}
+
+/*# sourceMappingURL=3d860_Mac_Studio%20Project_too-good-for-merch_app_league_74a9c977_module_css_bad6b30c._.single.css.map*/
