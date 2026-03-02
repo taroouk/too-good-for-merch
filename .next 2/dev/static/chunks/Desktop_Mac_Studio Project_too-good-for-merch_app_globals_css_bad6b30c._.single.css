@@ -1,0 +1,50 @@
+/* [project]/Desktop/Mac/Studio Project/too-good-for-merch/app/globals.css [app-client] (css) */
+:root {
+  --bg: #fff;
+  --fg: #000;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  background: var(--bg);
+  height: 100%;
+  color: var(--fg);
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+.font-head {
+  font-family: var(--font-league), sans-serif;
+}
+
+h1, h2, h3, h4, h5, h6, .heroTagline, .sectionTitle, .contact h2 {
+  font-family: var(--font-league), system-ui, sans-serif;
+}
+
+h1, .heroTagline, .contact h2 {
+  font-weight: 700;
+}
+
+h2, h3, h4, h5, h6, .sectionTitle {
+  font-weight: 600;
+}
+
+.sr-only {
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  position: absolute;
+  overflow: hidden;
+}
+
+/*# sourceMappingURL=Desktop_Mac_Studio%20Project_too-good-for-merch_app_globals_css_bad6b30c._.single.css.map*/
