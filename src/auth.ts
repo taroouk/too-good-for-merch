@@ -1,19 +1,28 @@
 // src/auth.ts
 import type { NextAuthOptions } from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import CredentialsProvider from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./lib/prisma";
 import argon2 from "argon2";
+
+function parseAdminEmails() {
+  return (process.env.ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   secret: process.env.AUTH_SECRET,
 
-  // مهم عشان نقدر نحمي routes في middleware بعدين بدون DB في Edge
+  // مهم للـ middleware على Edge
   session: { strategy: "jwt" },
 
+  debug: process.env.NODE_ENV !== "production",
+
   providers: [
-    Credentials({
+    CredentialsProvider({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
@@ -31,6 +40,7 @@ export const authOptions: NextAuthOptions = {
         const ok = await argon2.verify(user.passwordHash, password);
         if (!ok) return null;
 
+        // role من DB
         return { id: user.id, email: user.email, role: user.role } as any;
       },
     }),
