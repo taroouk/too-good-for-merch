@@ -1,6 +1,9 @@
 import "./globals.css";
 import localFont from "next/font/local";
 import { Inter } from "next/font/google";
+import Providers from "@/src/components/Providers";
+import { ReactNode } from "react";
+
 
 /* ================= INTER (Body Font) ================= */
 const inter = Inter({
@@ -27,14 +30,12 @@ const league = localFont({
   display: "swap",
 });
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en"   className={`${league.variable} ${inter.variable}`}>
-      <body>{children}</body>
+    <html lang="en">
+      <body>
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
