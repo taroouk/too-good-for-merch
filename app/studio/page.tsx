@@ -1,6 +1,6 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/src/auth";
 import { redirect } from "next/navigation";
+import { authOptions } from "@/src/auth";
 
 export default async function StudioPage() {
   const session = await getServerSession(authOptions);
@@ -9,15 +9,13 @@ export default async function StudioPage() {
     redirect("/login?callbackUrl=/studio");
   }
 
-  const role = (session.user as any).role;
-  if (role !== "ADMIN") {
-    return <div style={{ padding: 24 }}>Forbidden</div>;
-  }
-
   return (
     <div style={{ padding: 24 }}>
-      <h1>ENTER STUDIO</h1>
-      <pre>{JSON.stringify(session, null, 2)}</pre>
+      <h1>ENTER</h1>
+      <h1>STUDIO</h1>
+      <pre style={{ marginTop: 16 }}>
+        {JSON.stringify(session, null, 2)}
+      </pre>
     </div>
   );
 }

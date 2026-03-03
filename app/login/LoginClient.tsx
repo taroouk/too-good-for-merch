@@ -8,24 +8,23 @@ export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const { status } = useSession(); // هيشتغل صح عشان SessionProvider موجود
+  const { data: session, status } = useSession(); // <-- دلوقتي هتشتغل بعد SessionProvider
+
+  const callbackUrl = useMemo(() => {
+    return searchParams?.get("callbackUrl") || "/studio";
+  }, [searchParams]);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const callbackUrl = useMemo(() => {
-    // لو جاي من middleware هتبقى موجودة
-    return searchParams.get("callbackUrl") || "/studio";
-  }, [searchParams]);
-
-  // لو already logged in، ودّيه على الاستوديو
+  // لو already logged in -> روح للـStudio
   useEffect(() => {
     if (status === "authenticated") {
       router.replace(callbackUrl);
     }
-  }, [status, router, callbackUrl]);
+  }, [status, callbackUrl, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -33,56 +32,54 @@ export default function LoginClient() {
     setLoading(true);
 
     const res = await signIn("credentials", {
+      redirect: false,
       email,
       password,
-      redirect: false, // احنا هنعمل redirect بنفسنا
       callbackUrl,
     });
 
     setLoading(false);
 
     if (!res) {
-      setError("Unexpected error. Please try again.");
+      setError("Unknown error");
       return;
     }
 
     if (res.error) {
-      setError("Invalid email or password.");
+      setError("Invalid email or password");
       return;
     }
 
-    // نجاح: روح للـ callbackUrl
-    router.replace(res.url ?? callbackUrl);
+    // نجاح
+    router.replace(res.url || callbackUrl);
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 420 }}>
+    <div style={{ padding: 24 }}>
       <h1>Login</h1>
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 12 }}>
+      <form onSubmit={onSubmit} style={{ display: "grid", gap: 10, maxWidth: 320 }}>
         <input
           type="email"
-          placeholder="Email"
+          placeholder="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          autoComplete="email"
           required
         />
 
         <input
           type="password"
-          placeholder="Password"
+          placeholder="password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
-          autoComplete="current-password"
           required
         />
 
         <button type="submit" disabled={loading}>
-          {loading ? "Signing in..." : "Login"}
+          {loading ? "Logging in..." : "Login"}
         </button>
 
-        {error ? <div style={{ color: "crimson" }}>{error}</div> : null}
+        {error && <div style={{ color: "crimson" }}>{error}</div>}
       </form>
     </div>
   );

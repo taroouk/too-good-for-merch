@@ -30,6 +30,10 @@ const league = localFont({
   display: "swap",
 });
 
+export const metadata = {
+  title: "Too Good For Merch",
+  description: "Studio",
+};
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
