@@ -1,28 +1,21 @@
 // src/auth.ts
 import type { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
+import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import { prisma } from "./lib/prisma";
 import argon2 from "argon2";
 
-function parseAdminEmails() {
-  return (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
+
+  // خليك على نفس الاسم اللي عندك في Vercel
   secret: process.env.AUTH_SECRET,
 
-  // مهم للـ middleware على Edge
+  // مهم للميدل وير (JWT) + يقلل DB hits
   session: { strategy: "jwt" },
 
-  debug: process.env.NODE_ENV !== "production",
-
   providers: [
-    CredentialsProvider({
+    Credentials({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
@@ -31,7 +24,6 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         const email = credentials?.email?.toString().toLowerCase().trim();
         const password = credentials?.password?.toString();
-
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
@@ -40,7 +32,6 @@ export const authOptions: NextAuthOptions = {
         const ok = await argon2.verify(user.passwordHash, password);
         if (!ok) return null;
 
-        // role من DB
         return { id: user.id, email: user.email, role: user.role } as any;
       },
     }),
@@ -48,7 +39,7 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = (user as any).role ?? "USER";
+      if (user) (token as any).role = (user as any).role ?? "USER";
       return token;
     },
     async session({ session, token }) {
@@ -57,7 +48,5 @@ export const authOptions: NextAuthOptions = {
     },
   },
 
-  pages: {
-    signIn: "/login",
-  },
+  pages: { signIn: "/login" },
 };
