@@ -261,6 +261,9 @@ a{ color: inherit; }
   color: #000;
   padding: clamp(36px, 4vw, 60px) 0;
   text-align: center;
+
+  /* ✅ التعديل الوحيد المطلوب: خط فاصل بين studio والسكشن اللي تحت */
+  border-bottom: 1px solid rgba(0,0,0,.12);
 }
 
 .enterInner{
@@ -357,36 +360,20 @@ a{ color: inherit; }
 }
 .grid .card:hover .cardMedia{ transform: scale(1.02); }
 
+/* ✅ التعديل الوحيد هنا: our-work يبقى 3 أعمدة زي borderTop */
 .section.our-work .grid{
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: clamp(22px, 3.8vw, 52px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: clamp(18px, 3vw, 44px);
   align-items: start;
 }
 
-.section.our-work .card.featured .cardMedia{
-  aspect-ratio: 16 / 9;
-}
-
-.section.our-work .stack{
-  display: flex;
-  flex-direction: column;
-  gap: clamp(18px, 2.3vw, 28px);
-}
-
-.section.our-work .stack .card{
-  display: grid;
-  grid-template-columns: minmax(220px, 260px) 1fr;
-  gap: 18px;
-  align-items: start;
-}
-
-.section.our-work .stack .card .cardMedia{
-  width: 100%;
-  height: auto;
+/* ✅ التعديل الوحيد هنا: ميديا كروت our-work تبقى نفس 4/3 */
+.section.our-work .grid .cardMedia{
   aspect-ratio: 4 / 3;
 }
 
+/* (سيبت borderTop زي ما هو) */
 .section.borderTop .grid{
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -498,8 +485,8 @@ a{ color: inherit; }
 }
 
 @media (max-width: 1100px){
-  .section.our-work .grid{ grid-template-columns: 1fr; }
-  .section.our-work .stack .card{ grid-template-columns: 1fr; }
+  /* ✅ التعديل الوحيد هنا: بدل ما our-work يبقى 1 عمود، يبقى 2 زي البوتيك */
+  .section.our-work .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
   .section.borderTop .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
 
@@ -533,6 +520,9 @@ a{ color: inherit; }
   .heroInner{
     padding-bottom: 18vh;
   }
+
+  /* ✅ عشان يبقى زي البوتيك: موبايل عمود واحد */
+  .section.our-work .grid{ grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px){

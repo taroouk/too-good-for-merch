@@ -9,11 +9,12 @@ const WHATSAPP_MESSAGE =
 
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
+
 function HeroTypewriterRestart() {
   const elRef = useRef<HTMLSpanElement | null>(null);
 
   const lines = useMemo(
-    () => ["FOR ARTISTS. EVENTS. BRANDS.", "THAT TAKE MERCH SERIOUSLY."],
+    () => ["FOR", "ARTISTS.", "EVENTS.", "BRANDS.", "THAT TAKE MERCH SERIOUSLY."],
     []
   );
 
@@ -26,8 +27,8 @@ function HeroTypewriterRestart() {
     let raf = 0;
     let last = performance.now();
 
-    const TYPE_SPEED = 45;
-    const HOLD_MS = 1200;
+    const TYPE_SPEED = 60;
+    const HOLD_MS = 1000;
     const GAP_MS = 120;
 
     let holdUntil = 0;
@@ -117,6 +118,7 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ✅ OUR WORK - SCALE (نفس شكل البوتيك بالظبط: 3 كروت متساويين) */}
       <section className="section our-work" id="our-work">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done this at scale</h2>
@@ -131,10 +133,10 @@ export default function HomePage() {
 
         <div className="lpContainer">
           <div className="grid">
-            <article className="card featured">
+            <article className="card">
               <div className="cardMedia" />
               <div>
-                <h3>TAYLOR SWIFT | ERAS TOUR MERCH</h3>
+                <h2>TAYLOR SWIFT | ERAS TOUR MERCH</h2>
                 <p>2023 – 2024</p>
                 <p>
                   <strong>+1M printed T-shirts & Hoodies</strong>
@@ -142,33 +144,32 @@ export default function HomePage() {
               </div>
             </article>
 
-            <div className="stack">
-              <article className="card">
-                <div className="cardMedia" />
-                <div className="meta">
-                  <h3>ARTISTS | LICENSED MERCH</h3>
-                  <p>2023 – present</p>
-                  <p>
-                    <strong>+100K printed T-shirts & Hoodies</strong>
-                  </p>
-                </div>
-              </article>
+            <article className="card">
+              <div className="cardMedia" />
+              <div>
+                <h2>ARTISTS | LICENSED MERCH</h2>
+                <p>2023 – present</p>
+                <p>
+                  <strong>+100K printed T-shirts & Hoodies</strong>
+                </p>
+              </div>
+            </article>
 
-              <article className="card">
-                <div className="cardMedia" />
-                <div className="meta">
-                  <h3>TV & MOVIES | LICENSED MERCH</h3>
-                  <p>2023 – present</p>
-                  <p>
-                    <strong>+100K printed T-shirts & Hoodies</strong>
-                  </p>
-                </div>
-              </article>
-            </div>
+            <article className="card">
+              <div className="cardMedia" />
+              <div>
+                <h2>TV & MOVIES | LICENSED MERCH</h2>
+                <p>2023 – present</p>
+                <p>
+                  <strong>+100K printed T-shirts & Hoodies</strong>
+                </p>
+              </div>
+            </article>
           </div>
         </div>
       </section>
 
+      {/* ✅ BOUTIQUE (برضو 3 كروت متساويين - شلت featured) */}
       <section className="section borderTop">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done boutique runs, too</h2>
@@ -183,10 +184,10 @@ export default function HomePage() {
 
         <div className="lpContainer">
           <div className="grid">
-            <article className="card featured">
+            <article className="card">
               <div className="cardMedia" />
               <div>
-                <h3>MK wedding | PARIS</h3>
+                <h2>MK wedding | PARIS</h2>
                 <p>2024</p>
                 <p>
                   <strong>30 printed T-shirts</strong>
@@ -197,7 +198,7 @@ export default function HomePage() {
             <article className="card">
               <div className="cardMedia" />
               <div>
-                <h3>KN WEDDING | GOUNA</h3>
+                <h2>KN WEDDING | GOUNA</h2>
                 <p>2024</p>
                 <p>
                   <strong>50 printed T-shirts</strong>
@@ -208,7 +209,7 @@ export default function HomePage() {
             <article className="card">
               <div className="cardMedia" />
               <div>
-                <h3>FA WEDDING | CAIRO</h3>
+                <h2>FA WEDDING | CAIRO</h2>
                 <p>2026</p>
                 <p>
                   <strong>100 printed T-shirts</strong>
