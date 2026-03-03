@@ -2,17 +2,14 @@ import "./globals.css";
 import localFont from "next/font/local";
 import { Inter } from "next/font/google";
 import Providers from "@/src/components/Providers";
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-
-/* ================= INTER (Body Font) ================= */
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-inter",
   display: "swap",
 });
 
-/* ================= LEAGUE SPARTAN (Headers Only) ================= */
 const league = localFont({
   src: [
     {
@@ -34,10 +31,11 @@ export const metadata = {
   title: "Too Good For Merch",
   description: "Studio",
 };
+
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>
+      <body className={`${inter.variable} ${league.variable}`}>
         <Providers>{children}</Providers>
       </body>
     </html>

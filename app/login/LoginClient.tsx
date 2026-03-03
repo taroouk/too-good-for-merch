@@ -4,14 +4,27 @@ import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+function safeCallbackUrl(raw: string | null) {
+  // اسمح فقط بروابط نسبية داخل الموقع
+  if (!raw) return "/studio";
+
+  // لو جالك absolute url (زي http://localhost...) امنعه
+  // وارجع لـ /studio
+  if (raw.startsWith("http://") || raw.startsWith("https://")) return "/studio";
+
+  // لازم يبدأ بـ /
+  if (!raw.startsWith("/")) return "/studio";
+
+  return raw;
+}
+
 export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const { data: session, status } = useSession(); // <-- دلوقتي هتشتغل بعد SessionProvider
+  const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
-    return searchParams?.get("callbackUrl") || "/studio";
+    return safeCallbackUrl(searchParams?.get("callbackUrl"));
   }, [searchParams]);
 
   const [email, setEmail] = useState("");
@@ -23,6 +36,7 @@ export default function LoginClient() {
   useEffect(() => {
     if (status === "authenticated") {
       router.replace(callbackUrl);
+      router.refresh();
     }
   }, [status, callbackUrl, router]);
 
@@ -33,7 +47,7 @@ export default function LoginClient() {
 
     const res = await signIn("credentials", {
       redirect: false,
-      email,
+      email: email.trim().toLowerCase(),
       password,
       callbackUrl,
     });
@@ -51,7 +65,8 @@ export default function LoginClient() {
     }
 
     // نجاح
-    router.replace(res.url || callbackUrl);
+    router.replace(callbackUrl);
+    router.refresh();
   }
 
   return (
@@ -65,6 +80,7 @@ export default function LoginClient() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          autoComplete="email"
         />
 
         <input
@@ -73,6 +89,7 @@ export default function LoginClient() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          autoComplete="current-password"
         />
 
         <button type="submit" disabled={loading}>
