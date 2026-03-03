@@ -262,7 +262,6 @@ a{ color: inherit; }
   padding: clamp(36px, 4vw, 60px) 0;
   text-align: center;
 
-  /* ✅ التعديل الوحيد المطلوب: خط فاصل بين studio والسكشن اللي تحت */
   border-bottom: 1px solid rgba(0,0,0,.12);
 }
 
@@ -330,8 +329,10 @@ a{ color: inherit; }
   min-width: 0;
 }
 
+/* ✅ تعديلنا هنا */
 .grid .card h3{
-  margin: 0;
+  margin: 0;                 /* كان فيه فراغ بيخلي التاريخ ينزل */
+  line-height: 1.12;         /* يثبت شكل العنوان لما يلف على سطرين */
   font-size: 22px;
   letter-spacing: .14em;
   font-weight: 700;
@@ -339,11 +340,17 @@ a{ color: inherit; }
   font-family: var(--font-league), system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 }
 
+/* ✅ تعديلنا هنا */
 .grid .card p{
-  margin: 8px 0 0;
+  margin: 0;                 /* يلغي تفاوت المسافات على الموبايل */
   font-size: 15px;
   opacity: .75;
-  line-height: 1.55;
+  line-height: 1.35;
+}
+
+/* ✅ تعديلنا هنا */
+.grid .card p + p{
+  margin-top: 6px;           /* مسافة ثابتة بين التاريخ والـstat */
 }
 
 .grid .card strong{
@@ -360,7 +367,6 @@ a{ color: inherit; }
 }
 .grid .card:hover .cardMedia{ transform: scale(1.02); }
 
-/* ✅ التعديل الوحيد هنا: our-work يبقى 3 أعمدة زي borderTop */
 .section.our-work .grid{
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -368,12 +374,10 @@ a{ color: inherit; }
   align-items: start;
 }
 
-/* ✅ التعديل الوحيد هنا: ميديا كروت our-work تبقى نفس 4/3 */
 .section.our-work .grid .cardMedia{
   aspect-ratio: 4 / 3;
 }
 
-/* (سيبت borderTop زي ما هو) */
 .section.borderTop .grid{
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -485,7 +489,6 @@ a{ color: inherit; }
 }
 
 @media (max-width: 1100px){
-  /* ✅ التعديل الوحيد هنا: بدل ما our-work يبقى 1 عمود، يبقى 2 زي البوتيك */
   .section.our-work .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
   .section.borderTop .grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
 }
@@ -521,7 +524,6 @@ a{ color: inherit; }
     padding-bottom: 18vh;
   }
 
-  /* ✅ عشان يبقى زي البوتيك: موبايل عمود واحد */
   .section.our-work .grid{ grid-template-columns: 1fr; }
 }
 
