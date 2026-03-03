@@ -8,10 +8,9 @@ import argon2 from "argon2";
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
-  // خليك على نفس الاسم اللي عندك في Vercel
-  secret: process.env.AUTH_SECRET,
+  // خليها NEXTAUTH_SECRET (الأكثر شيوعًا) + fallback
+  secret: process.env.NEXTAUTH_SECRET || process.env.AUTH_SECRET,
 
-  // مهم للميدل وير (JWT) + يقلل DB hits
   session: { strategy: "jwt" },
 
   providers: [
@@ -24,6 +23,7 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         const email = credentials?.email?.toString().toLowerCase().trim();
         const password = credentials?.password?.toString();
+
         if (!email || !password) return null;
 
         const user = await prisma.user.findUnique({ where: { email } });
@@ -48,5 +48,7 @@ export const authOptions: NextAuthOptions = {
     },
   },
 
-  pages: { signIn: "/login" },
+  pages: {
+    signIn: "/login",
+  },
 };
