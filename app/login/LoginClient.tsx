@@ -7,11 +7,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
   const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
-    // مهم: لو callbackUrl جاي URL كامل من next-auth سيبه زي ما هو
     return searchParams?.get("callbackUrl") || "/studio";
   }, [searchParams]);
 
@@ -24,7 +22,6 @@ export default function LoginClient() {
   useEffect(() => {
     if (status === "authenticated") {
       router.replace(callbackUrl);
-      router.refresh();
     }
   }, [status, callbackUrl, router]);
 
@@ -35,26 +32,19 @@ export default function LoginClient() {
 
     const res = await signIn("credentials", {
       redirect: false,
-      email: email.toLowerCase().trim(),
+      email,
       password,
       callbackUrl,
     });
 
     setLoading(false);
 
-    if (!res) {
-      setError("Unknown error");
-      return;
-    }
+    if (!res) return setError("Unknown error");
+    if (res.error) return setError("Invalid email or password");
 
-    if (res.error) {
-      setError("Invalid email or password");
-      return;
-    }
-
-    // نجاح: لازم refresh عشان /studio (Server Component) يشوف session الجديد
-    router.replace(callbackUrl);
-    router.refresh();
+    // ✅ بعد نجاح تسجيل الدخول
+    router.replace(res.url || callbackUrl);
+    router.refresh(); // مهم مع App Router
   }
 
   return (

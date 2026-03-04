@@ -2,7 +2,7 @@ import "./globals.css";
 import localFont from "next/font/local";
 import { Inter } from "next/font/google";
 import Providers from "@/src/components/Providers";
-import type { ReactNode } from "react";
+import { ReactNode } from "react";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -12,16 +12,8 @@ const inter = Inter({
 
 const league = localFont({
   src: [
-    {
-      path: "../src/assets/fonts/LeagueSpartan-SemiBold.ttf",
-      weight: "600",
-      style: "normal",
-    },
-    {
-      path: "../src/assets/fonts/LeagueSpartan-Bold.ttf",
-      weight: "700",
-      style: "normal",
-    },
+    { path: "../src/assets/fonts/LeagueSpartan-SemiBold.ttf", weight: "600", style: "normal" },
+    { path: "../src/assets/fonts/LeagueSpartan-Bold.ttf", weight: "700", style: "normal" },
   ],
   variable: "--font-league",
   display: "swap",
