@@ -5,13 +5,11 @@ import { getToken } from "next-auth/jwt";
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (!pathname.startsWith("/studio")) {
-    return NextResponse.next();
-  }
+  if (!pathname.startsWith("/studio")) return NextResponse.next();
 
   const token = await getToken({
     req,
-    // ✅ لازم نفس السر اللي NextAuth بيستخدمه
+    // ✅ نفس السكرت على Vercel
     secret: process.env.NEXTAUTH_SECRET,
   });
 

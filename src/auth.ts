@@ -8,10 +8,9 @@ import argon2 from "argon2";
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
-  // ✅ استخدم المتغير القياسي بتاع NextAuth
+  // ✅ استخدم نفس متغير Vercel
   secret: process.env.NEXTAUTH_SECRET,
 
-  // JWT strategy عشان middleware يقدر يقرأ التوكن
   session: { strategy: "jwt" },
 
   providers: [
@@ -40,7 +39,7 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = (user as any).role ?? "USER";
+      if (user) (token as any).role = (user as any).role ?? "USER";
       return token;
     },
     async session({ session, token }) {

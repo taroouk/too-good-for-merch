@@ -10,7 +10,8 @@ export default function LoginClient() {
   const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
-    return searchParams?.get("callbackUrl") || "/studio";
+    const cb = searchParams?.get("callbackUrl");
+    return cb && cb.startsWith("/") ? cb : "/studio";
   }, [searchParams]);
 
   const [email, setEmail] = useState("");
@@ -18,7 +19,6 @@ export default function LoginClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // لو already logged in -> روح للـStudio
   useEffect(() => {
     if (status === "authenticated") {
       router.replace(callbackUrl);
@@ -42,9 +42,8 @@ export default function LoginClient() {
     if (!res) return setError("Unknown error");
     if (res.error) return setError("Invalid email or password");
 
-    // ✅ بعد نجاح تسجيل الدخول
-    router.replace(res.url || callbackUrl);
-    router.refresh(); // مهم مع App Router
+    // ✅ بعد النجاح و قبل ما تعتمد على useSession (اللي ممكن يتأخر ثانية)
+    router.replace(callbackUrl);
   }
 
   return (
@@ -58,7 +57,6 @@ export default function LoginClient() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          autoComplete="email"
         />
 
         <input
@@ -67,7 +65,6 @@ export default function LoginClient() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          autoComplete="current-password"
         />
 
         <button type="submit" disabled={loading}>
