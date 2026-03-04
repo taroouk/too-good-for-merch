@@ -55,10 +55,6 @@ export default function LoginClient() {
             <p className="p">
               Login to access your studio. Your session is protected and the /studio route is guarded by middleware.
             </p>
-
-            <div className="smallNote">
-              Tip: بعد ما تعمل login هتتحول تلقائيًا إلى <b>{callbackUrl}</b>
-            </div>
           </div>
 
           <div className="rightPane">
