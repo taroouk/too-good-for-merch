@@ -4,27 +4,15 @@ import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-function safeCallbackUrl(raw: string | null) {
-  // اسمح فقط بروابط نسبية داخل الموقع
-  if (!raw) return "/studio";
-
-  // لو جالك absolute url (زي http://localhost...) امنعه
-  // وارجع لـ /studio
-  if (raw.startsWith("http://") || raw.startsWith("https://")) return "/studio";
-
-  // لازم يبدأ بـ /
-  if (!raw.startsWith("/")) return "/studio";
-
-  return raw;
-}
-
 export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
-    return safeCallbackUrl(searchParams?.get("callbackUrl"));
+    // مهم: لو callbackUrl جاي URL كامل من next-auth سيبه زي ما هو
+    return searchParams?.get("callbackUrl") || "/studio";
   }, [searchParams]);
 
   const [email, setEmail] = useState("");
@@ -47,7 +35,7 @@ export default function LoginClient() {
 
     const res = await signIn("credentials", {
       redirect: false,
-      email: email.trim().toLowerCase(),
+      email: email.toLowerCase().trim(),
       password,
       callbackUrl,
     });
@@ -64,7 +52,7 @@ export default function LoginClient() {
       return;
     }
 
-    // نجاح
+    // نجاح: لازم refresh عشان /studio (Server Component) يشوف session الجديد
     router.replace(callbackUrl);
     router.refresh();
   }

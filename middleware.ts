@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
 export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
+  const { pathname, search } = req.nextUrl;
 
   if (!pathname.startsWith("/studio")) {
     return NextResponse.next();
@@ -17,7 +17,7 @@ export async function middleware(req: NextRequest) {
   if (!token) {
     const url = req.nextUrl.clone();
     url.pathname = "/login";
-    url.searchParams.set("callbackUrl", req.nextUrl.pathname);
+    url.searchParams.set("callbackUrl", `${pathname}${search || ""}`);
     return NextResponse.redirect(url);
   }
 
