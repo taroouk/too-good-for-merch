@@ -1,14 +1,13 @@
 "use client";
 
+import "@/app/auth.css";
 import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
-import AuthShell from "@/src/components/AuthShell";
 
 export default function LoginClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
   const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
@@ -17,13 +16,13 @@ export default function LoginClient() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // لو already logged in -> روح للـStudio
   useEffect(() => {
-    if (status === "authenticated") {
-      router.replace(callbackUrl);
-    }
+    if (status === "authenticated") router.replace(callbackUrl);
   }, [status, callbackUrl, router]);
 
   async function onSubmit(e: React.FormEvent) {
@@ -47,56 +46,68 @@ export default function LoginClient() {
   }
 
   return (
-    <AuthShell
-      title="Login"
-      subtitle="Enter your credentials to access the studio."
-      footer={
-        <div>
-          Don’t have an account? <a className="authLink" href="/register">Create one</a>
-        </div>
-      }
-    >
-      <form onSubmit={onSubmit} className="formGrid">
-        <div>
-          <div className="labelRow">
-            <span className="fieldLabel">Email</span>
+    <main className="authShell">
+      <section className="authCard">
+        <div className="authGrid">
+          <div className="leftPane">
+            <div className="kicker">Too Good For Merch</div>
+            <h1 className="h1">ENTER STUDIO</h1>
+            <p className="p">
+              Login to access your studio. Your session is protected and the /studio route is guarded by middleware.
+            </p>
+
+            <div className="smallNote">
+              Tip: بعد ما تعمل login هتتحول تلقائيًا إلى <b>{callbackUrl}</b>
+            </div>
           </div>
-          <input
-            className="input"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-        </div>
 
-        <div>
-          <div className="labelRow">
-            <span className="fieldLabel">Password</span>
+          <div className="rightPane">
+            <form className="form" onSubmit={onSubmit}>
+              <label className="label">
+                <span className="labelText">Email</span>
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="you@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </label>
+
+              <label className="label">
+                <span className="labelText">Password</span>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </label>
+
+              {error ? <div className="error">{error}</div> : null}
+
+              <div className="btnRow">
+                <button className="btn" type="submit" disabled={loading}>
+                  {loading ? "Logging in..." : "Login"}
+                </button>
+
+                <a className="link" href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
+                  Create account
+                </a>
+              </div>
+
+              <a className="link" href="/">
+                Back to home
+              </a>
+            </form>
           </div>
-          <input
-            className="input"
-            type="password"
-            placeholder="••••••••"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="current-password"
-          />
         </div>
-
-        <button className="btn" type="submit" disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
-        </button>
-
-        {error && <div className="errorBox">{error}</div>}
-
-        <div className="smallNote">
-          After signing in you’ll be redirected to: <b>{callbackUrl}</b>
-        </div>
-      </form>
-    </AuthShell>
+      </section>
+    </main>
   );
 }

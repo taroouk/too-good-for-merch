@@ -1,16 +1,17 @@
 "use client";
 
+import "@/app/auth.css";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
-import AuthShell from "@/src/components/AuthShell";
+import { useMemo, useState } from "react";
 
 export default function RegisterClient() {
   const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") ?? "/studio";
+  const callbackUrl = useMemo(() => sp.get("callbackUrl") ?? "/studio", [sp]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,68 +33,75 @@ export default function RegisterClient() {
       return;
     }
 
-    // auto login after register
-    await signIn("credentials", {
-      email,
-      password,
-      redirect: true,
-      callbackUrl,
-    });
-
+    // auto login
+    await signIn("credentials", { email, password, redirect: true, callbackUrl });
     setPending(false);
   }
 
   return (
-    <AuthShell
-      title="Create Account"
-      subtitle="Register to access your private studio."
-      footer={
-        <div>
-          Already have an account?{" "}
-          <a className="authLink" href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
-            Login
-          </a>
-        </div>
-      }
-    >
-      <form onSubmit={onSubmit} className="formGrid">
-        <div>
-          <div className="labelRow">
-            <span className="fieldLabel">Email</span>
+    <main className="authShell">
+      <section className="authCard">
+        <div className="authGrid">
+          <div className="leftPane">
+            <div className="kicker">Too Good For Merch</div>
+            <h1 className="h1">CREATE ACCOUNT</h1>
+            <p className="p">
+              Create your account then we’ll sign you in automatically and send you to the studio.
+            </p>
+
+            <div className="smallNote">
+              Password must be at least <b>8</b> characters.
+            </div>
           </div>
-          <input
-            className="input"
-            type="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-          />
-        </div>
 
-        <div>
-          <div className="labelRow">
-            <span className="fieldLabel">Password</span>
+          <div className="rightPane">
+            <form className="form" onSubmit={onSubmit}>
+              <label className="label">
+                <span className="labelText">Email</span>
+                <input
+                  className="input"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  type="email"
+                  required
+                  autoComplete="email"
+                  placeholder="you@email.com"
+                />
+              </label>
+
+              <label className="label">
+                <span className="labelText">Password</span>
+                <input
+                  className="input"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  type="password"
+                  minLength={8}
+                  required
+                  autoComplete="new-password"
+                  placeholder="min 8 chars"
+                />
+              </label>
+
+              {error ? <div className="error">{error}</div> : null}
+
+              <div className="btnRow">
+                <button className="btn" type="submit" disabled={pending}>
+                  {pending ? "Creating..." : "Create"}
+                </button>
+
+                <a className="link" href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
+                  Back to login
+                </a>
+              </div>
+
+              <a className="link" href="/">
+                Back to home
+              </a>
+            </form>
           </div>
-          <input
-            className="input"
-            type="password"
-            placeholder="Minimum 8 characters"
-            minLength={8}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            autoComplete="new-password"
-          />
         </div>
-
-        <button className="btn" type="submit" disabled={pending}>
-          {pending ? "Creating..." : "Create Account"}
-        </button>
-
-        {error && <div className="errorBox">{error}</div>}
-      </form>
-    </AuthShell>
+      </section>
+    </main>
   );
 }
