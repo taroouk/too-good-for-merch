@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 
 type Props = {
   children: ReactNode;
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 };
 
-export default function ProjectLayout({ children, params }: Props) {
-  const buildId = params.buildId;
+export default async function ProjectLayout({ children, params }: Props) {
+  const { buildId } = await params;
 
   return (
     <div className="space-y-4">
