@@ -18,7 +18,7 @@ export default async function ProjectsPage() {
 
       {builds.length === 0 ? (
         <div className="border rounded-lg p-4 text-sm text-gray-600">
-          No projects yet. Create your first project.
+          No projects yet. Click <span className="font-medium">New Project</span> to create one.
         </div>
       ) : (
         <div className="grid gap-3">
@@ -30,7 +30,8 @@ export default async function ProjectsPage() {
             >
               <div className="font-medium">{b.name ?? "Untitled"}</div>
               <div className="text-xs text-gray-600">
-                {b.draft?.product ?? "No product"} · {b.draft?.fabric ?? "No fabric"} · qty {b.draft?.quantity ?? 1}
+                {b.draft?.product ?? "No product"} · {b.draft?.fabric ?? "No fabric"} · qty{" "}
+                {b.draft?.quantity ?? 1}
               </div>
             </Link>
           ))}
