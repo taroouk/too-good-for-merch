@@ -1,6 +1,6 @@
 "use client";
 
-import "@/app/auth.css";
+import "../auth.css";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
