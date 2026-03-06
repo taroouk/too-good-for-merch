@@ -35,16 +35,26 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
 
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) (token as any).role = (user as any).role ?? "USER";
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) (session.user as any).role = (token as any).role ?? "USER";
-      return session;
-    },
+  // src/auth.ts (داخل authOptions)
+callbacks: {
+  async jwt({ token, user }) {
+    // user موجود وقت تسجيل الدخول فقط
+    if (user) {
+      (token as any).id = (user as any).id;
+      (token as any).role = (user as any).role ?? "USER";
+    }
+    return token;
   },
+
+  async session({ session, token }) {
+    // ضيف id للـ session.user
+    if (session.user) {
+      (session.user as any).id = (token as any).id ?? token.sub;
+      (session.user as any).role = (token as any).role ?? "USER";
+    }
+    return session;
+  },
+},
 
   pages: {
     signIn: "/login",
