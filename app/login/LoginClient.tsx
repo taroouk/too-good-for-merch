@@ -1,95 +1,109 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import "../auth.css";
+import { useEffect, useMemo, useState } from "react";
+import { signIn, useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function LoginClient() {
-  const sp = useSearchParams();
-  const callbackUrl = sp.get("callbackUrl") ?? "/studio";
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { status } = useSession();
+
+  const callbackUrl = useMemo(() => {
+    return searchParams?.get("callbackUrl") || "/studio";
+  }, [searchParams]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [pending, setPending] = useState(false);
+
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // لو already logged in -> روح للـStudio
+  useEffect(() => {
+    if (status === "authenticated") router.replace(callbackUrl);
+  }, [status, callbackUrl, router]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    setPending(true);
+    setLoading(true);
 
-    await signIn("credentials", {
+    const res = await signIn("credentials", {
+      redirect: false,
       email,
       password,
-      redirect: true,
       callbackUrl,
     });
 
-    setPending(false);
+    setLoading(false);
+
+    if (!res) return setError("Unknown error");
+    if (res.error) return setError("Invalid email or password");
+
+    router.replace(res.url || callbackUrl);
   }
 
   return (
-    <main style={{ minHeight: "100vh", padding: 24 }}>
-      <h1 style={{ fontSize: 64, fontWeight: 900, letterSpacing: -1 }}>
-        LOGIN
-      </h1>
+    <main className="authShell">
+      <section className="authCard">
+        <div className="authGrid">
+          <div className="leftPane">
+            <div className="kicker">Too Good For Merch</div>
+            <h1 className="h1">ENTER STUDIO</h1>
+            <p className="p">
+              Login to access your studio. Your session is protected and the /studio route is guarded by middleware.
+            </p>
+          </div>
 
-      <form onSubmit={onSubmit} style={{ marginTop: 24, maxWidth: 420, display: "grid", gap: 12 }}>
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}>
-            Email
-          </span>
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            required
-            autoComplete="email"
-            style={{ height: 44, border: "1px solid #00000033", padding: "0 12px" }}
-          />
-        </label>
+          <div className="rightPane">
+            <form className="form" onSubmit={onSubmit}>
+              <label className="label">
+                <span className="labelText">Email</span>
+                <input
+                  className="input"
+                  type="email"
+                  placeholder="you@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  autoComplete="email"
+                />
+              </label>
 
-        <label style={{ display: "grid", gap: 6 }}>
-          <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}>
-            Password
-          </span>
-          <input
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            required
-            autoComplete="current-password"
-            style={{ height: 44, border: "1px solid #00000033", padding: "0 12px" }}
-          />
-        </label>
+              <label className="label">
+                <span className="labelText">Password</span>
+                <input
+                  className="input"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  autoComplete="current-password"
+                />
+              </label>
 
-        {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
+              {error ? <div className="error">{error}</div> : null}
 
-        <button
-          type="submit"
-          disabled={pending}
-          style={{
-            height: 44,
-            border: "1px solid black",
-            background: "black",
-            color: "white",
-            padding: "0 16px",
-            width: "fit-content",
-            textTransform: "uppercase",
-            letterSpacing: 2,
-            opacity: pending ? 0.6 : 1,
-          }}
-        >
-          {pending ? "Logging in..." : "Login"}
-        </button>
+              <div className="btnRow">
+                <button className="btn" type="submit" disabled={loading}>
+                  {loading ? "Logging in..." : "Login"}
+                </button>
 
-        <a
-          href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}
-          style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}
-        >
-          Create account
-        </a>
-      </form>
+                <a className="link" href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
+                  Create account
+                </a>
+              </div>
+
+              <a className="link" href="/">
+                Back to home
+              </a>
+            </form>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }

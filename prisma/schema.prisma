@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,27 +9,167 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  ADMIN
+  USER
+}
+
+enum BuildStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProductType {
+  FITTED
+  OVERSIZED
+  CUSTOM
+}
+
+enum GarmentColor {
+  BLACK
+  WHITE
+  CUSTOM
+}
+
+enum FabricType {
+  ESSENTIALS_170
+  SIGNATURE_200
+  HEAVYWEIGHT_300
+}
+
+enum AssetStatus {
+  PENDING_UPLOAD
+  READY
+  FAILED
+}
+
+enum PlacementType {
+  LEFT_CHEST
+  RIGHT_CHEST
+  RIGHT_SLEEVE
+  LEFT_SLEEVE
+  CENTER_FRONT
+  FULL_FRONT
+  CENTER_BACK
+  FULL_BACK
+}
+
 model User {
   id           String    @id @default(cuid())
   email        String?   @unique
-  createdAt    DateTime  @default(now())
   phone        String?   @unique
-  updatedAt    DateTime  @updatedAt
   passwordHash String?
   role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   accounts     Account[]
+  sessions     Session[]
+
   builds       Build[]
   orders       Order[]
-  sessions     Session[]
 }
 
 model Build {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  name      String?
+  status    BuildStatus @default(ACTIVE)
+
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id])
+
+  draft     BuildDraft?
+  assets    Asset[]
+  designs   Design[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BuildDraft {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  buildId   String      @unique
+  build     Build       @relation(fields: [buildId], references: [id], onDelete: Cascade)
+
+  product   ProductType?
+  color     GarmentColor?
+  fabric    FabricType?
+  quantity  Int         @default(1)
+
+  customNotes    String?
+
+  primaryAssetId String?
+  primaryAsset   Asset? @relation("DraftPrimaryAsset", fields: [primaryAssetId], references: [id], onDelete: SetNull)
+
+  @@index([product])
+  @@index([color])
+  @@index([fabric])
+}
+
+model Asset {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  buildId   String
+  build     Build       @relation(fields: [buildId], references: [id], onDelete: Cascade)
+
+  status    AssetStatus @default(PENDING_UPLOAD)
+
+  fileName  String
+  mimeType  String?
+  sizeBytes Int?
+
+  // Phase 5+
+  storageKey String?
+  url        String?
+
+  usedAsPrimaryIn BuildDraft[] @relation("DraftPrimaryAsset")
+
+  placements DesignPlacement[]
+
+  @@index([buildId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Design {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  buildId   String
+  build     Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+
   name      String?
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
+
+  placements DesignPlacement[]
+
+  @@index([buildId])
+  @@index([createdAt])
+}
+
+model DesignPlacement {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+
+  designId  String
+  design    Design        @relation(fields: [designId], references: [id], onDelete: Cascade)
+
+  placement PlacementType
+
+  assetId   String
+  asset     Asset         @relation(fields: [assetId], references: [id], onDelete: Restrict)
+
+  @@unique([designId, placement])
+  @@index([assetId])
+  @@index([placement])
 }
 
 model Order {
@@ -36,18 +178,26 @@ model Order {
   updatedAt DateTime    @updatedAt
   status    String      @default("draft")
   total     Int         @default(0)
+
   userId    String?
   user      User?       @relation(fields: [userId], references: [id])
   items     OrderItem[]
+
+  @@index([userId])
+  @@index([createdAt])
 }
 
 model OrderItem {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
+
   orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
   qty       Int      @default(1)
   unitPrice Int      @default(0)
-  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
 }
 
 model Account {
@@ -85,9 +235,4 @@ model VerificationToken {
   expires    DateTime
 
   @@unique([identifier, token])
-}
-
-enum Role {
-  ADMIN
-  USER
 }

@@ -54,3 +54,175 @@ h2, h3, h4, h5, h6,
   white-space:nowrap;
   border:0;
 }
+
+/* ===== Auth UI (Login/Register) ===== */
+
+:root {
+  --bg: #ffffff;
+  --fg: #0b0b0b;
+  --muted: rgba(0, 0, 0, 0.6);
+  --line: rgba(0, 0, 0, 0.12);
+  --card: rgba(255, 255, 255, 0.8);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.08);
+}
+
+.authPage {
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.authHeader {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding: 20px 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(12px);
+}
+
+.authBrand {
+  font-family: var(--font-league, system-ui);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.authRight {
+  display: flex;
+  gap: 14px;
+}
+
+.authLink {
+  font-size: 13px;
+  text-decoration: none;
+  color: rgba(0, 0, 0, 0.75);
+  border-bottom: 1px solid transparent;
+}
+.authLink:hover {
+  border-bottom-color: rgba(0, 0, 0, 0.35);
+  color: rgba(0, 0, 0, 0.95);
+}
+
+.authMain {
+  padding: 56px 20px 80px;
+  display: grid;
+  place-items: center;
+}
+
+.authCard {
+  width: min(520px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  padding: 28px;
+}
+
+.authTitleWrap {
+  margin-bottom: 18px;
+}
+
+.authTitle {
+  margin: 0;
+  font-family: var(--font-league, system-ui);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-size: 40px;
+  line-height: 1.05;
+}
+
+.authSubtitle {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.authBody {
+  margin-top: 18px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 12px;
+}
+
+.labelRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  color: rgba(0, 0, 0, 0.7);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 12px;
+  font-size: 14px;
+  outline: none;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.input:focus {
+  border-color: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.06);
+}
+
+.btn {
+  border: 1px solid rgba(0, 0, 0, 0.22);
+  background: #0b0b0b;
+  color: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.errorBox {
+  margin-top: 10px;
+  border: 1px solid rgba(220, 38, 38, 0.25);
+  background: rgba(220, 38, 38, 0.06);
+  color: rgb(185, 28, 28);
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 13px;
+}
+
+.smallNote {
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.authFooter {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 13px;
+}
