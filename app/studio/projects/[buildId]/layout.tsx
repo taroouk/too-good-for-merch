@@ -1,9 +1,14 @@
 // app/studio/projects/[buildId]/layout.tsx
 import Link from "next/link";
-import { ReactNode } from "react";
+import type { ReactNode } from "react";
 
-export default function ProjectLayout({ children, params }: { children: ReactNode; params: { buildId: string } }) {
-  const { buildId } = params;
+type Props = {
+  children: ReactNode;
+  params: { buildId: string };
+};
+
+export default function ProjectLayout({ children, params }: Props) {
+  const buildId = params.buildId;
 
   return (
     <div className="space-y-4">
@@ -24,6 +29,7 @@ export default function ProjectLayout({ children, params }: { children: ReactNod
           Settings
         </Link>
       </div>
+
       {children}
     </div>
   );
