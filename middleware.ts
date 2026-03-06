@@ -1,26 +1,27 @@
 import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import type { NextRequest } from "next/server";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (!pathname.startsWith("/studio")) {
-    return NextResponse.next();
-  }
+  if (pathname.startsWith("/studio")) {
+    const token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET,
+    });
 
-  const token = await getToken({
-    req,
-    secret: process.env.NEXTAUTH_SECRET,
-    // 👇 دي أهم إضافة
-    secureCookie: true,
-  });
+    // مش مسجل دخول
+    if (!token) {
+      const loginUrl = new URL("/login", req.url);
+      loginUrl.searchParams.set("callbackUrl", req.url);
+      return NextResponse.redirect(loginUrl);
+    }
 
-  if (!token) {
-    const url = req.nextUrl.clone();
-    url.pathname = "/login";
-    url.searchParams.set("callbackUrl", req.nextUrl.pathname);
-    return NextResponse.redirect(url);
+    // لازم Admin
+    if ((token as any).role !== "ADMIN") {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
   }
 
   return NextResponse.next();

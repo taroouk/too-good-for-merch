@@ -1,17 +1,15 @@
 "use client";
 
-import "@/app/auth.css";
 import { signIn } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 export default function RegisterClient() {
   const sp = useSearchParams();
-  const callbackUrl = useMemo(() => sp.get("callbackUrl") ?? "/studio", [sp]);
+  const callbackUrl = sp.get("callbackUrl") ?? "/studio";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,75 +31,73 @@ export default function RegisterClient() {
       return;
     }
 
-    // auto login
     await signIn("credentials", { email, password, redirect: true, callbackUrl });
     setPending(false);
   }
 
   return (
-    <main className="authShell">
-      <section className="authCard">
-        <div className="authGrid">
-          <div className="leftPane">
-            <div className="kicker">Too Good For Merch</div>
-            <h1 className="h1">CREATE ACCOUNT</h1>
-            <p className="p">
-              Create your account then we’ll sign you in automatically and send you to the studio.
-            </p>
+    <main style={{ minHeight: "100vh", padding: 24 }}>
+      <h1 style={{ fontSize: 64, fontWeight: 900, letterSpacing: -1 }}>
+        CREATE ACCOUNT
+      </h1>
 
-            <div className="smallNote">
-              Password must be at least <b>8</b> characters.
-            </div>
-          </div>
+      <form onSubmit={onSubmit} style={{ marginTop: 24, maxWidth: 420, display: "grid", gap: 12 }}>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}>
+            Email
+          </span>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            required
+            autoComplete="email"
+            style={{ height: 44, border: "1px solid #00000033", padding: "0 12px" }}
+          />
+        </label>
 
-          <div className="rightPane">
-            <form className="form" onSubmit={onSubmit}>
-              <label className="label">
-                <span className="labelText">Email</span>
-                <input
-                  className="input"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  type="email"
-                  required
-                  autoComplete="email"
-                  placeholder="you@email.com"
-                />
-              </label>
+        <label style={{ display: "grid", gap: 6 }}>
+          <span style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}>
+            Password (min 8)
+          </span>
+          <input
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            minLength={8}
+            required
+            autoComplete="new-password"
+            style={{ height: 44, border: "1px solid #00000033", padding: "0 12px" }}
+          />
+        </label>
 
-              <label className="label">
-                <span className="labelText">Password</span>
-                <input
-                  className="input"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  type="password"
-                  minLength={8}
-                  required
-                  autoComplete="new-password"
-                  placeholder="min 8 chars"
-                />
-              </label>
+        {error ? <p style={{ color: "crimson" }}>{error}</p> : null}
 
-              {error ? <div className="error">{error}</div> : null}
+        <button
+          type="submit"
+          disabled={pending}
+          style={{
+            height: 44,
+            border: "1px solid black",
+            background: "black",
+            color: "white",
+            padding: "0 16px",
+            width: "fit-content",
+            textTransform: "uppercase",
+            letterSpacing: 2,
+            opacity: pending ? 0.6 : 1,
+          }}
+        >
+          {pending ? "Creating..." : "Create"}
+        </button>
 
-              <div className="btnRow">
-                <button className="btn" type="submit" disabled={pending}>
-                  {pending ? "Creating..." : "Create"}
-                </button>
-
-                <a className="link" href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
-                  Back to login
-                </a>
-              </div>
-
-              <a className="link" href="/">
-                Back to home
-              </a>
-            </form>
-          </div>
-        </div>
-      </section>
+        <a
+          href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}
+          style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: 2, opacity: 0.7 }}
+        >
+          Back to login
+        </a>
+      </form>
     </main>
   );
 }

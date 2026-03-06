@@ -9,12 +9,11 @@ const WHATSAPP_MESSAGE =
 
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
-
 function HeroTypewriterRestart() {
   const elRef = useRef<HTMLSpanElement | null>(null);
 
   const lines = useMemo(
-    () => ["FOR", "ARTISTS.", "EVENTS.", "BRANDS.", "THAT TAKE MERCH SERIOUSLY."],
+    () => ["FOR ARTISTS. EVENTS. BRANDS.", "THAT TAKE MERCH SERIOUSLY."],
     []
   );
 
@@ -27,8 +26,8 @@ function HeroTypewriterRestart() {
     let raf = 0;
     let last = performance.now();
 
-    const TYPE_SPEED = 60;
-    const HOLD_MS = 1000;
+    const TYPE_SPEED = 45;
+    const HOLD_MS = 1200;
     const GAP_MS = 120;
 
     let holdUntil = 0;
@@ -104,9 +103,7 @@ export default function HomePage() {
   return (
     <main className="lp" id="hero">
       <section className="hero">
-        <div className="heroMedia">
-          <img src="/images/hero.jpg" alt="Hero" />
-        </div>
+        <div className="heroMedia" />
         <div className="heroInner">
           <HeroTypewriterRestart />
         </div>
@@ -115,9 +112,7 @@ export default function HomePage() {
       <section className="enter">
         <div className="enterInner">
           <span className="enterWord">ENTER</span>
-          <Link href="/studio" className="enterPanel">
-            <img src="/images/enter.jpg" alt="Enter Studio" />
-          </Link>
+          <Link href="/studio" className="enterPanel" aria-label="Enter Studio" />
           <span className="enterWord">STUDIO</span>
         </div>
       </section>
@@ -136,12 +131,10 @@ export default function HomePage() {
 
         <div className="lpContainer">
           <div className="grid">
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/taylor.jpg" alt="Taylor Swift Merch" />
-              </div>
+            <article className="card featured">
+              <div className="cardMedia" />
               <div>
-                <h2>TAYLOR SWIFT | ERAS TOUR MERCH</h2>
+                <h3>TAYLOR SWIFT | ERAS TOUR MERCH</h3>
                 <p>2023 – 2024</p>
                 <p>
                   <strong>+1M printed T-shirts & Hoodies</strong>
@@ -149,36 +142,34 @@ export default function HomePage() {
               </div>
             </article>
 
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/artists.jpg" alt="Artists Merch" />
-              </div>
-              <div>
-                <h2>ARTISTS | LICENSED MERCH</h2>
-                <p>2023 – present</p>
-                <p>
-                  <strong>+100K printed T-shirts & Hoodies</strong>
-                </p>
-              </div>
-            </article>
+            <div className="stack">
+              <article className="card">
+                <div className="cardMedia" />
+                <div className="meta">
+                  <h3>ARTISTS | LICENSED MERCH</h3>
+                  <p>2023 – present</p>
+                  <p>
+                    <strong>+100K printed T-shirts & Hoodies</strong>
+                  </p>
+                </div>
+              </article>
 
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/tv.jpg" alt="TV Merch" />
-              </div>
-              <div>
-                <h2>TV & MOVIES | LICENSED MERCH</h2>
-                <p>2023 – present</p>
-                <p>
-                  <strong>+100K printed T-shirts & Hoodies</strong>
-                </p>
-              </div>
-            </article>
+              <article className="card">
+                <div className="cardMedia" />
+                <div className="meta">
+                  <h3>TV & MOVIES | LICENSED MERCH</h3>
+                  <p>2023 – present</p>
+                  <p>
+                    <strong>+100K printed T-shirts & Hoodies</strong>
+                  </p>
+                </div>
+              </article>
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="section borderTop boutiqueSection">
+      <section className="section borderTop">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done boutique runs, too</h2>
           <p className="sectionText">
@@ -192,12 +183,10 @@ export default function HomePage() {
 
         <div className="lpContainer">
           <div className="grid">
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/wedding1.jpg" alt="Paris Wedding" />
-              </div>
+            <article className="card featured">
+              <div className="cardMedia" />
               <div>
-                <h2>MK wedding | PARIS</h2>
+                <h3>MK wedding | PARIS</h3>
                 <p>2024</p>
                 <p>
                   <strong>30 printed T-shirts</strong>
@@ -206,11 +195,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia">
-                <img src="/images/wedding2.jpg" alt="Gouna Wedding" />
-              </div>
+              <div className="cardMedia" />
               <div>
-                <h2>KN WEDDING | GOUNA</h2>
+                <h3>KN WEDDING | GOUNA</h3>
                 <p>2024</p>
                 <p>
                   <strong>50 printed T-shirts</strong>
@@ -219,11 +206,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia">
-                <img src="/images/wedding3.jpg" alt="Cairo Wedding" />
-              </div>
+              <div className="cardMedia" />
               <div>
-                <h2>FA WEDDING | CAIRO</h2>
+                <h3>FA WEDDING | CAIRO</h3>
                 <p>2026</p>
                 <p>
                   <strong>100 printed T-shirts</strong>
@@ -245,9 +230,7 @@ export default function HomePage() {
             <a href="#">Instagram</a>
             <a href="#">TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp</a>
-            <a href="mailto:hello@toogoodformerch.com" target="_blank" rel="noopener">
-              Email
-            </a>
+            <a href="mailto:hello@toogoodformerch.com" target="_blank" rel="noopener">Email</a>
           </div>
         </div>
 
