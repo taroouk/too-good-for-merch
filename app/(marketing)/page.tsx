@@ -104,7 +104,9 @@ export default function HomePage() {
   return (
     <main className="lp" id="hero">
       <section className="hero">
-        <div className="heroMedia" />
+        <div className="heroMedia">
+          <img src="/images/hero.jpg" alt="Hero" />
+        </div>
         <div className="heroInner">
           <HeroTypewriterRestart />
         </div>
@@ -113,12 +115,13 @@ export default function HomePage() {
       <section className="enter">
         <div className="enterInner">
           <span className="enterWord">ENTER</span>
-          <Link href="/studio" className="enterPanel" aria-label="Enter Studio" />
+          <Link href="/studio" className="enterPanel">
+            <img src="/images/enter.jpg" alt="Enter Studio" />
+          </Link>
           <span className="enterWord">STUDIO</span>
         </div>
       </section>
 
-      {/* ✅ OUR WORK - SCALE (نفس شكل البوتيك بالظبط: 3 كروت متساويين) */}
       <section className="section our-work" id="our-work">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done this at scale</h2>
@@ -134,7 +137,9 @@ export default function HomePage() {
         <div className="lpContainer">
           <div className="grid">
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/taylor.jpg" alt="Taylor Swift Merch" />
+              </div>
               <div>
                 <h2>TAYLOR SWIFT | ERAS TOUR MERCH</h2>
                 <p>2023 – 2024</p>
@@ -145,7 +150,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/artists.jpg" alt="Artists Merch" />
+              </div>
               <div>
                 <h2>ARTISTS | LICENSED MERCH</h2>
                 <p>2023 – present</p>
@@ -156,7 +163,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/tv.jpg" alt="TV Merch" />
+              </div>
               <div>
                 <h2>TV & MOVIES | LICENSED MERCH</h2>
                 <p>2023 – present</p>
@@ -169,8 +178,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ✅ BOUTIQUE (برضو 3 كروت متساويين - شلت featured) */}
-      <section className="section borderTop">
+      <section className="section borderTop boutiqueSection">
         <div className="lpContainer narrow">
           <h2 className="sectionTitle">we’ve done boutique runs, too</h2>
           <p className="sectionText">
@@ -185,7 +193,9 @@ export default function HomePage() {
         <div className="lpContainer">
           <div className="grid">
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/wedding1.jpg" alt="Paris Wedding" />
+              </div>
               <div>
                 <h2>MK wedding | PARIS</h2>
                 <p>2024</p>
@@ -196,7 +206,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/wedding2.jpg" alt="Gouna Wedding" />
+              </div>
               <div>
                 <h2>KN WEDDING | GOUNA</h2>
                 <p>2024</p>
@@ -207,7 +219,9 @@ export default function HomePage() {
             </article>
 
             <article className="card">
-              <div className="cardMedia" />
+              <div className="cardMedia">
+                <img src="/images/wedding3.jpg" alt="Cairo Wedding" />
+              </div>
               <div>
                 <h2>FA WEDDING | CAIRO</h2>
                 <p>2026</p>
@@ -231,7 +245,9 @@ export default function HomePage() {
             <a href="#">Instagram</a>
             <a href="#">TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp</a>
-            <a href="mailto:hello@toogoodformerch.com" target="_blank" rel="noopener">Email</a>
+            <a href="mailto:hello@toogoodformerch.com" target="_blank" rel="noopener">
+              Email
+            </a>
           </div>
         </div>
 
