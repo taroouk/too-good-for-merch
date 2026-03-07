@@ -1,12 +1,10 @@
 // src/studio/ui/BuilderClient.tsx
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import type { BuildDraft, FabricType, GarmentColor, ProductType } from "@prisma/client";
 import { actionUpdateDraft } from "src/actions/build-actions";
-import { computePrice } from "src/pricing/engine";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
-import type { PricingResult } from "src/pricing/types";
 
 type DraftDTO = Pick<
   BuildDraft,
@@ -33,16 +31,6 @@ export default function BuilderClient({
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<DraftDTO>(draft);
 
-  const pricing: PricingResult = useMemo(() => {
-    return computePrice({
-      product: state.product,
-      color: state.color,
-      fabric: state.fabric,
-      quantity: state.quantity ?? 1,
-      placementsCount,
-    });
-  }, [state, placementsCount]);
-
   function save(next: DraftDTO) {
     setState(next);
     const fd = new FormData();
@@ -56,13 +44,12 @@ export default function BuilderClient({
     startTransition(() => actionUpdateDraft(buildId, fd));
   }
 
-  const isCustom = state.product === "CUSTOM";
   const qty = state.quantity ?? 1;
   const isBulk = qty >= 501;
-  const needsQuote = pricing.mode === "QUOTE" || isCustom || isBulk;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
+      {/* Left: Controls */}
       <div className="space-y-6">
         <div>
           <div className="text-xl font-semibold">{buildName}</div>
@@ -87,42 +74,6 @@ export default function BuilderClient({
               </button>
             ))}
           </div>
-
-          {isCustom && (
-            <div className="border rounded-lg p-3 text-sm space-y-2">
-              <div className="font-medium">Custom Garment Request</div>
-              <div className="text-gray-600">
-                Custom garment constructions are not available for instant checkout.
-                We’ll review your request and provide a tailored quote.
-              </div>
-              <label className="block text-sm">
-                Notes
-                <textarea
-                  className="mt-1 w-full border rounded-md p-2"
-                  value={state.customNotes ?? ""}
-                  onChange={(e) => save({ ...state, customNotes: e.target.value })}
-                  placeholder="Describe what you need..."
-                />
-              </label>
-              <div className="flex gap-2">
-                <a
-                  className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-                  href={WHATSAPP_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Continue on WhatsApp
-                </a>
-                <button
-                  type="button"
-                  className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-                  onClick={() => save({ ...state, product: "FITTED" })}
-                >
-                  Go back
-                </button>
-              </div>
-            </div>
-          )}
         </section>
 
         <section className="space-y-2">
@@ -176,6 +127,7 @@ export default function BuilderClient({
         <div className="text-xs text-gray-600">{isPending ? "Saving…" : "Saved"}</div>
       </div>
 
+      {/* Right: Preview + Quote */}
       <div className="space-y-4">
         <div className="border rounded-lg p-4">
           <div className="font-medium mb-2">Preview</div>
@@ -186,24 +138,15 @@ export default function BuilderClient({
 
         <div className="border rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="font-medium">{needsQuote ? "Quote" : "Price"}</div>
-            <div className="text-sm text-gray-600">EGP</div>
+            <div className="font-medium">Quote</div>
+            <div className="text-sm text-gray-600">WhatsApp</div>
           </div>
 
-          {pricing.mode === "INSTANT" ? (
-            <>
-              <div className="text-2xl font-semibold">{pricing.total.toLocaleString()}</div>
-              <div className="text-xs text-gray-600">Unit: {pricing.unit.toLocaleString()}</div>
-            </>
-          ) : (
-            <div className="text-sm text-gray-700">
-              {pricing.reason === "BULK"
-                ? "Bulk orders (501+) require a custom quote."
-                : pricing.reason === "CUSTOM_PRODUCT"
-                  ? "Custom product requires a tailored quote."
-                  : "Pricing table not set yet — request a quote."}
-            </div>
-          )}
+          <div className="text-sm text-gray-700">
+            {isBulk
+              ? "Bulk orders (501+) require a custom quote on WhatsApp."
+              : "Request a quote on WhatsApp. We’ll ask for the details we need."}
+          </div>
 
           <label className="block text-sm">
             Quantity
@@ -216,23 +159,14 @@ export default function BuilderClient({
             />
           </label>
 
-          {needsQuote ? (
-            <a
-              className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50 text-center block"
-              href={WHATSAPP_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
-              Request quote on WhatsApp
-            </a>
-          ) : (
-            <button
-              className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50"
-              type="button"
-            >
-              Add to bag (Phase 5)
-            </button>
-          )}
+          <a
+            className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50 text-center block"
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Request quote on WhatsApp
+          </a>
         </div>
       </div>
     </div>
