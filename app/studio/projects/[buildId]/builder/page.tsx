@@ -4,7 +4,11 @@ import { requireUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
 
-export default async function BuilderPage({ params }: { params: Promise<{ buildId: string }> }) {
+export default async function BuilderPage({
+  params,
+}: {
+  params: Promise<{ buildId: string }>;
+}) {
   const { buildId } = await params;
 
   const userId = await requireUserId();
@@ -39,10 +43,10 @@ export default async function BuilderPage({ params }: { params: Promise<{ buildI
 
   return (
     <BuilderClient
-  buildId={build.id}
-  buildName={build.name ?? "Untitled"}
-  draft={build.draft}
-  placementsCount={placementsCount}
-/>
+      buildId={build.id}
+      buildName={build.name ?? "Untitled"}
+      draft={build.draft}
+      placementsCount={placementsCount}
+    />
   );
 }
