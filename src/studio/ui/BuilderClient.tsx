@@ -6,26 +6,32 @@ import type { BuildDraft, FabricType, GarmentColor, ProductType } from "@prisma/
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { computePriceStub } from "src/pricing/engine";
 
-type DraftDTO = Pick<BuildDraft, "product" | "color" | "fabric" | "quantity" | "customNotes" | "primaryAssetId">;
+type DraftDTO = Pick<
+  BuildDraft,
+  "product" | "color" | "fabric" | "quantity" | "customNotes" | "primaryAssetId"
+>;
 
 function pill(active: boolean) {
-  return `px-3 py-1 rounded-full border text-sm ${active ? "bg-black text-white" : "hover:bg-gray-50"}`;
+  return `px-3 py-1 rounded-full border text-sm ${
+    active ? "bg-black text-white" : "hover:bg-gray-50"
+  }`;
 }
 
 export default function BuilderClient({
   buildId,
   buildName,
   draft,
+  placementsCount,
 }: {
   buildId: string;
   buildName: string;
   draft: DraftDTO;
+  placementsCount: number;
 }) {
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<DraftDTO>(draft);
 
   const pricing = useMemo(() => {
-    const placementsCount = 0;
     return computePriceStub({
       product: state.product,
       color: state.color,
@@ -33,7 +39,7 @@ export default function BuilderClient({
       quantity: state.quantity ?? 1,
       placementsCount,
     });
-  }, [state]);
+  }, [state, placementsCount]);
 
   function save(next: DraftDTO) {
     setState(next);
@@ -68,7 +74,11 @@ export default function BuilderClient({
                 className={pill(state.product === v)}
                 onClick={() => save({ ...state, product: v as ProductType })}
               >
-                {v === "FITTED" ? "Fitted T-shirt" : v === "OVERSIZED" ? "Oversized T-shirt" : "Custom"}
+                {v === "FITTED"
+                  ? "Fitted T-shirt"
+                  : v === "OVERSIZED"
+                    ? "Oversized T-shirt"
+                    : "Custom"}
               </button>
             ))}
           </div>
@@ -77,7 +87,8 @@ export default function BuilderClient({
             <div className="border rounded-lg p-3 text-sm space-y-2">
               <div className="font-medium">Custom Garment Request</div>
               <div className="text-gray-600">
-                Custom garment constructions are not available for instant checkout. We’ll review your request and provide a tailored quote.
+                Custom garment constructions are not available for instant checkout.
+                We’ll review your request and provide a tailored quote.
               </div>
               <label className="block text-sm">
                 Notes
@@ -89,7 +100,12 @@ export default function BuilderClient({
                 />
               </label>
               <div className="flex gap-2">
-                <a className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50" href="https://wa.me/" target="_blank" rel="noreferrer">
+                <a
+                  className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
+                  href="https://wa.me/"
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   Continue on WhatsApp
                 </a>
                 <button
@@ -108,7 +124,12 @@ export default function BuilderClient({
           <div className="font-medium">2) Colour</div>
           <div className="flex flex-wrap gap-2">
             {(["BLACK", "WHITE", "CUSTOM"] as const).map((v) => (
-              <button key={v} type="button" className={pill(state.color === v)} onClick={() => save({ ...state, color: v as GarmentColor })}>
+              <button
+                key={v}
+                type="button"
+                className={pill(state.color === v)}
+                onClick={() => save({ ...state, color: v as GarmentColor })}
+              >
                 {v}
               </button>
             ))}
@@ -120,7 +141,9 @@ export default function BuilderClient({
           <select
             className="w-full border rounded-md p-2 text-sm"
             value={state.fabric ?? ""}
-            onChange={(e) => save({ ...state, fabric: (e.target.value || null) as FabricType | null })}
+            onChange={(e) =>
+              save({ ...state, fabric: (e.target.value || null) as FabricType | null })
+            }
           >
             <option value="">Select fabric…</option>
             <option value="ESSENTIALS_170">Essentials · 170 GSM</option>
@@ -131,7 +154,9 @@ export default function BuilderClient({
 
         <section className="space-y-2">
           <div className="font-medium">4) Upload artwork</div>
-          <div className="text-sm text-gray-600">Phase 4: upload storage is stubbed. Storage wiring comes in Phase 5.</div>
+          <div className="text-sm text-gray-600">
+            Phase 4: upload storage is stubbed. Storage wiring comes in Phase 5.
+          </div>
           <a className="text-sm underline" href="https://wa.me/" target="_blank" rel="noreferrer">
             Request artwork help via WhatsApp
           </a>
@@ -140,6 +165,7 @@ export default function BuilderClient({
         <section className="space-y-2">
           <div className="font-medium">5) Placement</div>
           <div className="text-sm text-gray-600">Phase 4: placements managed in Designs tab.</div>
+          <div className="text-xs text-gray-600">Current placements: {placementsCount}</div>
         </section>
 
         <div className="text-xs text-gray-600">{isPending ? "Saving…" : "Saved"}</div>
