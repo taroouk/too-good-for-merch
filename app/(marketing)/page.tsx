@@ -115,7 +115,7 @@ export default function HomePage() {
       <section className="enter">
         <div className="enterInner">
           <span className="enterWord">ENTER</span>
-          <Link href="/studio/page" className="enterPanel">
+          <Link href="/studio" className="enterPanel">
             <img src="/images/enter.jpg" alt="Enter Studio" />
           </Link>
           <span className="enterWord">STUDIO</span>

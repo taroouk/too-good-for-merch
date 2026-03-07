@@ -58,7 +58,7 @@ export default function MarketingLayout({
         </Link>
 
         <nav className="marketingNav marketingNavRight" aria-label="Account links">
-          <Link href="/#account">ACCOUNT</Link>
+          <Link href="/ligin/page">ACCOUNT</Link>
           <Link href="/#wishlist">WISHLIST</Link>
           <Link href="/#bag">BAG (0)</Link>
         </nav>
