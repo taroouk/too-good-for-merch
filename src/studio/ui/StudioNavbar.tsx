@@ -4,11 +4,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-type Props = {
-  buildId?: string;
-};
-
-const LOGO_SRC = "/logo.svg"; // غيّرها لو اسم اللوجو مختلف (مثلاً /logo.png)
+const LOGO_SRC = "/logo.svg"; // غيّر لو اسم مختلف
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -22,8 +18,8 @@ function NavLink({ href, label }: { href: string; label: string }) {
     <Link
       href={href}
       className={cn(
-        "px-3 py-2 text-sm transition-colors",
-        active ? "font-semibold underline" : "hover:underline text-gray-700"
+        "px-3 py-2 text-sm transition-colors rounded-md",
+        active ? "font-semibold underline" : "hover:bg-gray-50 hover:underline text-gray-700"
       )}
     >
       {label}
@@ -31,18 +27,27 @@ function NavLink({ href, label }: { href: string; label: string }) {
   );
 }
 
-export default function StudioNavbar({ buildId }: Props) {
+function extractBuildId(pathname: string): string | null {
+  // matches: /studio/projects/<id> or /studio/projects/<id>/builder...
+  const m = pathname.match(/^\/studio\/projects\/([^/]+)(?:\/|$)/);
+  if (!m) return null;
+  const id = m[1];
+  if (!id || id === "new") return null;
+  return id;
+}
+
+export default function StudioNavbar() {
+  const pathname = usePathname();
+  const buildId = extractBuildId(pathname);
+
   return (
     <header className="border-b">
-      <div className="px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-5">
-          {/* Logo */}
+      <div className="px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-4">
           <Link href="/studio/projects" className="flex items-center">
-            {/* استخدام img عادي عشان ما نتلخبطش لو اللوجو svg */}
             <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
           </Link>
 
-          {/* Main Links (مهمين زي ما طلبت) */}
           <nav className="flex items-center gap-1">
             <NavLink href="/studio/projects" label="Projects" />
             <NavLink href="/studio/projects/new" label="New Project" />
