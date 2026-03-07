@@ -6,7 +6,7 @@ export default function StudioLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen">
       <StudioNavbar />
-      <main className="px-6 py-6">{children}</main>
+      <main className="px-4 sm:px-6 py-6">{children}</main>
     </div>
   );
 }

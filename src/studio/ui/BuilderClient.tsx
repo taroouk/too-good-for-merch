@@ -49,12 +49,7 @@ function Chip({ text, onRemove }: { text: string; onRemove: () => void }) {
   return (
     <span className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs bg-white">
       {text}
-      <button
-        type="button"
-        className="text-gray-500 hover:text-black"
-        onClick={onRemove}
-        aria-label="Remove"
-      >
+      <button type="button" className="text-gray-500 hover:text-black" onClick={onRemove} aria-label="Remove">
         ×
       </button>
     </span>
@@ -75,7 +70,6 @@ export default function BuilderClient({
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<DraftDTO>(draft);
 
-  // UI-only placement selection (max 4)
   const [placementPick, setPlacementPick] = useState<PlacementKey>("LEFT_CHEST");
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
 
@@ -120,13 +114,12 @@ export default function BuilderClient({
 
   return (
     <div className="w-full">
-      {/* no-scroll layout: fit viewport minus navbar */}
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr_300px] h-[calc(100vh-140px)]">
-        {/* LEFT: Details */}
-        <section className="bg-gray-200 p-8 h-full overflow-hidden rounded-sm">
-          <div className="text-6xl font-medium tracking-tight leading-none">Details</div>
+      <div className="grid gap-4 lg:gap-6 lg:grid-cols-[360px_1fr_300px] lg:h-[calc(100vh-150px)]">
+        {/* Details */}
+        <section className="bg-gray-200 p-5 sm:p-8 lg:p-8 lg:h-full lg:overflow-hidden rounded-sm">
+          <div className="text-4xl sm:text-6xl font-medium tracking-tight leading-none">Details</div>
 
-          <div className="mt-8 space-y-7">
+          <div className="mt-6 sm:mt-8 space-y-6 sm:space-y-7">
             <div className="space-y-3">
               <div className="text-sm font-semibold">1) Product</div>
               <div className="flex flex-wrap gap-2">
@@ -168,9 +161,7 @@ export default function BuilderClient({
               <select
                 className="w-full border rounded-md p-2 text-sm bg-white"
                 value={state.fabric ?? ""}
-                onChange={(e) =>
-                  save({ ...state, fabric: (e.target.value || null) as FabricType | null })
-                }
+                onChange={(e) => save({ ...state, fabric: (e.target.value || null) as FabricType | null })}
               >
                 <option value="">Select fabric…</option>
                 <option value="ESSENTIALS_170">Essentials · 170 GSM</option>
@@ -222,8 +213,7 @@ export default function BuilderClient({
               </div>
 
               <div className="text-xs text-gray-700">
-                Saved placements (Designs tab):{" "}
-                <span className="font-semibold">{placementsCount}</span>
+                Saved placements (Designs tab): <span className="font-semibold">{placementsCount}</span>
               </div>
             </div>
           </div>
@@ -231,15 +221,15 @@ export default function BuilderClient({
           <div className="mt-6 text-xs text-gray-600">{isPending ? "Saving…" : "Saved"}</div>
         </section>
 
-        {/* CENTER: Live Preview placeholder (fills height) */}
-        <section className="h-full flex items-center justify-center">
-          <div className="w-full max-w-[560px] border-[6px] border-black bg-white h-full flex items-center justify-center">
-            <div className="text-6xl font-medium tracking-tight">preview</div>
+        {/* Preview */}
+        <section className="flex items-center justify-center lg:h-full">
+          <div className="w-full max-w-[560px] border-[6px] border-black bg-white h-[420px] sm:h-[520px] lg:h-full flex items-center justify-center">
+            <div className="text-4xl sm:text-6xl font-medium tracking-tight">preview</div>
           </div>
         </section>
 
-        {/* RIGHT: Quote/Quantity (fills height) */}
-        <section className="h-full flex flex-col justify-between pt-8">
+        {/* Quote */}
+        <section className="lg:h-full flex flex-col justify-between border rounded-lg p-4 sm:p-5 bg-white">
           <div className="space-y-4">
             <div>
               <div className="text-lg font-semibold">Quote (WhatsApp)</div>
@@ -248,7 +238,6 @@ export default function BuilderClient({
               </div>
             </div>
 
-            {/* placeholder "price" block */}
             <div>
               <div className="text-2xl font-semibold">— EGP</div>
               <div className="text-xs text-gray-600">Pricing pending confirmation</div>
@@ -267,7 +256,7 @@ export default function BuilderClient({
               </div>
             </div>
 
-            <div className="grid grid-cols-[1fr_1fr] gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <a
                 className="h-11 flex items-center justify-center bg-black text-white text-sm font-medium hover:opacity-90"
                 href={WHATSAPP_URL}
@@ -291,7 +280,7 @@ export default function BuilderClient({
             </div>
           </div>
 
-          <div className="pb-6 text-sm underline text-right">
+          <div className="pt-6 text-sm underline text-right">
             <a href={WHATSAPP_URL} target="_blank" rel="noreferrer">
               Live Assistance
             </a>
