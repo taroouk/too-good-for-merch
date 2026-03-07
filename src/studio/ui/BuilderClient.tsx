@@ -4,7 +4,9 @@
 import { useMemo, useState, useTransition } from "react";
 import type { BuildDraft, FabricType, GarmentColor, ProductType } from "@prisma/client";
 import { actionUpdateDraft } from "src/actions/build-actions";
-import { computePriceStub } from "src/pricing/engine";
+import { computePrice } from "src/pricing/engine";
+import { WHATSAPP_URL } from "src/lib/whatsapp";
+import type { PricingResult } from "src/pricing/types";
 
 type DraftDTO = Pick<
   BuildDraft,
@@ -31,8 +33,8 @@ export default function BuilderClient({
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<DraftDTO>(draft);
 
-  const pricing = useMemo(() => {
-    return computePriceStub({
+  const pricing: PricingResult = useMemo(() => {
+    return computePrice({
       product: state.product,
       color: state.color,
       fabric: state.fabric,
@@ -55,6 +57,9 @@ export default function BuilderClient({
   }
 
   const isCustom = state.product === "CUSTOM";
+  const qty = state.quantity ?? 1;
+  const isBulk = qty >= 501;
+  const needsQuote = pricing.mode === "QUOTE" || isCustom || isBulk;
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -102,7 +107,7 @@ export default function BuilderClient({
               <div className="flex gap-2">
                 <a
                   className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
-                  href="https://wa.me/"
+                  href={WHATSAPP_URL}
                   target="_blank"
                   rel="noreferrer"
                 >
@@ -157,7 +162,7 @@ export default function BuilderClient({
           <div className="text-sm text-gray-600">
             Phase 4: upload storage is stubbed. Storage wiring comes in Phase 5.
           </div>
-          <a className="text-sm underline" href="https://wa.me/" target="_blank" rel="noreferrer">
+          <a className="text-sm underline" href={WHATSAPP_URL} target="_blank" rel="noreferrer">
             Request artwork help via WhatsApp
           </a>
         </section>
@@ -181,12 +186,24 @@ export default function BuilderClient({
 
         <div className="border rounded-lg p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <div className="font-medium">Price</div>
-            <div className="text-sm text-gray-600">{pricing.currency}</div>
+            <div className="font-medium">{needsQuote ? "Quote" : "Price"}</div>
+            <div className="text-sm text-gray-600">EGP</div>
           </div>
 
-          <div className="text-2xl font-semibold">{pricing.total.toLocaleString()}</div>
-          <div className="text-xs text-gray-600">Unit: {pricing.unit.toLocaleString()}</div>
+          {pricing.mode === "INSTANT" ? (
+            <>
+              <div className="text-2xl font-semibold">{pricing.total.toLocaleString()}</div>
+              <div className="text-xs text-gray-600">Unit: {pricing.unit.toLocaleString()}</div>
+            </>
+          ) : (
+            <div className="text-sm text-gray-700">
+              {pricing.reason === "BULK"
+                ? "Bulk orders (501+) require a custom quote."
+                : pricing.reason === "CUSTOM_PRODUCT"
+                  ? "Custom product requires a tailored quote."
+                  : "Pricing table not set yet — request a quote."}
+            </div>
+          )}
 
           <label className="block text-sm">
             Quantity
@@ -194,14 +211,28 @@ export default function BuilderClient({
               className="mt-1 w-full border rounded-md p-2"
               type="number"
               min={1}
-              value={state.quantity ?? 1}
+              value={qty}
               onChange={(e) => save({ ...state, quantity: Number(e.target.value || 1) })}
             />
           </label>
 
-          <button className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50" type="button">
-            Add to bag (Phase 5)
-          </button>
+          {needsQuote ? (
+            <a
+              className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50 text-center block"
+              href={WHATSAPP_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Request quote on WhatsApp
+            </a>
+          ) : (
+            <button
+              className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50"
+              type="button"
+            >
+              Add to bag (Phase 5)
+            </button>
+          )}
         </div>
       </div>
     </div>
