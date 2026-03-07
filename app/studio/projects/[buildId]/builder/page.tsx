@@ -39,10 +39,10 @@ export default async function BuilderPage({ params }: { params: Promise<{ buildI
 
   return (
     <BuilderClient
-      buildId={build.id}
-      buildName={build.name ?? "Untitled"}
-      draft={build.draft}
-      placementsCount={placementsCount}
-    />
+  buildId={build.id}
+  buildName={build.name ?? "Untitled"}
+  draft={build.draft}
+  placementsCount={placementsCount}
+/>
   );
 }
