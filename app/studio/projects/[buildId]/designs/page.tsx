@@ -20,6 +20,10 @@ const PLACEMENTS = [
   { key: "FULL_BACK", label: "Full Back" },
 ] as const;
 
+function cn(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(" ");
+}
+
 export default async function DesignsPage({
   params,
   searchParams,
@@ -45,7 +49,7 @@ export default async function DesignsPage({
       where: { buildId },
       orderBy: { createdAt: "desc" },
       select: { id: true, fileName: true, status: true },
-      take: 100,
+      take: 200,
     }),
     prisma.design.findMany({
       where: { buildId },
@@ -59,7 +63,11 @@ export default async function DesignsPage({
   const placements = activeDesignId
     ? await prisma.designPlacement.findMany({
         where: { designId: activeDesignId },
-        select: { placement: true, assetId: true, asset: { select: { fileName: true } } },
+        select: {
+          placement: true,
+          assetId: true,
+          asset: { select: { fileName: true } },
+        },
       })
     : [];
 
@@ -70,12 +78,14 @@ export default async function DesignsPage({
   const boundRemovePlacement = actionRemovePlacement.bind(null, buildId);
 
   return (
-    <div className="space-y-6">
-      {/* Header responsive */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div className="space-y-5 max-w-6xl">
+      {/* Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Designs</h1>
-          <div className="text-sm text-gray-600">Assign an asset per placement (Phase 4).</div>
+          <div className="text-sm text-gray-600">
+            Assign an asset per placement (Phase 4).
+          </div>
           <div className="text-xs text-gray-500 mt-1">
             Project:{" "}
             <span className="font-medium text-gray-700">
@@ -85,63 +95,94 @@ export default async function DesignsPage({
         </div>
 
         <Link
-          className="text-sm underline hover:no-underline self-start sm:self-auto"
+          className="inline-flex items-center justify-center border rounded-md px-3 py-2 text-sm hover:bg-gray-50 w-full sm:w-auto"
           href={`/studio/projects/${buildId}/assets`}
         >
           Manage assets
         </Link>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
-        {/* Left */}
-        <section className="border rounded-xl p-4 bg-white space-y-4">
+      {/* Content */}
+      <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
+        {/* Left: Designs */}
+        <section className="border rounded-xl bg-white p-4 space-y-4">
           <div className="font-medium">Your Designs</div>
 
-          {/* Form stack on mobile */}
-          <form action={boundCreateDesign} className="flex flex-col gap-2 sm:flex-row">
+          {/* Create */}
+          <form action={boundCreateDesign} className="space-y-2">
             <input
-              className="flex-1 border rounded-md p-2 text-sm"
+              className="w-full border rounded-md p-2 text-sm"
               name="name"
               placeholder="New design name"
               required
               maxLength={120}
             />
-            <button className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50" type="submit">
+            <button
+              className="w-full border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
+              type="submit"
+            >
               Create
             </button>
           </form>
 
+          {/* List */}
           {designs.length === 0 ? (
             <div className="text-sm text-gray-600">No designs yet.</div>
           ) : (
             <div className="space-y-2">
-              {designs.map((d) => (
-                <Link
-                  key={d.id}
-                  href={`/studio/projects/${buildId}/designs?design=${d.id}`}
-                  className={`block border rounded-md p-2 text-sm hover:bg-gray-50 ${
-                    d.id === activeDesignId ? "bg-gray-50" : ""
-                  }`}
-                >
-                  <div className="font-medium">{d.name ?? "Untitled"}</div>
-                  <div className="text-xs text-gray-600">
-                    {new Date(d.updatedAt).toLocaleString()}
-                  </div>
-                </Link>
-              ))}
+              {designs.map((d) => {
+                const active = d.id === activeDesignId;
+                return (
+                  <Link
+                    key={d.id}
+                    href={`/studio/projects/${buildId}/designs?design=${d.id}`}
+                    className={cn(
+                      "block border rounded-lg p-3 text-sm hover:bg-gray-50 transition",
+                      active && "border-black"
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="font-medium truncate">
+                          {d.name ?? "Untitled"}
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {new Date(d.updatedAt).toLocaleString()}
+                        </div>
+                      </div>
+
+                      {active ? (
+                        <span className="text-[11px] border border-black rounded-full px-2 py-1 shrink-0">
+                          Active
+                        </span>
+                      ) : null}
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           )}
         </section>
 
-        {/* Right */}
-        <section className="border rounded-xl p-4 bg-white space-y-4">
-          <div>
-            <div className="font-medium">Placements</div>
-            <div className="text-xs text-gray-600">Choose an asset per placement.</div>
+        {/* Right: Placements */}
+        <section className="border rounded-xl bg-white p-4 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-medium">Placements</div>
+              <div className="text-xs text-gray-600">
+                Choose an asset per placement.
+              </div>
+            </div>
+
+            <div className="text-xs text-gray-500">
+              {activeDesignId ? "Editing" : "No design"}
+            </div>
           </div>
 
           {!activeDesignId ? (
-            <div className="text-sm text-gray-600 border rounded-lg p-4">Create a design first.</div>
+            <div className="text-sm text-gray-600 border rounded-lg p-4">
+              Create a design first.
+            </div>
           ) : assets.length === 0 ? (
             <div className="text-sm text-gray-600 border rounded-lg p-4">
               Add at least 1 asset first from{" "}
@@ -158,8 +199,14 @@ export default async function DesignsPage({
 
                 return (
                   <div key={p.key} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-medium">{p.label}</div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-medium">{p.label}</div>
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          Current: <span className="font-medium">{currentName}</span>
+                        </div>
+                      </div>
+
                       {current?.assetId ? (
                         <form action={boundRemovePlacement}>
                           <input type="hidden" name="designId" value={activeDesignId} />
@@ -174,14 +221,13 @@ export default async function DesignsPage({
                       ) : null}
                     </div>
 
-                    <div className="text-xs text-gray-600">Current: {currentName}</div>
-
-                    {/* Stack on mobile */}
-                    <form action={boundSetPlacementAsset} className="flex flex-col gap-2 sm:flex-row">
+                    {/* Form: mobile stack, desktop inline */}
+                    <form action={boundSetPlacementAsset} className="space-y-2">
                       <input type="hidden" name="designId" value={activeDesignId} />
                       <input type="hidden" name="placement" value={p.key} />
+
                       <select
-                        className="flex-1 border rounded-md p-2 text-sm"
+                        className="w-full border rounded-md p-2 text-sm"
                         name="assetId"
                         defaultValue={current?.assetId ?? ""}
                       >
@@ -192,7 +238,11 @@ export default async function DesignsPage({
                           </option>
                         ))}
                       </select>
-                      <button className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50" type="submit">
+
+                      <button
+                        className="w-full border rounded-md px-3 py-2 text-sm hover:bg-gray-50"
+                        type="submit"
+                      >
                         Save
                       </button>
                     </form>
