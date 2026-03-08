@@ -229,21 +229,6 @@ export default function BuilderClient({
                 <option value="SIGNATURE_200">Signature · 200 GSM</option>
                 <option value="HEAVYWEIGHT_300">Heavyweight · 300 GSM</option>
               </select>
-
-              <div className="text-xs text-gray-700 leading-relaxed">
-                <div>Essentials · 170 GSM</div>
-                <div className="text-gray-600">
-                  Lightweight, breathable, and built for everyday wear. Soft-touch finish with natural airflow for all-day comfort.
-                </div>
-                <div className="mt-2">Signature · 200 GSM</div>
-                <div className="text-gray-600">
-                  Our balanced premium weight. Smooth, buttery, structured, and designed to hold its shape.
-                </div>
-                <div className="mt-2">The Heavyweight · 300 GSM</div>
-                <div className="text-gray-600">
-                  Bold, substantial, and architectural. A durable, high-impact fabric with a clean drape and elevated presence.
-                </div>
-              </div>
             </section>
 
             {/* 4 Upload artwork */}
