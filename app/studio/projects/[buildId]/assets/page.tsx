@@ -40,7 +40,6 @@ export default async function AssetsPage({
 
   return (
     <div className="space-y-6">
-      {/* Header responsive */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Assets</h1>
@@ -63,9 +62,7 @@ export default async function AssetsPage({
         </Link>
       </div>
 
-      {/* Grid responsive */}
       <div className="grid gap-6 lg:grid-cols-[520px_1fr]">
-        {/* Form */}
         <section className="border rounded-xl p-4 bg-white space-y-3">
           <div className="font-medium">Add asset (stub)</div>
 
@@ -80,7 +77,6 @@ export default async function AssetsPage({
               />
             </label>
 
-            {/* Inputs stack on mobile */}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm">
                 MIME type
@@ -115,7 +111,6 @@ export default async function AssetsPage({
           </form>
         </section>
 
-        {/* List */}
         <section className="border rounded-xl p-4 bg-white">
           <div className="flex items-center justify-between">
             <div className="font-medium">Your assets</div>
@@ -127,7 +122,7 @@ export default async function AssetsPage({
               <div className="text-sm text-gray-600">No assets yet.</div>
             ) : (
               <div className="divide-y">
-                {assets.map((a) => (
+                {assets.map((a: (typeof assets)[number]) => (
                   <div
                     key={a.id}
                     className="py-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"

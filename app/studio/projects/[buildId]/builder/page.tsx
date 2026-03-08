@@ -39,7 +39,7 @@ export default async function BuilderPage({
 
   if (!build || !build.draft) return <div className="text-sm text-gray-600">Not found.</div>;
 
-  const placementsCount = build.designs.reduce((acc, d) => acc + d.placements.length, 0);
+  const placementsCount = build.designs.reduce((acc: any, d: { placements: string | any[]; }) => acc + d.placements.length, 0);
 
   return (
     <BuilderClient

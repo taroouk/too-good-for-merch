@@ -20,6 +20,8 @@ const PLACEMENTS = [
   { key: "FULL_BACK", label: "Full Back" },
 ] as const;
 
+type PlacementKey = (typeof PLACEMENTS)[number]["key"];
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -58,7 +60,10 @@ export default async function DesignsPage({
     }),
   ]);
 
-  const activeDesignId = sp.design ?? designs[0]?.id ?? null;
+  type AssetRow = (typeof assets)[number];
+  type DesignRow = (typeof designs)[number];
+
+  const activeDesignId: string | null = sp.design ?? designs[0]?.id ?? null;
 
   const placements = activeDesignId
     ? await prisma.designPlacement.findMany({
@@ -71,7 +76,11 @@ export default async function DesignsPage({
       })
     : [];
 
-  const placementMap = new Map(placements.map((p) => [p.placement, p]));
+  type PlacementRow = (typeof placements)[number];
+
+  const placementMap: Map<PlacementKey, PlacementRow> = new Map(
+    placements.map((p: PlacementRow) => [p.placement as PlacementKey, p])
+  );
 
   const boundCreateDesign = actionCreateDesign.bind(null, buildId);
   const boundSetPlacementAsset = actionSetPlacementAsset.bind(null, buildId);
@@ -79,7 +88,6 @@ export default async function DesignsPage({
 
   return (
     <div className="space-y-5 max-w-6xl">
-      {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Designs</h1>
@@ -102,13 +110,11 @@ export default async function DesignsPage({
         </Link>
       </div>
 
-      {/* Content */}
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
-        {/* Left: Designs */}
+        {/* Left */}
         <section className="border rounded-xl bg-white p-4 space-y-4">
           <div className="font-medium">Your Designs</div>
 
-          {/* Create */}
           <form action={boundCreateDesign} className="space-y-2">
             <input
               className="w-full border rounded-md p-2 text-sm"
@@ -125,12 +131,11 @@ export default async function DesignsPage({
             </button>
           </form>
 
-          {/* List */}
           {designs.length === 0 ? (
             <div className="text-sm text-gray-600">No designs yet.</div>
           ) : (
             <div className="space-y-2">
-              {designs.map((d) => {
+              {designs.map((d: DesignRow) => {
                 const active = d.id === activeDesignId;
                 return (
                   <Link
@@ -164,7 +169,7 @@ export default async function DesignsPage({
           )}
         </section>
 
-        {/* Right: Placements */}
+        {/* Right */}
         <section className="border rounded-xl bg-white p-4 space-y-4">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -194,7 +199,7 @@ export default async function DesignsPage({
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {PLACEMENTS.map((p) => {
-                const current = placementMap.get(p.key as any);
+                const current = placementMap.get(p.key);
                 const currentName = current?.asset?.fileName ?? "None";
 
                 return (
@@ -203,7 +208,8 @@ export default async function DesignsPage({
                       <div>
                         <div className="text-sm font-medium">{p.label}</div>
                         <div className="text-xs text-gray-600 mt-0.5">
-                          Current: <span className="font-medium">{currentName}</span>
+                          Current:{" "}
+                          <span className="font-medium">{currentName}</span>
                         </div>
                       </div>
 
@@ -221,7 +227,6 @@ export default async function DesignsPage({
                       ) : null}
                     </div>
 
-                    {/* Form: mobile stack, desktop inline */}
                     <form action={boundSetPlacementAsset} className="space-y-2">
                       <input type="hidden" name="designId" value={activeDesignId} />
                       <input type="hidden" name="placement" value={p.key} />
@@ -232,7 +237,7 @@ export default async function DesignsPage({
                         defaultValue={current?.assetId ?? ""}
                       >
                         <option value="">— None —</option>
-                        {assets.map((a) => (
+                        {assets.map((a: AssetRow) => (
                           <option key={a.id} value={a.id}>
                             {a.fileName} ({a.status})
                           </option>

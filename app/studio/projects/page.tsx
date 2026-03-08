@@ -3,9 +3,19 @@ import Link from "next/link";
 import { requireUserId } from "src/studio/authz";
 import { listBuildsByUser } from "src/db/builds";
 
+type BuildRow = {
+  id: string;
+  name: string | null;
+  draft?: {
+    product: string | null;
+    fabric: string | null;
+    quantity: number | null;
+  } | null;
+};
+
 export default async function ProjectsPage() {
   const userId = await requireUserId();
-  const builds = await listBuildsByUser(userId);
+  const builds = (await listBuildsByUser(userId)) as BuildRow[];
 
   return (
     <div className="space-y-4">
@@ -25,13 +35,13 @@ export default async function ProjectsPage() {
           {builds.map((b) => (
             <Link
               key={b.id}
-              className="border rounded-lg p-3 hover:bg-gray-50"
-              href={`/studio/projects/${b.id}/builder`}
+              className="block border rounded-lg p-3 hover:bg-gray-50"
+              href={`/studio/projects/${b.id}`}
             >
               <div className="font-medium">{b.name ?? "Untitled"}</div>
-              <div className="text-xs text-gray-600">
-                {b.draft?.product ?? "No product"} · {b.draft?.fabric ?? "No fabric"} · qty{" "}
-                {b.draft?.quantity ?? 1}
+              <div className="text-sm text-gray-600">
+                {(b.draft?.product ?? "No product")} · {(b.draft?.fabric ?? "No fabric")} · qty{" "}
+                {(b.draft?.quantity ?? 1)}
               </div>
             </Link>
           ))}
