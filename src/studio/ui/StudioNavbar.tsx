@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const LOGO_SRC = "/logo.svg";
+const LOGO_SRC = "/logo.svg"; // غيّر لو اسم مختلف
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -41,34 +41,36 @@ export default function StudioNavbar() {
 
   return (
     <header className="border-b bg-white">
-      {/* Row 1: logo + signout same level */}
-      <div className="px-4 sm:px-6 py-3 flex items-center justify-between">
-        <Link href="/studio/projects" className="flex items-center">
-          <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
-        </Link>
+      {/* صف واحد: كل الـ nav على الشمال + signout على اليمين */}
+      <div className="px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+        {/* LEFT: Logo + Nav */}
+        <div className="flex items-center gap-4 min-w-0">
+          <Link href="/studio/projects" className="flex items-center shrink-0">
+            <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
+          </Link>
 
-        <Link className="text-sm hover:underline" href="/api/auth/signout">
+          {/* Nav scroll on mobile */}
+          <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch] min-w-0">
+            <NavLink href="/studio/projects" label="Projects" />
+            <NavLink href="/studio/projects/new" label="New Project" />
+
+            {buildId ? (
+              <>
+                <span className="mx-2 h-5 w-px bg-gray-200 shrink-0" />
+                <NavLink href={`/studio/projects/${buildId}`} label="Overview" />
+                <NavLink href={`/studio/projects/${buildId}/builder`} label="Builder" />
+                <NavLink href={`/studio/projects/${buildId}/assets`} label="Assets" />
+                <NavLink href={`/studio/projects/${buildId}/designs`} label="Designs" />
+                <NavLink href={`/studio/projects/${buildId}/settings`} label="Settings" />
+              </>
+            ) : null}
+          </nav>
+        </div>
+
+        {/* RIGHT: Sign out */}
+        <Link className="text-sm hover:underline shrink-0" href="/api/auth/signout">
           Sign out
         </Link>
-      </div>
-
-      {/* Row 2: links (scroll on mobile) */}
-      <div className="px-2 sm:px-6 pb-2">
-        <nav className="flex items-center gap-1 overflow-x-auto whitespace-nowrap [-webkit-overflow-scrolling:touch]">
-          <NavLink href="/studio/projects" label="Projects" />
-          <NavLink href="/studio/projects/new" label="New Project" />
-
-          {buildId ? (
-            <>
-              <span className="mx-2 h-5 w-px bg-gray-200 shrink-0" />
-              <NavLink href={`/studio/projects/${buildId}`} label="Overview" />
-              <NavLink href={`/studio/projects/${buildId}/builder`} label="Builder" />
-              <NavLink href={`/studio/projects/${buildId}/assets`} label="Assets" />
-              <NavLink href={`/studio/projects/${buildId}/designs`} label="Designs" />
-              <NavLink href={`/studio/projects/${buildId}/settings`} label="Settings" />
-            </>
-          ) : null}
-        </nav>
       </div>
     </header>
   );
