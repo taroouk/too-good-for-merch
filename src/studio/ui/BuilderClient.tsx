@@ -48,6 +48,126 @@ function clampQty(qty: number) {
   return Math.max(1, Math.min(9999, Math.floor(qty)));
 }
 
+function extractHexFromNotes(notes?: string | null): string | null {
+  if (!notes) return null;
+  const m = notes.match(/COLOR_HEX=#[0-9a-fA-F]{6}/);
+  return m ? m[0].replace("COLOR_HEX=", "") : null;
+}
+
+function upsertHexInNotes(notes: string | null | undefined, hex: string): string {
+  const clean = (notes ?? "").trim();
+  const tag = `COLOR_HEX=${hex.toUpperCase()}`;
+
+  if (!clean) return tag;
+
+  if (/COLOR_HEX=#[0-9a-fA-F]{6}/.test(clean)) {
+    return clean.replace(/COLOR_HEX=#[0-9a-fA-F]{6}/, tag);
+  }
+
+  return `${clean}\n${tag}`;
+}
+
+function ColorPaletteButton({
+  active,
+  initialHex,
+  onOpen,
+  onPick,
+}: {
+  active: boolean;
+  initialHex: string;
+  onOpen: () => void;
+  onPick: (hex: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [hex, setHex] = useState(initialHex);
+
+  const presets = [
+    "#111827",
+    "#FFFFFF",
+    "#000000",
+    "#EF4444",
+    "#F97316",
+    "#EAB308",
+    "#22C55E",
+    "#06B6D4",
+    "#3B82F6",
+    "#8B5CF6",
+    "#EC4899",
+    "#94A3B8",
+  ];
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className={cn(
+          "px-4 py-2 rounded-full border text-sm transition flex items-center gap-2",
+          active ? "bg-black text-white border-black" : "bg-white hover:bg-gray-50"
+        )}
+        onClick={() => {
+          onOpen();
+          setOpen((v) => !v);
+        }}
+      >
+        <span className="inline-block h-4 w-4 rounded-full border" style={{ background: hex }} />
+        Custom
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-2 w-[260px] rounded-xl border bg-white p-3 shadow-lg">
+          <div className="text-xs text-gray-600 mb-2">Pick a custom colour</div>
+
+          <div className="grid grid-cols-6 gap-2">
+            {presets.map((c) => (
+              <button
+                key={c}
+                type="button"
+                className={cn(
+                  "h-7 w-7 rounded-full border",
+                  c.toLowerCase() === hex.toLowerCase() ? "ring-2 ring-black" : ""
+                )}
+                style={{ background: c }}
+                onClick={() => {
+                  setHex(c);
+                  onPick(c);
+                  setOpen(false);
+                }}
+                aria-label={`Pick ${c}`}
+                title={c}
+              />
+            ))}
+          </div>
+
+          <div className="mt-3 flex items-center gap-2">
+            <input
+              className="flex-1 border rounded-md p-2 text-xs"
+              value={hex}
+              onChange={(e) => setHex(e.target.value)}
+              placeholder="#RRGGBB"
+            />
+            <button
+              type="button"
+              className="border rounded-md px-3 py-2 text-xs hover:bg-gray-50"
+              onClick={() => {
+                const v = hex.trim();
+                if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
+                onPick(v);
+                setOpen(false);
+              }}
+            >
+              Apply
+            </button>
+          </div>
+
+          <div className="mt-2 text-[11px] text-gray-500">
+            Stored as <code>COLOR_HEX</code> in notes (Phase 4).
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function BuilderClient({
   buildId,
   buildName,
@@ -62,12 +182,11 @@ export default function BuilderClient({
   const [isPending, startTransition] = useTransition();
   const [state, setState] = useState<DraftDTO>(draft);
 
-  // Phase 4 UI placement selection (max 4)
   const [placementPick, setPlacementPick] = useState<PlacementKey>("LEFT_CHEST");
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
-  const isCustom = state.product === "CUSTOM";
+  const isCustomProduct = state.product === "CUSTOM";
 
   // Phase 4: pricing pending. Put Figma number as placeholder.
   const priceText = "5,250 EGP";
@@ -104,6 +223,8 @@ export default function BuilderClient({
   function removePlacement(key: PlacementKey) {
     setSelectedPlacements((prev) => prev.filter((p) => p !== key));
   }
+
+  const customHex = extractHexFromNotes(state.customNotes) ?? "#111827";
 
   return (
     <div className="w-full">
@@ -142,7 +263,7 @@ export default function BuilderClient({
               </div>
 
               {/* Custom popup */}
-              {isCustom && (
+              {isCustomProduct && (
                 <div className="border rounded-lg p-3 bg-white/70 space-y-2 text-sm">
                   <div className="font-semibold">Custom Garment Request</div>
 
@@ -190,7 +311,8 @@ export default function BuilderClient({
             {/* 2 Colour */}
             <section className="space-y-3">
               <div className="text-sm font-semibold">2/ Colour: (pill buttons)</div>
-              <div className="flex flex-wrap gap-2">
+
+              <div className="flex flex-wrap gap-2 items-center">
                 <button
                   type="button"
                   className={pill(state.color === "BLACK")}
@@ -198,6 +320,7 @@ export default function BuilderClient({
                 >
                   Black
                 </button>
+
                 <button
                   type="button"
                   className={pill(state.color === "WHITE")}
@@ -205,14 +328,23 @@ export default function BuilderClient({
                 >
                   White
                 </button>
-                <button
-                  type="button"
-                  className={pill(state.color === "CUSTOM")}
-                  onClick={() => save({ ...state, color: "CUSTOM" as GarmentColor })}
-                >
-                  Custom
-                </button>
+
+                <ColorPaletteButton
+                  active={state.color === "CUSTOM"}
+                  initialHex={customHex}
+                  onOpen={() => save({ ...state, color: "CUSTOM" as GarmentColor })}
+                  onPick={(hex) => {
+                    const nextNotes = upsertHexInNotes(state.customNotes, hex);
+                    save({ ...state, color: "CUSTOM" as GarmentColor, customNotes: nextNotes });
+                  }}
+                />
               </div>
+
+              {state.color === "CUSTOM" && (
+                <div className="text-xs text-gray-600">
+                  Selected custom color: <span className="font-semibold">{extractHexFromNotes(state.customNotes) ?? "—"}</span>
+                </div>
+              )}
             </section>
 
             {/* 3 Fabric */}
@@ -229,6 +361,21 @@ export default function BuilderClient({
                 <option value="SIGNATURE_200">Signature · 200 GSM</option>
                 <option value="HEAVYWEIGHT_300">Heavyweight · 300 GSM</option>
               </select>
+
+              <div className="text-xs text-gray-700 leading-relaxed">
+                <div>Essentials · 170 GSM</div>
+                <div className="text-gray-600">
+                  Lightweight, breathable, and built for everyday wear. Soft-touch finish with natural airflow for all-day comfort.
+                </div>
+                <div className="mt-2">Signature · 200 GSM</div>
+                <div className="text-gray-600">
+                  Our balanced premium weight. Smooth, buttery, structured, and designed to hold its shape.
+                </div>
+                <div className="mt-2">The Heavyweight · 300 GSM</div>
+                <div className="text-gray-600">
+                  Bold, substantial, and architectural. A durable, high-impact fabric with a clean drape and elevated presence.
+                </div>
+              </div>
             </section>
 
             {/* 4 Upload artwork */}
@@ -273,7 +420,6 @@ export default function BuilderClient({
                 </button>
               </div>
 
-              {/* UI chips */}
               {selectedPlacements.length > 0 && (
                 <div className="flex flex-wrap gap-2">
                   {selectedPlacements.map((k) => (
@@ -295,7 +441,8 @@ export default function BuilderClient({
               <div className="text-xs text-gray-600">
                 please add any images for now
                 <br />
-                (Phase 4) Saved placements (Designs tab): <span className="font-semibold">{placementsCount}</span>
+                (Phase 4) Saved placements (Designs tab):{" "}
+                <span className="font-semibold">{placementsCount}</span>
               </div>
             </section>
           </div>
@@ -352,7 +499,6 @@ export default function BuilderClient({
               Instant pricing and shipping estimate for 1-500 pieces
             </div>
 
-            {/* Bulk note */}
             {qty >= 501 && (
               <div className="text-xs text-gray-700">
                 Bulk mode (501+): please request a quote on WhatsApp.
