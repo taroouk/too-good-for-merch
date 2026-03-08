@@ -40,23 +40,32 @@ export default async function AssetsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      {/* Header responsive */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Assets</h1>
           <div className="text-sm text-gray-600">
             Phase 4: DB records only. Real upload in Phase 5.
           </div>
           <div className="text-xs text-gray-500 mt-1">
-            Project: <span className="font-medium text-gray-700">{build.name ?? "Untitled"}</span>
+            Project:{" "}
+            <span className="font-medium text-gray-700">
+              {build.name ?? "Untitled"}
+            </span>
           </div>
         </div>
 
-        <Link className="text-sm underline hover:no-underline" href={`/studio/projects/${buildId}/designs`}>
+        <Link
+          className="text-sm underline hover:no-underline self-start sm:self-auto"
+          href={`/studio/projects/${buildId}/designs`}
+        >
           Go to Designs
         </Link>
       </div>
 
+      {/* Grid responsive */}
       <div className="grid gap-6 lg:grid-cols-[520px_1fr]">
+        {/* Form */}
         <section className="border rounded-xl p-4 bg-white space-y-3">
           <div className="font-medium">Add asset (stub)</div>
 
@@ -71,6 +80,7 @@ export default async function AssetsPage({
               />
             </label>
 
+            {/* Inputs stack on mobile */}
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block text-sm">
                 MIME type
@@ -92,7 +102,10 @@ export default async function AssetsPage({
               </label>
             </div>
 
-            <button className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50" type="submit">
+            <button
+              className="w-full border rounded-md px-4 py-2 text-sm hover:bg-gray-50"
+              type="submit"
+            >
               Add
             </button>
 
@@ -102,6 +115,7 @@ export default async function AssetsPage({
           </form>
         </section>
 
+        {/* List */}
         <section className="border rounded-xl p-4 bg-white">
           <div className="flex items-center justify-between">
             <div className="font-medium">Your assets</div>
@@ -114,16 +128,26 @@ export default async function AssetsPage({
             ) : (
               <div className="divide-y">
                 {assets.map((a) => (
-                  <div key={a.id} className="py-3 flex items-start justify-between gap-4">
+                  <div
+                    key={a.id}
+                    className="py-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+                  >
                     <div className="min-w-0">
-                      <div className="font-medium text-sm truncate">{a.fileName}</div>
-                      <div className="text-xs text-gray-600">
-                        {a.status} · {a.mimeType ?? "unknown"} · {(a.sizeBytes ?? 0).toLocaleString()} bytes
+                      <div className="font-medium text-sm truncate">
+                        {a.fileName}
                       </div>
-                      <div className="text-[11px] text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
+                      <div className="text-xs text-gray-600">
+                        {a.status} · {a.mimeType ?? "unknown"} ·{" "}
+                        {(a.sizeBytes ?? 0).toLocaleString()} bytes
+                      </div>
+                      <div className="text-[11px] text-gray-500">
+                        {new Date(a.createdAt).toLocaleString()}
+                      </div>
                     </div>
 
-                    <div className="text-[11px] text-gray-500">{a.id.slice(0, 8)}…</div>
+                    <div className="text-[11px] text-gray-500 sm:text-right">
+                      {a.id.slice(0, 8)}…
+                    </div>
                   </div>
                 ))}
               </div>

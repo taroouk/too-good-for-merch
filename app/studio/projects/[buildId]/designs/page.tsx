@@ -71,16 +71,23 @@ export default async function DesignsPage({
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
+      {/* Header responsive */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Designs</h1>
           <div className="text-sm text-gray-600">Assign an asset per placement (Phase 4).</div>
           <div className="text-xs text-gray-500 mt-1">
-            Project: <span className="font-medium text-gray-700">{build.name ?? "Untitled"}</span>
+            Project:{" "}
+            <span className="font-medium text-gray-700">
+              {build.name ?? "Untitled"}
+            </span>
           </div>
         </div>
 
-        <Link className="text-sm underline hover:no-underline" href={`/studio/projects/${buildId}/assets`}>
+        <Link
+          className="text-sm underline hover:no-underline self-start sm:self-auto"
+          href={`/studio/projects/${buildId}/assets`}
+        >
           Manage assets
         </Link>
       </div>
@@ -90,7 +97,8 @@ export default async function DesignsPage({
         <section className="border rounded-xl p-4 bg-white space-y-4">
           <div className="font-medium">Your Designs</div>
 
-          <form action={boundCreateDesign} className="flex gap-2">
+          {/* Form stack on mobile */}
+          <form action={boundCreateDesign} className="flex flex-col gap-2 sm:flex-row">
             <input
               className="flex-1 border rounded-md p-2 text-sm"
               name="name"
@@ -98,7 +106,7 @@ export default async function DesignsPage({
               required
               maxLength={120}
             />
-            <button className="border rounded-md px-3 text-sm hover:bg-gray-50" type="submit">
+            <button className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50" type="submit">
               Create
             </button>
           </form>
@@ -116,7 +124,9 @@ export default async function DesignsPage({
                   }`}
                 >
                   <div className="font-medium">{d.name ?? "Untitled"}</div>
-                  <div className="text-xs text-gray-600">{new Date(d.updatedAt).toLocaleString()}</div>
+                  <div className="text-xs text-gray-600">
+                    {new Date(d.updatedAt).toLocaleString()}
+                  </div>
                 </Link>
               ))}
             </div>
@@ -125,11 +135,9 @@ export default async function DesignsPage({
 
         {/* Right */}
         <section className="border rounded-xl p-4 bg-white space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">Placements</div>
-              <div className="text-xs text-gray-600">Choose an asset per placement.</div>
-            </div>
+          <div>
+            <div className="font-medium">Placements</div>
+            <div className="text-xs text-gray-600">Choose an asset per placement.</div>
           </div>
 
           {!activeDesignId ? (
@@ -143,20 +151,23 @@ export default async function DesignsPage({
               .
             </div>
           ) : (
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-2">
               {PLACEMENTS.map((p) => {
                 const current = placementMap.get(p.key as any);
                 const currentName = current?.asset?.fileName ?? "None";
 
                 return (
                   <div key={p.key} className="border rounded-lg p-3 space-y-2">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <div className="text-sm font-medium">{p.label}</div>
                       {current?.assetId ? (
                         <form action={boundRemovePlacement}>
                           <input type="hidden" name="designId" value={activeDesignId} />
                           <input type="hidden" name="placement" value={p.key} />
-                          <button className="text-xs underline text-gray-600 hover:text-black" type="submit">
+                          <button
+                            className="text-xs underline text-gray-600 hover:text-black"
+                            type="submit"
+                          >
                             remove
                           </button>
                         </form>
@@ -165,7 +176,8 @@ export default async function DesignsPage({
 
                     <div className="text-xs text-gray-600">Current: {currentName}</div>
 
-                    <form action={boundSetPlacementAsset} className="flex gap-2">
+                    {/* Stack on mobile */}
+                    <form action={boundSetPlacementAsset} className="flex flex-col gap-2 sm:flex-row">
                       <input type="hidden" name="designId" value={activeDesignId} />
                       <input type="hidden" name="placement" value={p.key} />
                       <select
@@ -180,7 +192,7 @@ export default async function DesignsPage({
                           </option>
                         ))}
                       </select>
-                      <button className="border rounded-md px-3 text-sm hover:bg-gray-50" type="submit">
+                      <button className="border rounded-md px-3 py-2 text-sm hover:bg-gray-50" type="submit">
                         Save
                       </button>
                     </form>
