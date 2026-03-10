@@ -9,8 +9,6 @@ export async function getUserId(): Promise<string | null> {
 
 export async function requireUserId(callbackUrl: string = "/studio") {
   const userId = await getUserId();
-  if (!userId) {
-    redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
-  }
+  if (!userId) redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);
   return userId;
 }

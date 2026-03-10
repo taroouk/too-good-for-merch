@@ -1,4 +1,4 @@
-// app/studio/projects/new/page.tsx
+// file: app/studio/projects/new/page.tsx
 import { actionCreateBuild } from "src/actions/build-actions";
 
 export default function NewProjectPage() {
@@ -8,9 +8,16 @@ export default function NewProjectPage() {
       <form action={actionCreateBuild} className="space-y-3">
         <label className="block text-sm">
           Name
-          <input name="name" className="mt-1 w-full border rounded-md p-2" placeholder="e.g. Black Oversized Drop" />
+          <input
+            name="name"
+            className="mt-1 w-full border rounded-md p-2"
+            placeholder="e.g. Black Oversized Drop"
+          />
         </label>
-        <button className="border rounded-md px-4 py-2 text-sm hover:bg-gray-50" type="submit">
+        <button
+          className="border rounded-md px-4 py-2 text-sm hover:bg-gray-50"
+          type="submit"
+        >
           Create
         </button>
       </form>

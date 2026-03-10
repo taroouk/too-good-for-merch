@@ -3,8 +3,9 @@
 
 import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
-import { requireUserId } from "src/studio/authz";
+import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
+import { BuildStatus } from "@prisma/client";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
 const COLOR = ["BLACK", "WHITE", "CUSTOM"] as const;
@@ -19,13 +20,19 @@ function asEnum<T extends readonly string[]>(
     ? (value as T[number])
     : null;
 }
-function redirectGuestToStudio() {
-  // اختياري: تزود query عشان تعرض رسالة في UI
+
+function redirectGuestToStudio(): never {
   redirect("/studio/projects?guest=1");
 }
 
+async function requireUserIdSoft(): Promise<string> {
+  const userId = await getUserId();
+  if (!userId) redirectGuestToStudio();
+  return userId;
+}
+
 export async function actionCreateBuild(formData: FormData) {
-  const userId = await redirect("/studio/projects/new");
+  const userId = await requireUserIdSoft();
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
@@ -35,7 +42,7 @@ export async function actionCreateBuild(formData: FormData) {
     data: {
       userId,
       name: safeName,
-      status: "DRAFT" as any,
+      status: BuildStatus.ACTIVE, // ✅ matches schema
       draft: {
         create: {
           product: null,
@@ -54,7 +61,7 @@ export async function actionCreateBuild(formData: FormData) {
 }
 
 export async function actionRenameBuild(buildId: string, formData: FormData) {
-  const userId = await redirect(`/studio/projects/${buildId}/settings`);
+  const userId = await requireUserIdSoft();
   await assertBuildAccess(userId, buildId);
 
   const nameRaw = formData.get("name");
@@ -71,7 +78,7 @@ export async function actionRenameBuild(buildId: string, formData: FormData) {
 }
 
 export async function actionUpdateDraft(buildId: string, formData: FormData) {
-  const userId = await redirect(`/studio/projects/${buildId}/builder`);
+  const userId = await requireUserIdSoft();
   await assertBuildAccess(userId, buildId);
 
   const product = asEnum(formData.get("product"), PRODUCT);

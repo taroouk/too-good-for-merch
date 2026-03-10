@@ -13,31 +13,42 @@ type BuildRow = {
   } | null;
 };
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams?: { guest?: string };
+}) {
   const userId = await getUserId();
 
   if (!userId) {
+    const showGuestMsg = searchParams?.guest === "1";
+
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h1 className="text-xl font-semibold">Studio</h1>
-          <Link className="text-sm underline" href="/login?callbackUrl=/studio/projects">
-            Login
+          <Link className="text-sm underline" href="/">
+            Home
           </Link>
         </div>
 
-        <div className="border rounded-lg p-4 text-sm text-gray-600">
-          You can view the studio without logging in.
-          <br />
-          Login is required only when you checkout (or create/save a project).
-        </div>
+        {showGuestMsg ? (
+          <div className="border rounded-lg p-4 text-sm text-gray-700">
+            You’re browsing as a guest. Creating/saving projects will be available later.
+            <br />
+            Login will be required at checkout only.
+          </div>
+        ) : (
+          <div className="border rounded-lg p-4 text-sm text-gray-700">
+            You can enter the studio without logging in.
+            <br />
+            Login will be required at checkout only.
+          </div>
+        )}
 
         <div className="flex gap-3">
           <Link className="text-sm underline" href="/studio/projects/new">
-            Create a Project
-          </Link>
-          <Link className="text-sm underline" href="/">
-            Back to Home
+            New Project
           </Link>
         </div>
       </div>
