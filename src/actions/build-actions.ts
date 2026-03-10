@@ -1,4 +1,4 @@
-// src/actions/build-actions.ts
+// file: src/actions/build-actions.ts
 "use server";
 
 import { redirect } from "next/navigation";
@@ -10,13 +10,18 @@ const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
 const COLOR = ["BLACK", "WHITE", "CUSTOM"] as const;
 const FABRIC = ["ESSENTIALS_170", "SIGNATURE_200", "HEAVYWEIGHT_300"] as const;
 
-function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {
+function asEnum<T extends readonly string[]>(
+  value: unknown,
+  allowed: T
+): T[number] | null {
   if (typeof value !== "string") return null;
-  return (allowed as readonly string[]).includes(value) ? (value as T[number]) : null;
+  return (allowed as readonly string[]).includes(value)
+    ? (value as T[number])
+    : null;
 }
 
 export async function actionCreateBuild(formData: FormData) {
-  const userId = await requireUserId();
+  const userId = await requireUserId("/studio/projects/new");
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
@@ -26,7 +31,6 @@ export async function actionCreateBuild(formData: FormData) {
     data: {
       userId,
       name: safeName,
-      // خليها Uppercase لتوافق أي enum شائع
       status: "DRAFT" as any,
       draft: {
         create: {
@@ -46,7 +50,7 @@ export async function actionCreateBuild(formData: FormData) {
 }
 
 export async function actionRenameBuild(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
+  const userId = await requireUserId(`/studio/projects/${buildId}/settings`);
   await assertBuildAccess(userId, buildId);
 
   const nameRaw = formData.get("name");
@@ -63,7 +67,7 @@ export async function actionRenameBuild(buildId: string, formData: FormData) {
 }
 
 export async function actionUpdateDraft(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
+  const userId = await requireUserId(`/studio/projects/${buildId}/builder`);
   await assertBuildAccess(userId, buildId);
 
   const product = asEnum(formData.get("product"), PRODUCT);
@@ -77,12 +81,13 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
       : 1;
 
   const customNotesRaw = formData.get("customNotes");
-  const customNotes = typeof customNotesRaw === "string" ? customNotesRaw.slice(0, 2000) : "";
+  const customNotes =
+    typeof customNotesRaw === "string" ? customNotesRaw.slice(0, 2000) : "";
 
   const primaryAssetIdRaw = formData.get("primaryAssetId");
-  const primaryAssetId = typeof primaryAssetIdRaw === "string" ? primaryAssetIdRaw : "";
+  const primaryAssetId =
+    typeof primaryAssetIdRaw === "string" ? primaryAssetIdRaw : "";
 
-  // جيب draftId الأول
   const build = await prisma.build.findFirst({
     where: { id: buildId, userId },
     select: { draft: { select: { id: true } } },
