@@ -54,7 +54,7 @@ export async function actionCreateBuild(formData: FormData) {
 }
 
 export async function actionRenameBuild(buildId: string, formData: FormData) {
-  const userId = await requireUserId(`/studio/projects/${buildId}/settings`);
+  const userId = await redirect(`/studio/projects/${buildId}/settings`);
   await assertBuildAccess(userId, buildId);
 
   const nameRaw = formData.get("name");
@@ -71,7 +71,7 @@ export async function actionRenameBuild(buildId: string, formData: FormData) {
 }
 
 export async function actionUpdateDraft(buildId: string, formData: FormData) {
-  const userId = await requireUserId(`/studio/projects/${buildId}/builder`);
+  const userId = await redirect(`/studio/projects/${buildId}/builder`);
   await assertBuildAccess(userId, buildId);
 
   const product = asEnum(formData.get("product"), PRODUCT);
