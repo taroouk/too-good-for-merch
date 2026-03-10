@@ -10,7 +10,7 @@ export default async function ProjectOverviewPage({
 }) {
   const { buildId } = await params;
 
-  const userId = await requireUserId();
+  const userId = await requireUserId("/studio/projects/new");
   const build = await getBuildWithDraft(userId, buildId);
   if (!build) return <div className="text-sm text-gray-600">Not found.</div>;
 
