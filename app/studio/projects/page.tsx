@@ -33,7 +33,7 @@ export default async function ProjectsPage() {
         </div>
 
         <div className="flex gap-3">
-          <Link className="text-sm underline" href="/login?callbackUrl=/studio/projects/new">
+          <Link className="text-sm underline" href="/studio/projects/new">
             Create a Project
           </Link>
           <Link className="text-sm underline" href="/">
