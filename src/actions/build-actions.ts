@@ -19,9 +19,13 @@ function asEnum<T extends readonly string[]>(
     ? (value as T[number])
     : null;
 }
+function redirectGuestToStudio() {
+  // اختياري: تزود query عشان تعرض رسالة في UI
+  redirect("/studio/projects?guest=1");
+}
 
 export async function actionCreateBuild(formData: FormData) {
-  const userId = await requireUserId("/studio/projects/new");
+  const userId = await redirect("/studio/projects/new");
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
