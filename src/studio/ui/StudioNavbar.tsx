@@ -14,7 +14,6 @@ function cn(...parts: Array<string | false | null | undefined>) {
 }
 
 function extractBuildId(pathname: string): string | null {
-  // matches: /studio/projects/<id>/...
   const m = pathname.match(/^\/studio\/projects\/([^/]+)(?:\/|$)/);
   if (!m) return null;
   const id = m[1];
@@ -49,6 +48,7 @@ function NavLink({ href, label }: { href: string; label: string }) {
 export default function StudioNavbar() {
   const pathname = usePathname();
   const buildId = extractBuildId(pathname);
+
   const { status } = useSession();
   const isAuthed = status === "authenticated";
 
