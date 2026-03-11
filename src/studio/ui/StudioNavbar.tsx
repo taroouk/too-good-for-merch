@@ -34,7 +34,7 @@ function NavLink({ href, label }: { href: string; label: string }) {
     <Link
       href={href}
       className={cn(
-        "shrink-0 px-2.5 py-1.5 text-sm rounded-md transition",
+        "shrink-0 px-2.5 py-1.5 text-sm rounded-md transition whitespace-nowrap",
         active
           ? "font-semibold underline"
           : "text-gray-700 hover:bg-gray-50 hover:underline"
@@ -48,7 +48,6 @@ function NavLink({ href, label }: { href: string; label: string }) {
 export default function StudioNavbar() {
   const pathname = usePathname();
   const buildId = extractBuildId(pathname);
-
   const { status } = useSession();
   const isAuthed = status === "authenticated";
 
@@ -66,42 +65,44 @@ export default function StudioNavbar() {
 
   return (
     <header className="w-full border-b bg-white">
-      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-        <div className="flex items-center gap-6">
-          <Link href="/studio/projects" className="flex items-center gap-3">
+      <div className="mx-auto w-full max-w-6xl px-4 py-3 sm:px-6 sm:py-4">
+        <div className="flex items-center justify-between gap-4">
+          <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
             <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
           </Link>
 
-          <nav className="flex items-center gap-2">
+          <div className="flex items-center gap-3 text-sm shrink-0">
+            {isAuthed ? (
+              <SignOutButton />
+            ) : (
+              <>
+                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/login", pathname)}>
+                  Login
+                </Link>
+                <span className="opacity-40">/</span>
+                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/register", pathname)}>
+                  Sign up
+                </Link>
+              </>
+            )}
+          </div>
+        </div>
+
+        <nav className="mt-3 -mx-4 px-4 sm:mx-0 sm:px-0">
+          <div className="flex items-center gap-2 overflow-x-auto pb-2 sm:pb-0">
             <NavLink href="/studio/projects" label="Projects" />
             <NavLink href="/studio/projects/new" label="New Project" />
 
             {projectTabs.length > 0 && (
               <>
-                <span className="mx-2 h-4 w-px bg-gray-200" />
+                <span className="mx-2 h-4 w-px bg-gray-200 shrink-0" />
                 {projectTabs.map((t) => (
                   <NavLink key={t.href} href={t.href} label={t.label} />
                 ))}
               </>
             )}
-          </nav>
-        </div>
-
-        <div className="flex items-center gap-3 text-sm">
-          {isAuthed ? (
-            <SignOutButton />
-          ) : (
-            <>
-              <Link className="hover:underline" href={buildAuthUrl("/login", pathname)}>
-                Login
-              </Link>
-              <span className="opacity-40">/</span>
-              <Link className="hover:underline" href={buildAuthUrl("/register", pathname)}>
-                Sign up
-              </Link>
-            </>
-          )}
-        </div>
+          </div>
+        </nav>
       </div>
     </header>
   );
