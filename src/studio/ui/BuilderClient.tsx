@@ -1,7 +1,14 @@
 // src/studio/ui/BuilderClient.tsx
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
+import { createPortal } from "react-dom";
 import type {
   BuildDraft,
   FabricType,
@@ -83,8 +90,17 @@ function ColorPaletteButton({
   onOpen: () => void;
   onPick: (hex: string) => void;
 }) {
+  const btnRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+
   const [open, setOpen] = useState(false);
   const [hex, setHex] = useState(initialHex);
+  const [mounted, setMounted] = useState(false);
+
+  const [pos, setPos] = useState<{ left: number; top: number }>({
+    left: 0,
+    top: 0,
+  });
 
   const presets = [
     "#111827",
@@ -101,77 +117,168 @@ function ColorPaletteButton({
     "#94A3B8",
   ];
 
+  useEffect(() => setMounted(true), []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const update = () => {
+      const btn = btnRef.current;
+      if (!btn) return;
+
+      const rect = btn.getBoundingClientRect();
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+
+      // Mobile: handled by CSS bottom sheet
+      if (vw < 640) return;
+
+      const PANEL_W = 260;
+      const M = 12;
+
+      const desiredLeft = rect.left;
+      const belowTop = rect.bottom + 8;
+      const aboveTop = rect.top - 8;
+
+      const left = Math.min(Math.max(desiredLeft, M), vw - PANEL_W - M);
+
+      const panelH = panelRef.current?.offsetHeight ?? 220;
+      let top = belowTop;
+      if (top + panelH + M > vh) top = Math.max(M, aboveTop - panelH);
+      top = Math.min(Math.max(top, M), vh - panelH - M);
+
+      setPos({ left, top });
+    };
+
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+
+    const onClick = (e: MouseEvent) => {
+      const panel = panelRef.current;
+      const btn = btnRef.current;
+      const t = e.target as Node | null;
+      if (!t) return;
+
+      if (panel?.contains(t)) return;
+      if (btn?.contains(t)) return;
+
+      setOpen(false);
+    };
+
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onClick);
+    };
+  }, [open]);
+
+  const button = (
+    <button
+      ref={btnRef}
+      type="button"
+      className={cn(
+        "px-4 py-2 rounded-full border text-sm transition flex items-center gap-2",
+        active
+          ? "bg-white text-black border-white"
+          : "bg-transparent text-white border-white/30 hover:border-white/60 hover:bg-white/5"
+      )}
+      onClick={() => {
+        onOpen();
+        setOpen((v) => !v);
+      }}
+    >
+      <span
+        className="inline-block h-4 w-4 rounded-full border border-white/40"
+        style={{ background: hex }}
+      />
+      Custom
+    </button>
+  );
+
+  if (!mounted) return <div className="relative">{button}</div>;
+
+  const panel = (
+    <div
+      ref={panelRef}
+      className={cn(
+        // Mobile: bottom sheet
+        "fixed inset-x-4 bottom-4 z-[9999] sm:inset-x-auto sm:bottom-auto",
+        // Desktop size
+        "sm:w-[260px]",
+        "rounded-xl border border-white/15 bg-black p-3 shadow-lg"
+      )}
+      style={window.innerWidth >= 640 ? { left: pos.left, top: pos.top } : undefined}
+    >
+      <div className="text-xs text-white/70 mb-2">Pick a custom colour</div>
+
+      <div className="grid grid-cols-6 gap-2">
+        {presets.map((c) => (
+          <button
+            key={c}
+            type="button"
+            className={cn(
+              "h-7 w-7 rounded-full border border-white/25",
+              c.toLowerCase() === hex.toLowerCase() ? "ring-2 ring-white" : ""
+            )}
+            style={{ background: c }}
+            onClick={() => {
+              setHex(c);
+              onPick(c);
+              setOpen(false);
+            }}
+            aria-label={`Pick ${c}`}
+            title={c}
+          />
+        ))}
+      </div>
+
+      <div className="mt-3 flex items-center gap-2">
+        <input
+          className="flex-1 min-w-0 border border-white/20 bg-black/40 rounded-md p-2 text-xs text-white"
+          value={hex}
+          onChange={(e) => setHex(e.target.value)}
+          placeholder="#RRGGBB"
+        />
+        <button
+          type="button"
+          className="border border-white/20 rounded-md px-3 py-2 text-xs text-white hover:bg-white/10"
+          onClick={() => {
+            const v = hex.trim();
+            if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
+            onPick(v);
+            setOpen(false);
+          }}
+        >
+          Apply
+        </button>
+      </div>
+
+      <div className="mt-2 text-[11px] text-white/50 sm:hidden">
+        Tap outside to close
+      </div>
+    </div>
+  );
+
   return (
     <div className="relative">
-      <button
-        type="button"
-        className={cn(
-          "px-4 py-2 rounded-full border text-sm transition flex items-center gap-2",
-          active
-            ? "bg-white text-black border-white"
-            : "bg-transparent text-white border-white/30 hover:border-white/60 hover:bg-white/5"
-        )}
-        onClick={() => {
-          onOpen();
-          setOpen((v) => !v);
-        }}
-      >
-        <span
-          className="inline-block h-4 w-4 rounded-full border border-white/40"
-          style={{ background: hex }}
-        />
-        Custom
-      </button>
-
-      {open && (
-        <div className="absolute z-50 mt-2 w-[260px] rounded-xl border border-white/15 bg-black p-3 shadow-lg">
-          <div className="text-xs text-white/70 mb-2">Pick a custom colour</div>
-
-          <div className="grid grid-cols-6 gap-2">
-            {presets.map((c) => (
-              <button
-                key={c}
-                type="button"
-                className={cn(
-                  "h-7 w-7 rounded-full border border-white/25",
-                  c.toLowerCase() === hex.toLowerCase()
-                    ? "ring-2 ring-white"
-                    : ""
-                )}
-                style={{ background: c }}
-                onClick={() => {
-                  setHex(c);
-                  onPick(c);
-                  setOpen(false);
-                }}
-                aria-label={`Pick ${c}`}
-                title={c}
-              />
-            ))}
-          </div>
-
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              className="flex-1 border border-white/20 bg-black/40 rounded-md p-2 text-xs text-white"
-              value={hex}
-              onChange={(e) => setHex(e.target.value)}
-              placeholder="#RRGGBB"
-            />
-            <button
-              type="button"
-              className="border border-white/20 rounded-md px-3 py-2 text-xs text-white hover:bg-white/10"
-              onClick={() => {
-                const v = hex.trim();
-                if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
-                onPick(v);
-                setOpen(false);
-              }}
-            >
-              Apply
-            </button>
-          </div>
-        </div>
-      )}
+      {button}
+      {open ? createPortal(panel, document.body) : null}
     </div>
   );
 }
@@ -255,9 +362,8 @@ export default function BuilderClient({
   return (
     <div className="w-full">
       <div className="grid gap-4 lg:gap-6 lg:grid-cols-[380px_1fr_320px]">
-        {/* LEFT: DETAILS (BLACK) */}
-        {/* ✅ Fix: make it same height as preview on desktop + internal scroll */}
-        <section className="bg-black text-white p-6 sm:p-8 rounded-sm lg:h-[720px] lg:overflow-auto lg:pr-6">
+        {/* LEFT: DETAILS */}
+        <section className="bg-black text-white p-6 sm:p-8 rounded-sm">
           <div className="text-5xl sm:text-6xl font-medium tracking-tight leading-none">
             Details
           </div>
@@ -495,7 +601,9 @@ export default function BuilderClient({
 
               <div className="text-xs text-white/60">
                 Saved placements (Designs tab):{" "}
-                <span className="text-white font-semibold">{placementsCount}</span>
+                <span className="text-white font-semibold">
+                  {placementsCount}
+                </span>
               </div>
             </section>
           </div>
