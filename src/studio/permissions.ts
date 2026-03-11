@@ -36,11 +36,6 @@ export async function rememberGuestBuildId(buildId: string): Promise<void> {
   });
 }
 
-/**
- * Allows:
- * - Logged-in user accessing own build
- * - Guest accessing guest builds tracked via cookie
- */
 export async function assertBuildAccess(
   userId: string | null,
   buildId: string
@@ -52,10 +47,8 @@ export async function assertBuildAccess(
 
   if (!build) redirect("/studio/projects");
 
-  // owner access
   if (build.userId && userId && build.userId === userId) return;
 
-  // guest access (build has no owner)
   if (!build.userId) {
     const guestIds = await getGuestBuildIds();
     if (guestIds.has(buildId)) return;

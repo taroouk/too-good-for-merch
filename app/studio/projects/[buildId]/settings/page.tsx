@@ -5,9 +5,9 @@ import { actionRenameBuild } from "src/actions/build-actions";
 export default async function SettingsPage({
   params,
 }: {
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },

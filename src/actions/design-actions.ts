@@ -27,8 +27,8 @@ function asPlacement(value: unknown): Placement | null {
 }
 
 export async function actionCreateDesign(buildId: string, formData: FormData) {
-  const userId = await getUserId(); // ✅ guest allowed
-  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 120) : "";
@@ -42,12 +42,9 @@ export async function actionCreateDesign(buildId: string, formData: FormData) {
   redirect(`/studio/projects/${buildId}/designs?design=${design.id}`);
 }
 
-export async function actionSetPlacementAsset(
-  buildId: string,
-  formData: FormData
-) {
-  const userId = await getUserId(); // ✅ guest allowed
-  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
+export async function actionSetPlacementAsset(buildId: string, formData: FormData) {
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
 
   const designId = String(formData.get("designId") ?? "");
   const placement = asPlacement(formData.get("placement"));
@@ -87,8 +84,8 @@ export async function actionSetPlacementAsset(
 }
 
 export async function actionRemovePlacement(buildId: string, formData: FormData) {
-  const userId = await getUserId(); // ✅ guest allowed
-  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
 
   const designId = String(formData.get("designId") ?? "");
   const placement = asPlacement(formData.get("placement"));

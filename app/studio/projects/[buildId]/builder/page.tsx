@@ -5,9 +5,9 @@ import BuilderClient from "src/studio/ui/BuilderClient";
 export default async function BuilderPage({
   params,
 }: {
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },

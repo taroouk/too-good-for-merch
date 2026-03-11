@@ -4,9 +4,9 @@ import { prisma } from "src/lib/prisma";
 export default async function ProjectOverviewPage({
   params,
 }: {
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
@@ -14,6 +14,7 @@ export default async function ProjectOverviewPage({
       id: true,
       name: true,
       status: true,
+      createdAt: true,
       draft: {
         select: {
           product: true,
@@ -24,7 +25,7 @@ export default async function ProjectOverviewPage({
           primaryAssetId: true,
         },
       },
-      assets: { select: { id: true, status: true, fileName: true } },
+      assets: { select: { id: true } },
       designs: { select: { id: true } },
     },
   });
@@ -32,7 +33,7 @@ export default async function ProjectOverviewPage({
   if (!build) return <div className="text-sm text-gray-600">Not found.</div>;
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">{build.name ?? "Untitled"}</h1>
       <div className="text-sm text-gray-600">Status: {build.status}</div>
 

@@ -3,10 +3,12 @@ import { prisma } from "src/lib/prisma";
 
 export default async function DesignsPage({
   params,
+  searchParams,
 }: {
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
+  searchParams?: { design?: string };
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const designs = await prisma.design.findMany({
     where: { buildId },
@@ -18,8 +20,10 @@ export default async function DesignsPage({
     },
   });
 
+  const selectedId = searchParams?.design ?? null;
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">Designs</h1>
 
       {designs.length === 0 ? (
@@ -27,7 +31,11 @@ export default async function DesignsPage({
       ) : (
         <div className="grid gap-3">
           {designs.map((d) => (
-            <div key={d.id} className="border rounded-md p-3 text-sm">
+            <div
+              key={d.id}
+              className="border rounded-md p-3 text-sm"
+              data-selected={selectedId === d.id}
+            >
               <div className="font-medium">{d.name ?? "Untitled"}</div>
               <div className="text-gray-600">
                 Placements: {d.placements.length}

@@ -7,6 +7,7 @@ export async function getUserId(): Promise<string | null> {
   return (session?.user as any)?.id ?? null;
 }
 
+// Use ONLY at checkout
 export async function requireUserId(callbackUrl: string = "/studio") {
   const userId = await getUserId();
   if (!userId) redirect(`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`);

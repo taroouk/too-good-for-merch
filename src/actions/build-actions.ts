@@ -22,7 +22,7 @@ function asEnum<T extends readonly string[]>(
 }
 
 export async function actionCreateBuild(formData: FormData) {
-  const userId = await getUserId(); // ✅ string | null (guest allowed)
+  const userId = await getUserId();
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
@@ -30,7 +30,7 @@ export async function actionCreateBuild(formData: FormData) {
 
   const build = await prisma.build.create({
     data: {
-      userId: userId ?? null, // ✅ guest build
+      userId: userId ?? null,
       name: safeName,
       status: BuildStatus.ACTIVE,
       draft: {
@@ -48,7 +48,7 @@ export async function actionCreateBuild(formData: FormData) {
   });
 
   if (!userId) {
-    await rememberGuestBuildId(build.id); // ✅ allow guest to access later
+    await rememberGuestBuildId(build.id);
   }
 
   redirect(`/studio/projects/${build.id}/builder`);

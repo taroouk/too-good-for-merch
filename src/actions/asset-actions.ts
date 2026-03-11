@@ -7,8 +7,8 @@ import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 
 export async function actionCreateAsset(buildId: string, formData: FormData) {
-  const userId = await getUserId(); // ✅ guest allowed
-  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
 
   const fileName = String(formData.get("fileName") ?? "").trim().slice(0, 180);
   const mimeType =

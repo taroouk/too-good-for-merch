@@ -4,23 +4,18 @@ import { prisma } from "src/lib/prisma";
 export default async function AssetsPage({
   params,
 }: {
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const assets = await prisma.asset.findMany({
     where: { buildId },
     orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      fileName: true,
-      status: true,
-      createdAt: true,
-    },
+    select: { id: true, fileName: true, status: true, createdAt: true },
   });
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <h1 className="text-xl font-semibold">Assets</h1>
       {assets.length === 0 ? (
         <div className="text-sm text-gray-600">No assets yet.</div>

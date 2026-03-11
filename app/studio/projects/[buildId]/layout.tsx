@@ -9,9 +9,9 @@ export default async function ProjectLayout({
   params,
 }: {
   children: ReactNode;
-  params: { buildId: string };
+  params: Promise<{ buildId: string }>;
 }) {
-  const { buildId } = params;
+  const { buildId } = await params;
 
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
