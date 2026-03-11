@@ -1,4 +1,4 @@
-// file: src/studio/ui/BuilderClient.tsx
+// src/studio/ui/BuilderClient.tsx
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
@@ -208,7 +208,7 @@ export default function BuilderClient({
 
   const priceText = "5,250 EGP";
 
-  // ✅ lock page scroll while Builder is mounted
+  // ✅ منع scroll بتاع الصفحة (body/html) أثناء وجود الـ Builder
   useEffect(() => {
     const html = document.documentElement;
     const body = document.body;
@@ -270,12 +270,12 @@ export default function BuilderClient({
   }
 
   return (
-    // ✅ This container takes full screen height (minus navbar handled by layout padding),
-    // and prevents page scroll. Scroll happens inside panels.
-    <div className="w-full min-w-0 h-[calc(100dvh-140px)] sm:h-[calc(100dvh-160px)] overflow-hidden">
-      <div className="h-full min-h-0 grid grid-cols-1 gap-4 lg:gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,320px)]">
-        {/* LEFT: DETAILS (scroll inside) */}
-        <section className="order-1 rounded-sm bg-black text-white overflow-hidden">
+    // ✅ الحاوية كلها داخل الشاشة بدون scroll للصفحة
+    // لو الـ navbar عندك أعلى/أقل، عدّل الأرقام (140/160) فقط.
+    <div className="w-full overflow-hidden h-[calc(100dvh-140px)] sm:h-[calc(100dvh-160px)]">
+      <div className="h-full min-h-0 grid gap-4 lg:gap-6 lg:grid-cols-[380px_1fr_320px]">
+        {/* LEFT: DETAILS (BLACK) — scroll داخلي فقط */}
+        <section className="bg-black text-white rounded-sm overflow-hidden">
           <div className="h-full min-h-0 flex flex-col">
             <div className="p-6 sm:p-8">
               <div className="text-5xl sm:text-6xl font-medium tracking-tight leading-none">
@@ -284,7 +284,7 @@ export default function BuilderClient({
             </div>
 
             <div className="min-h-0 flex-1 overflow-auto px-6 pb-6 sm:px-8 sm:pb-8">
-              <div className="space-y-8">
+              <div className="mt-1 space-y-8">
                 {/* Product */}
                 <section className="space-y-3">
                   <div className="text-sm font-semibold">Product</div>
@@ -322,8 +322,8 @@ export default function BuilderClient({
                     <div className="border border-white/15 rounded-lg p-3 bg-white/5 space-y-2 text-sm">
                       <div className="font-semibold">Custom Garment Request</div>
                       <div className="text-white/70">
-                        Custom garment constructions are not available for instant
-                        checkout. We’ll review your request and provide a tailored quote.
+                        Custom garment constructions are not available for instant checkout.
+                        We’ll review your request and provide a tailored quote.
                       </div>
 
                       <textarea
@@ -362,6 +362,7 @@ export default function BuilderClient({
                 {/* Colour */}
                 <section className="space-y-3">
                   <div className="text-sm font-semibold">Colour</div>
+
                   <div className="flex flex-wrap gap-2 items-center">
                     <button
                       type="button"
@@ -465,7 +466,9 @@ export default function BuilderClient({
                     <select
                       className="flex-1 min-w-0 border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
                       value={placementPick}
-                      onChange={(e) => setPlacementPick(e.target.value as PlacementKey)}
+                      onChange={(e) =>
+                        setPlacementPick(e.target.value as PlacementKey)
+                      }
                       disabled={selectedPlacements.length >= 4}
                     >
                       {PLACEMENTS.map((p) => (
@@ -525,23 +528,21 @@ export default function BuilderClient({
           </div>
         </section>
 
-        {/* CENTER: PREVIEW (always visible, no scroll) */}
-        <section className="order-2 min-w-0 flex items-center justify-center overflow-hidden">
-          <div className="w-full min-w-0">
-            <div className="mx-auto w-full max-w-[640px]">
-              <div className="aspect-[3/4] w-full border-[6px] border-black bg-white flex items-center justify-center">
-                <div className="text-5xl sm:text-6xl font-medium tracking-tight">
-                  preview
-                </div>
+        {/* CENTER: PREVIEW — ثابت داخل الشاشة بدون scroll */}
+        <section className="flex items-center justify-center overflow-hidden min-w-0">
+          <div className="w-full max-w-[620px] h-full min-h-0 flex items-center justify-center">
+            <div className="w-full border-[6px] border-black bg-white h-full max-h-[720px] flex items-center justify-center">
+              <div className="text-5xl sm:text-6xl font-medium tracking-tight">
+                preview
               </div>
             </div>
           </div>
         </section>
 
-        {/* RIGHT: PRICE/QUANTITY (scroll inside) */}
-        <section className="order-3 min-w-0 overflow-hidden">
-          <div className="h-full min-h-0 flex flex-col">
-            <div className="min-h-0 flex-1 overflow-auto pt-8 sm:pt-10 space-y-4 px-1">
+        {/* RIGHT: PRICE/QUANTITY — scroll داخلي فقط */}
+        <section className="bg-white overflow-hidden min-w-0">
+          <div className="h-full min-h-0 flex flex-col justify-between">
+            <div className="min-h-0 flex-1 overflow-auto pt-8 sm:pt-10 space-y-4 pr-1">
               <div className="text-lg font-semibold">{priceText}</div>
               <div className="text-sm text-gray-700">
                 Order EST. 1 week after confirmation
@@ -552,9 +553,7 @@ export default function BuilderClient({
                 <button type="button" onClick={decQty} className="border-r hover:bg-gray-50">
                   −
                 </button>
-                <div className="flex items-center justify-center text-sm font-medium">
-                  {qty}
-                </div>
+                <div className="flex items-center justify-center text-sm font-medium">{qty}</div>
                 <button type="button" onClick={incQty} className="border-l hover:bg-gray-50">
                   +
                 </button>
@@ -570,11 +569,7 @@ export default function BuilderClient({
                   ADD TO BAG
                 </button>
 
-                <button
-                  type="button"
-                  className="h-11 border text-sm font-medium hover:bg-gray-50 disabled:opacity-50"
-                  disabled
-                >
+                <button type="button" className="h-11 border text-sm font-medium hover:bg-gray-50" disabled>
                   ADD TO WISHLIST
                 </button>
               </div>
@@ -596,11 +591,6 @@ export default function BuilderClient({
             </div>
           </div>
         </section>
-      </div>
-
-      {/* Optional tiny meta on mobile (doesn't change UI layout) */}
-      <div className="mt-2 text-[11px] text-gray-400 lg:hidden">
-        Project: <span className="font-medium">{buildName}</span>
       </div>
     </div>
   );
