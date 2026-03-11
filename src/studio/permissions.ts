@@ -32,7 +32,7 @@ export async function rememberGuestBuildId(buildId: string): Promise<void> {
     sameSite: "lax",
     path: "/",
     secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 24 * 30, // 30 days
+    maxAge: 60 * 60 * 24 * 30,
   });
 }
 
@@ -52,10 +52,10 @@ export async function assertBuildAccess(
 
   if (!build) redirect("/studio/projects");
 
-  // Owner access
+  // owner access
   if (build.userId && userId && build.userId === userId) return;
 
-  // Guest access (build has no owner)
+  // guest access (build has no owner)
   if (!build.userId) {
     const guestIds = await getGuestBuildIds();
     if (guestIds.has(buildId)) return;
