@@ -66,38 +66,17 @@ export default function StudioNavbar() {
   return (
     <header className="w-full border-b bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-        {/* Single row: links next to logo, logo on the right (desktop) */}
         <div className="flex items-center justify-between gap-4 py-3 sm:py-4">
-          {/* LEFT side: auth */}
-          <div className="flex items-center gap-3 text-sm shrink-0">
-            {isAuthed ? (
-              <SignOutButton />
-            ) : (
-              <>
-                <Link
-                  className="hover:underline whitespace-nowrap"
-                  href={buildAuthUrl("/login", pathname)}
-                >
-                  Login
-                </Link>
-                <span className="opacity-40">/</span>
-                <Link
-                  className="hover:underline whitespace-nowrap"
-                  href={buildAuthUrl("/register", pathname)}
-                >
-                  Sign up
-                </Link>
-              </>
-            )}
-          </div>
-
-          {/* RIGHT side: nav + logo (desktop RTL-style) */}
+          {/* LEFT: logo + links */}
           <div className="flex items-center gap-3 min-w-0">
-            {/* Nav links */}
+            <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
+              <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
+            </Link>
+
             <nav
               className={cn(
                 "flex items-center gap-2 min-w-0",
-                // mobile: allow horizontal scroll
+                // mobile: horizontal scroll
                 "overflow-x-auto",
                 // desktop: no scroll, wrap if needed
                 "sm:overflow-visible sm:flex-wrap"
@@ -115,11 +94,23 @@ export default function StudioNavbar() {
                 </>
               )}
             </nav>
+          </div>
 
-            {/* Logo on the right */}
-            <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
-              <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
-            </Link>
+          {/* RIGHT: auth */}
+          <div className="flex items-center gap-3 text-sm shrink-0">
+            {isAuthed ? (
+              <SignOutButton />
+            ) : (
+              <>
+                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/login", pathname)}>
+                  Login
+                </Link>
+                <span className="opacity-40">/</span>
+                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/register", pathname)}>
+                  Sign up
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
