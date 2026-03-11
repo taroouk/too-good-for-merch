@@ -47,10 +47,10 @@ export async function actionCreateBuild(formData: FormData) {
     select: { id: true },
   });
 
-  if (!userId) {
-    // ✅ allow this guest to access/edit this build later
-    rememberGuestBuildId(build.id);
-  }
+// inside actionCreateBuild after create:
+if (!userId) {
+  await rememberGuestBuildId(build.id);
+}
 
   redirect(`/studio/projects/${build.id}/builder`);
 }
