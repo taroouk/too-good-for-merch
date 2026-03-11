@@ -1,7 +1,7 @@
 // file: src/studio/ui/BuilderClient.tsx
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   BuildDraft,
   FabricType,
@@ -208,6 +208,23 @@ export default function BuilderClient({
 
   const priceText = "5,250 EGP";
 
+  // ✅ lock page scroll while Builder is mounted
+  useEffect(() => {
+    const html = document.documentElement;
+    const body = document.body;
+
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+    };
+  }, []);
+
   function save(next: DraftDTO) {
     setState(next);
 
@@ -253,271 +270,267 @@ export default function BuilderClient({
   }
 
   return (
-    <div className="w-full min-w-0">
-      {/* Responsive layout:
-          - Mobile: stack (Details -> Preview -> Price)
-          - Desktop: 3 columns
-      */}
-      <div className="grid grid-cols-1 gap-4 lg:gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,320px)]">
-        {/* LEFT: DETAILS */}
-        <section className="order-1 rounded-lg bg-black text-white p-5 sm:p-7">
-          <div className="text-4xl sm:text-6xl font-medium tracking-tight leading-none">
-            Details
-          </div>
-
-          <div className="mt-6 space-y-8">
-            {/* Product */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Product</div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={pillDark(state.product === "FITTED")}
-                  onClick={() =>
-                    save({ ...state, product: "FITTED" as ProductType })
-                  }
-                >
-                  Fitted T-shirt
-                </button>
-
-                <button
-                  type="button"
-                  className={pillDark(state.product === "OVERSIZED")}
-                  onClick={() =>
-                    save({ ...state, product: "OVERSIZED" as ProductType })
-                  }
-                >
-                  Oversized T-shirt
-                </button>
-
-                <button
-                  type="button"
-                  className={pillDark(state.product === "CUSTOM")}
-                  onClick={() =>
-                    save({ ...state, product: "CUSTOM" as ProductType })
-                  }
-                >
-                  Custom
-                </button>
+    // ✅ This container takes full screen height (minus navbar handled by layout padding),
+    // and prevents page scroll. Scroll happens inside panels.
+    <div className="w-full min-w-0 h-[calc(100dvh-140px)] sm:h-[calc(100dvh-160px)] overflow-hidden">
+      <div className="h-full min-h-0 grid grid-cols-1 gap-4 lg:gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)_minmax(0,320px)]">
+        {/* LEFT: DETAILS (scroll inside) */}
+        <section className="order-1 rounded-sm bg-black text-white overflow-hidden">
+          <div className="h-full min-h-0 flex flex-col">
+            <div className="p-6 sm:p-8">
+              <div className="text-5xl sm:text-6xl font-medium tracking-tight leading-none">
+                Details
               </div>
+            </div>
 
-              {isCustomProduct && (
-                <div className="border border-white/15 rounded-lg p-3 bg-white/5 space-y-2 text-sm">
-                  <div className="font-semibold">Custom Garment Request</div>
-                  <div className="text-white/70">
-                    Custom garment constructions are not available for instant
-                    checkout. We’ll review your request and provide a tailored
-                    quote.
-                  </div>
-
-                  <textarea
-                    className="w-full border border-white/15 bg-black/40 rounded-md p-2 text-white placeholder:text-white/40"
-                    value={state.customNotes ?? ""}
-                    onChange={(e) =>
-                      save({ ...state, customNotes: e.target.value })
-                    }
-                    placeholder="Describe what you need..."
-                    rows={4}
-                  />
-
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <a
-                      className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
-                      href={WHATSAPP_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Continue on WhatsApp
-                    </a>
+            <div className="min-h-0 flex-1 overflow-auto px-6 pb-6 sm:px-8 sm:pb-8">
+              <div className="space-y-8">
+                {/* Product */}
+                <section className="space-y-3">
+                  <div className="text-sm font-semibold">Product</div>
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
+                      className={pillDark(state.product === "FITTED")}
                       onClick={() =>
                         save({ ...state, product: "FITTED" as ProductType })
                       }
                     >
-                      Go Back
+                      Fitted T-shirt
+                    </button>
+                    <button
+                      type="button"
+                      className={pillDark(state.product === "OVERSIZED")}
+                      onClick={() =>
+                        save({ ...state, product: "OVERSIZED" as ProductType })
+                      }
+                    >
+                      Oversized T-shirt
+                    </button>
+                    <button
+                      type="button"
+                      className={pillDark(state.product === "CUSTOM")}
+                      onClick={() =>
+                        save({ ...state, product: "CUSTOM" as ProductType })
+                      }
+                    >
+                      Custom
                     </button>
                   </div>
-                </div>
-              )}
-            </section>
 
-            {/* Colour */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Colour</div>
+                  {isCustomProduct && (
+                    <div className="border border-white/15 rounded-lg p-3 bg-white/5 space-y-2 text-sm">
+                      <div className="font-semibold">Custom Garment Request</div>
+                      <div className="text-white/70">
+                        Custom garment constructions are not available for instant
+                        checkout. We’ll review your request and provide a tailored quote.
+                      </div>
 
-              <div className="flex flex-wrap gap-2 items-center">
-                <button
-                  type="button"
-                  className={pillDark(state.color === "BLACK")}
-                  onClick={() =>
-                    save({ ...state, color: "BLACK" as GarmentColor })
-                  }
-                >
-                  Black
-                </button>
+                      <textarea
+                        className="w-full border border-white/15 bg-black/40 rounded-md p-2 text-white placeholder:text-white/40"
+                        value={state.customNotes ?? ""}
+                        onChange={(e) =>
+                          save({ ...state, customNotes: e.target.value })
+                        }
+                        placeholder="Describe what you need..."
+                        rows={4}
+                      />
 
-                <button
-                  type="button"
-                  className={pillDark(state.color === "WHITE")}
-                  onClick={() =>
-                    save({ ...state, color: "WHITE" as GarmentColor })
-                  }
-                >
-                  White
-                </button>
-
-                <ColorPaletteButton
-                  active={state.color === "CUSTOM"}
-                  initialHex={customHex}
-                  onOpen={() =>
-                    save({ ...state, color: "CUSTOM" as GarmentColor })
-                  }
-                  onPick={(hex) => {
-                    const nextNotes = upsertHexInNotes(state.customNotes, hex);
-                    save({
-                      ...state,
-                      color: "CUSTOM" as GarmentColor,
-                      customNotes: nextNotes,
-                    });
-                  }}
-                />
-              </div>
-            </section>
-
-            {/* Fabric */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Fabric</div>
-              <select
-                className="w-full border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
-                value={state.fabric ?? ""}
-                onChange={(e) =>
-                  save({
-                    ...state,
-                    fabric: (e.target.value || null) as FabricType | null,
-                  })
-                }
-              >
-                <option value="">Select fabric…</option>
-                <option value="ESSENTIALS_170">Essentials · 170 GSM</option>
-                <option value="SIGNATURE_200">Signature · 200 GSM</option>
-                <option value="HEAVYWEIGHT_300">Heavyweight · 300 GSM</option>
-              </select>
-            </section>
-
-            {/* Upload artwork */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Upload artwork</div>
-
-              <div className="flex items-center gap-3 min-w-0">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    handleUploadFile(f);
-                    e.currentTarget.value = "";
-                  }}
-                />
-
-                <button
-                  type="button"
-                  className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10 shrink-0"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  Choose file
-                </button>
-
-                <div className="text-xs text-white/70 truncate min-w-0">
-                  {uploadName ? `Selected: ${uploadName}` : "No file selected"}
-                </div>
-              </div>
-
-              <div className="text-xs text-white/50">
-                Phase 4: creates an Asset record only (storage comes in Phase
-                5).
-              </div>
-            </section>
-
-            {/* Placement */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Placement</div>
-
-              <div className="flex gap-2 min-w-0">
-                <select
-                  className="flex-1 min-w-0 border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
-                  value={placementPick}
-                  onChange={(e) => setPlacementPick(e.target.value as PlacementKey)}
-                  disabled={selectedPlacements.length >= 4}
-                >
-                  {PLACEMENTS.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-
-                <button
-                  type="button"
-                  onClick={addPlacement}
-                  disabled={selectedPlacements.length >= 4}
-                  className={cn(
-                    "border border-white/20 rounded-md px-3 text-sm shrink-0",
-                    selectedPlacements.length >= 4
-                      ? "text-white/40"
-                      : "hover:bg-white/10"
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <a
+                          className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
+                          href={WHATSAPP_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Continue on WhatsApp
+                        </a>
+                        <button
+                          type="button"
+                          className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
+                          onClick={() =>
+                            save({ ...state, product: "FITTED" as ProductType })
+                          }
+                        >
+                          Go Back
+                        </button>
+                      </div>
+                    </div>
                   )}
-                >
-                  Add
-                </button>
-              </div>
+                </section>
 
-              {selectedPlacements.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {selectedPlacements.map((k) => (
-                    <span
-                      key={k}
-                      className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-xs bg-white/5"
+                {/* Colour */}
+                <section className="space-y-3">
+                  <div className="text-sm font-semibold">Colour</div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <button
+                      type="button"
+                      className={pillDark(state.color === "BLACK")}
+                      onClick={() =>
+                        save({ ...state, color: "BLACK" as GarmentColor })
+                      }
                     >
-                      {PLACEMENTS.find((p) => p.key === k)?.label ?? k}
-                      <button
-                        type="button"
-                        className="text-white/70 hover:text-white"
-                        onClick={() => removePlacement(k)}
-                        aria-label="Remove"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                      Black
+                    </button>
+
+                    <button
+                      type="button"
+                      className={pillDark(state.color === "WHITE")}
+                      onClick={() =>
+                        save({ ...state, color: "WHITE" as GarmentColor })
+                      }
+                    >
+                      White
+                    </button>
+
+                    <ColorPaletteButton
+                      active={state.color === "CUSTOM"}
+                      initialHex={customHex}
+                      onOpen={() =>
+                        save({ ...state, color: "CUSTOM" as GarmentColor })
+                      }
+                      onPick={(hex) => {
+                        const nextNotes = upsertHexInNotes(state.customNotes, hex);
+                        save({
+                          ...state,
+                          color: "CUSTOM" as GarmentColor,
+                          customNotes: nextNotes,
+                        });
+                      }}
+                    />
+                  </div>
+                </section>
+
+                {/* Fabric */}
+                <section className="space-y-3">
+                  <div className="text-sm font-semibold">Fabric</div>
+                  <select
+                    className="w-full border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
+                    value={state.fabric ?? ""}
+                    onChange={(e) =>
+                      save({
+                        ...state,
+                        fabric: (e.target.value || null) as FabricType | null,
+                      })
+                    }
+                  >
+                    <option value="">Select fabric…</option>
+                    <option value="ESSENTIALS_170">Essentials · 170 GSM</option>
+                    <option value="SIGNATURE_200">Signature · 200 GSM</option>
+                    <option value="HEAVYWEIGHT_300">Heavyweight · 300 GSM</option>
+                  </select>
+                </section>
+
+                {/* Upload artwork */}
+                <section className="space-y-3">
+                  <div className="text-sm font-semibold">Upload artwork</div>
+
+                  <div className="flex items-center gap-3 min-w-0">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (!f) return;
+                        handleUploadFile(f);
+                        e.currentTarget.value = "";
+                      }}
+                    />
+
+                    <button
+                      type="button"
+                      className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10 shrink-0"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      Choose file
+                    </button>
+
+                    <div className="text-xs text-white/70 truncate min-w-0">
+                      {uploadName ? `Selected: ${uploadName}` : "No file selected"}
+                    </div>
+                  </div>
+
+                  <div className="text-xs text-white/50">
+                    Phase 4: creates an Asset record only (storage comes in Phase 5).
+                  </div>
+                </section>
+
+                {/* Placement */}
+                <section className="space-y-3">
+                  <div className="text-sm font-semibold">Placement</div>
+
+                  <div className="flex gap-2 min-w-0">
+                    <select
+                      className="flex-1 min-w-0 border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
+                      value={placementPick}
+                      onChange={(e) => setPlacementPick(e.target.value as PlacementKey)}
+                      disabled={selectedPlacements.length >= 4}
+                    >
+                      {PLACEMENTS.map((p) => (
+                        <option key={p.key} value={p.key}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    <button
+                      type="button"
+                      onClick={addPlacement}
+                      disabled={selectedPlacements.length >= 4}
+                      className={cn(
+                        "border border-white/20 rounded-md px-3 text-sm shrink-0",
+                        selectedPlacements.length >= 4
+                          ? "text-white/40"
+                          : "hover:bg-white/10"
+                      )}
+                    >
+                      Add
+                    </button>
+                  </div>
+
+                  {selectedPlacements.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedPlacements.map((k) => (
+                        <span
+                          key={k}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-xs bg-white/5"
+                        >
+                          {PLACEMENTS.find((p) => p.key === k)?.label ?? k}
+                          <button
+                            type="button"
+                            className="text-white/70 hover:text-white"
+                            onClick={() => removePlacement(k)}
+                            aria-label="Remove"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="text-xs text-white/60">
+                    Saved placements (Designs tab):{" "}
+                    <span className="text-white font-semibold">{placementsCount}</span>
+                  </div>
+                </section>
+
+                <div className="text-xs text-white/60">
+                  {isPending ? "Saving…" : "Saved"}
                 </div>
-              )}
-
-              <div className="text-xs text-white/60">
-                Saved placements (Designs tab):{" "}
-                <span className="text-white font-semibold">
-                  {placementsCount}
-                </span>
               </div>
-            </section>
-          </div>
-
-          <div className="mt-6 text-xs text-white/60">
-            {isPending ? "Saving…" : "Saved"}
+            </div>
           </div>
         </section>
 
-        {/* CENTER: PREVIEW */}
-        <section className="order-2 flex items-center justify-center min-w-0">
+        {/* CENTER: PREVIEW (always visible, no scroll) */}
+        <section className="order-2 min-w-0 flex items-center justify-center overflow-hidden">
           <div className="w-full min-w-0">
             <div className="mx-auto w-full max-w-[640px]">
-              <div className="aspect-[3/4] w-full rounded-lg border-[4px] sm:border-[6px] border-black bg-white flex items-center justify-center">
-                <div className="text-4xl sm:text-6xl font-medium tracking-tight">
+              <div className="aspect-[3/4] w-full border-[6px] border-black bg-white flex items-center justify-center">
+                <div className="text-5xl sm:text-6xl font-medium tracking-tight">
                   preview
                 </div>
               </div>
@@ -525,10 +538,10 @@ export default function BuilderClient({
           </div>
         </section>
 
-        {/* RIGHT: PRICE/QUANTITY */}
-        <section className="order-3 min-w-0 lg:sticky lg:top-24 lg:self-start">
-          <div className="rounded-lg border p-5 sm:p-6 bg-white">
-            <div className="space-y-4">
+        {/* RIGHT: PRICE/QUANTITY (scroll inside) */}
+        <section className="order-3 min-w-0 overflow-hidden">
+          <div className="h-full min-h-0 flex flex-col">
+            <div className="min-h-0 flex-1 overflow-auto pt-8 sm:pt-10 space-y-4 px-1">
               <div className="text-lg font-semibold">{priceText}</div>
               <div className="text-sm text-gray-700">
                 Order EST. 1 week after confirmation
@@ -536,21 +549,13 @@ export default function BuilderClient({
 
               <div className="text-xs tracking-wide text-gray-600">QUANTITY</div>
               <div className="grid grid-cols-[44px_1fr_44px] border h-10 bg-white">
-                <button
-                  type="button"
-                  onClick={decQty}
-                  className="border-r hover:bg-gray-50"
-                >
+                <button type="button" onClick={decQty} className="border-r hover:bg-gray-50">
                   −
                 </button>
                 <div className="flex items-center justify-center text-sm font-medium">
                   {qty}
                 </div>
-                <button
-                  type="button"
-                  onClick={incQty}
-                  className="border-l hover:bg-gray-50"
-                >
+                <button type="button" onClick={incQty} className="border-l hover:bg-gray-50">
                   +
                 </button>
               </div>
@@ -582,19 +587,19 @@ export default function BuilderClient({
               <div className="text-xs text-gray-500 italic">
                 Instant pricing and shipping estimate for 1-500 pieces
               </div>
+            </div>
 
-              <div className="pt-2 text-sm underline text-right">
-                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer">
-                  Live Assistance
-                </a>
-              </div>
+            <div className="pb-2 text-sm underline text-right">
+              <a href={WHATSAPP_URL} target="_blank" rel="noreferrer">
+                Live Assistance
+              </a>
             </div>
           </div>
         </section>
       </div>
 
-      {/* Optional: show build name on mobile (keeps UI clean on desktop) */}
-      <div className="mt-4 text-xs text-gray-500 lg:hidden">
+      {/* Optional tiny meta on mobile (doesn't change UI layout) */}
+      <div className="mt-2 text-[11px] text-gray-400 lg:hidden">
         Project: <span className="font-medium">{buildName}</span>
       </div>
     </div>
