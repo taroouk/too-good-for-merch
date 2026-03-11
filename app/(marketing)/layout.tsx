@@ -58,7 +58,8 @@ export default function MarketingLayout({
         </Link>
 
         <nav className="marketingNav marketingNavRight" aria-label="Account links">
-          <Link href="/studio">ACCOUNT</Link>
+          {/* ✅ ACCOUNT -> /login */}
+          <Link href="/login">ACCOUNT</Link>
           <Link href="/#wishlist">WISHLIST</Link>
           <Link href="/#bag">BAG (0)</Link>
         </nav>
@@ -82,7 +83,8 @@ export default function MarketingLayout({
           <div className="mobileMenuDivider" />
 
           <div className="mobileMenuGroup">
-            <Link href="/#account" onClick={closeMenu}>
+            {/* ✅ ACCOUNT -> /login */}
+            <Link href="/login" onClick={closeMenu}>
               ACCOUNT
             </Link>
             <Link href="/#wishlist" onClick={closeMenu}>
