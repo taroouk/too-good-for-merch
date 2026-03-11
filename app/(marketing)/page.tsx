@@ -603,8 +603,8 @@ export default function HomePage() {
           </h2>
 
           <div className="contactLinks">
-            <a href="#">Instagram</a>
-            <a href="#">TikTok</a>
+            <a href="https://www.instagram.com/toogoodformerch">Instagram</a>
+            <a href="https://www.tiktok.com/@toogoodformerch">TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp</a>
             <a
               href="mailto:hello@toogoodformerch.com"
