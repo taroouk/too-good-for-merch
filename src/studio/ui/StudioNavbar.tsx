@@ -66,53 +66,62 @@ export default function StudioNavbar() {
   return (
     <header className="w-full border-b bg-white">
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-        {/* TOP ROW */}
+        {/* Single row: links next to logo, logo on the right (desktop) */}
         <div className="flex items-center justify-between gap-4 py-3 sm:py-4">
-          <Link href="/studio/projects" className="flex items-start gap-3 shrink-0">
-            <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
-          </Link>
-
+          {/* LEFT side: auth */}
           <div className="flex items-center gap-3 text-sm shrink-0">
             {isAuthed ? (
               <SignOutButton />
             ) : (
               <>
-                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/login", pathname)}>
+                <Link
+                  className="hover:underline whitespace-nowrap"
+                  href={buildAuthUrl("/login", pathname)}
+                >
                   Login
                 </Link>
                 <span className="opacity-40">/</span>
-                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/register", pathname)}>
+                <Link
+                  className="hover:underline whitespace-nowrap"
+                  href={buildAuthUrl("/register", pathname)}
+                >
                   Sign up
                 </Link>
               </>
             )}
           </div>
-        </div>
 
-        {/* NAV ROW */}
-        <nav className="pb-3 sm:pb-4">
-          {/* Mobile: horizontal scroll
-              Desktop: no scroll, wrap if needed */}
-          <div
-            className={cn(
-              "flex items-center gap-2",
-              "overflow-x-auto pb-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:pb-0",
-              "sm:overflow-visible sm:flex-wrap"
-            )}
-          >
-            <NavLink href="/studio/projects" label="Projects" />
-            <NavLink href="/studio/projects/new" label="New Project" />
+          {/* RIGHT side: nav + logo (desktop RTL-style) */}
+          <div className="flex items-center gap-3 min-w-0">
+            {/* Nav links */}
+            <nav
+              className={cn(
+                "flex items-center gap-2 min-w-0",
+                // mobile: allow horizontal scroll
+                "overflow-x-auto",
+                // desktop: no scroll, wrap if needed
+                "sm:overflow-visible sm:flex-wrap"
+              )}
+            >
+              <NavLink href="/studio/projects" label="Projects" />
+              <NavLink href="/studio/projects/new" label="New Project" />
 
-            {projectTabs.length > 0 && (
-              <>
-                <span className="mx-2 h-4 w-px bg-gray-200 shrink-0 hidden sm:block" />
-                {projectTabs.map((t) => (
-                  <NavLink key={t.href} href={t.href} label={t.label} />
-                ))}
-              </>
-            )}
+              {projectTabs.length > 0 && (
+                <>
+                  <span className="mx-2 h-4 w-px bg-gray-200 shrink-0 hidden sm:block" />
+                  {projectTabs.map((t) => (
+                    <NavLink key={t.href} href={t.href} label={t.label} />
+                  ))}
+                </>
+              )}
+            </nav>
+
+            {/* Logo on the right */}
+            <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
+              <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
+            </Link>
           </div>
-        </nav>
+        </div>
       </div>
     </header>
   );
