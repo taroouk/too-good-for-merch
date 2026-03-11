@@ -7,19 +7,9 @@ function isCheckoutPath(pathname: string): boolean {
   return pathname === "/checkout" || pathname.includes("/checkout");
 }
 
-function isPublicPath(pathname: string): boolean {
-  if (pathname === "/") return true;
-  if (pathname.startsWith("/studio")) return true;
-  if (pathname.startsWith("/login")) return true;
-  if (pathname.startsWith("/register")) return true;
-  if (pathname.startsWith("/api/auth")) return true;
-  return false;
-}
-
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (isPublicPath(pathname) && !isCheckoutPath(pathname)) return NextResponse.next();
   if (!isCheckoutPath(pathname)) return NextResponse.next();
 
   const token = await getToken({ req, secret: process.env.NEXTAUTH_SECRET });

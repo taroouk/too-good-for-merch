@@ -4,7 +4,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
-import { assertBuildAccess } from "src/studio/permissions";
+import { assertBuildAccess, rememberGuestBuildId } from "src/studio/permissions";
 import { BuildStatus } from "@prisma/client";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
@@ -21,18 +21,8 @@ function asEnum<T extends readonly string[]>(
     : null;
 }
 
-function redirectGuestToStudio(): never {
-  redirect("/studio/projects?guest=1");
-}
-
-async function requireUserIdSoft(): Promise<string> {
-  const userId = await getUserId();
-  if (!userId) redirectGuestToStudio();
-  return userId;
-}
-
 export async function actionCreateBuild(formData: FormData) {
-  const userId = await requireUserIdSoft();
+  const userId = await getUserId(); // ✅ may be null (guest)
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim() : "";
@@ -40,9 +30,9 @@ export async function actionCreateBuild(formData: FormData) {
 
   const build = await prisma.build.create({
     data: {
-      userId,
+      userId: userId ?? null, // ✅ guest build allowed by schema
       name: safeName,
-      status: BuildStatus.ACTIVE, // ✅ matches schema
+      status: BuildStatus.ACTIVE,
       draft: {
         create: {
           product: null,
@@ -57,11 +47,16 @@ export async function actionCreateBuild(formData: FormData) {
     select: { id: true },
   });
 
+  if (!userId) {
+    // ✅ allow this guest to access/edit this build later
+    rememberGuestBuildId(build.id);
+  }
+
   redirect(`/studio/projects/${build.id}/builder`);
 }
 
 export async function actionRenameBuild(buildId: string, formData: FormData) {
-  const userId = await requireUserIdSoft();
+  const userId = await getUserId(); // string | null
   await assertBuildAccess(userId, buildId);
 
   const nameRaw = formData.get("name");
@@ -78,7 +73,7 @@ export async function actionRenameBuild(buildId: string, formData: FormData) {
 }
 
 export async function actionUpdateDraft(buildId: string, formData: FormData) {
-  const userId = await requireUserIdSoft();
+  const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
 
   const product = asEnum(formData.get("product"), PRODUCT);
@@ -99,8 +94,8 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
   const primaryAssetId =
     typeof primaryAssetIdRaw === "string" ? primaryAssetIdRaw : "";
 
-  const build = await prisma.build.findFirst({
-    where: { id: buildId, userId },
+  const build = await prisma.build.findUnique({
+    where: { id: buildId },
     select: { draft: { select: { id: true } } },
   });
 
