@@ -1,37 +1,51 @@
-// app/studio/projects/[buildId]/page.tsx
-import Link from "next/link";
-import { requireUserId } from "src/studio/authz";
-import { getBuildWithDraft } from "src/db/builds";
+// file: app/studio/projects/[buildId]/page.tsx
+import { prisma } from "src/lib/prisma";
 
 export default async function ProjectOverviewPage({
   params,
 }: {
-  params: Promise<{ buildId: string }>;
+  params: { buildId: string };
 }) {
-  const { buildId } = await params;
+  const { buildId } = params;
 
-  const userId = await requireUserId("/studio/projects/new");
-  const build = await getBuildWithDraft(userId, buildId);
+  const build = await prisma.build.findUnique({
+    where: { id: buildId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      draft: {
+        select: {
+          product: true,
+          color: true,
+          fabric: true,
+          quantity: true,
+          customNotes: true,
+          primaryAssetId: true,
+        },
+      },
+      assets: { select: { id: true, status: true, fileName: true } },
+      designs: { select: { id: true } },
+    },
+  });
+
   if (!build) return <div className="text-sm text-gray-600">Not found.</div>;
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xl font-semibold">{build.name ?? "Untitled"}</div>
-          <div className="text-xs text-gray-600">{build.status}</div>
-        </div>
+      <h1 className="text-xl font-semibold">{build.name ?? "Untitled"}</h1>
+      <div className="text-sm text-gray-600">Status: {build.status}</div>
 
-        <Link className="text-sm underline" href={`/studio/projects/${build.id}/builder`}>
-          Open Builder
-        </Link>
+      <div className="border rounded-md p-3 text-sm">
+        <div className="font-medium mb-2">Draft</div>
+        <div>Product: {build.draft?.product ?? "—"}</div>
+        <div>Color: {build.draft?.color ?? "—"}</div>
+        <div>Fabric: {build.draft?.fabric ?? "—"}</div>
+        <div>Qty: {build.draft?.quantity ?? 1}</div>
       </div>
 
-      <div className="border rounded-lg p-3 text-sm">
-        <div>Product: {build.draft?.product ?? "-"}</div>
-        <div>Color: {build.draft?.color ?? "-"}</div>
-        <div>Fabric: {build.draft?.fabric ?? "-"}</div>
-        <div>Quantity: {build.draft?.quantity ?? 1}</div>
+      <div className="text-sm text-gray-600">
+        Assets: {build.assets.length} · Designs: {build.designs.length}
       </div>
     </div>
   );

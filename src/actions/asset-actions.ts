@@ -1,18 +1,22 @@
+// file: src/actions/asset-actions.ts
 "use server";
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
-import { requireUserId } from "src/studio/authz";
+import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 
 export async function actionCreateAsset(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
-  await assertBuildAccess(userId, buildId);
+  const userId = await getUserId(); // ✅ guest allowed
+  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
 
   const fileName = String(formData.get("fileName") ?? "").trim().slice(0, 180);
-  const mimeType = String(formData.get("mimeType") ?? "").trim().slice(0, 120) || null;
+  const mimeType =
+    String(formData.get("mimeType") ?? "").trim().slice(0, 120) || null;
   const sizeBytesRaw = String(formData.get("sizeBytes") ?? "").trim();
-  const sizeBytes = sizeBytesRaw ? Math.max(0, Math.floor(Number(sizeBytesRaw))) : null;
+  const sizeBytes = sizeBytesRaw
+    ? Math.max(0, Math.floor(Number(sizeBytesRaw)))
+    : null;
 
   if (!fileName) return;
 

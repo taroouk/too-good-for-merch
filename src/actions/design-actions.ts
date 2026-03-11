@@ -1,9 +1,9 @@
-// src/actions/design-actions.ts
+// file: src/actions/design-actions.ts
 "use server";
 
 import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
-import { requireUserId } from "src/studio/authz";
+import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 
 const PLACEMENTS = [
@@ -21,12 +21,14 @@ type Placement = (typeof PLACEMENTS)[number];
 
 function asPlacement(value: unknown): Placement | null {
   if (typeof value !== "string") return null;
-  return (PLACEMENTS as readonly string[]).includes(value) ? (value as Placement) : null;
+  return (PLACEMENTS as readonly string[]).includes(value)
+    ? (value as Placement)
+    : null;
 }
 
 export async function actionCreateDesign(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
-  await assertBuildAccess(userId, buildId);
+  const userId = await getUserId(); // ✅ guest allowed
+  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
 
   const nameRaw = formData.get("name");
   const name = typeof nameRaw === "string" ? nameRaw.trim().slice(0, 120) : "";
@@ -40,9 +42,12 @@ export async function actionCreateDesign(buildId: string, formData: FormData) {
   redirect(`/studio/projects/${buildId}/designs?design=${design.id}`);
 }
 
-export async function actionSetPlacementAsset(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
-  await assertBuildAccess(userId, buildId);
+export async function actionSetPlacementAsset(
+  buildId: string,
+  formData: FormData
+) {
+  const userId = await getUserId(); // ✅ guest allowed
+  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
 
   const designId = String(formData.get("designId") ?? "");
   const placement = asPlacement(formData.get("placement"));
@@ -50,14 +55,12 @@ export async function actionSetPlacementAsset(buildId: string, formData: FormDat
 
   if (!designId || !placement) return;
 
-  // تأكد التصميم تابع لنفس build
   const design = await prisma.design.findFirst({
     where: { id: designId, buildId },
     select: { id: true },
   });
   if (!design) return;
 
-  // لو None → امسح placement
   if (!assetId) {
     await prisma.designPlacement.deleteMany({
       where: { designId, placement: placement as any },
@@ -65,7 +68,6 @@ export async function actionSetPlacementAsset(buildId: string, formData: FormDat
     return;
   }
 
-  // تأكد asset تابع لنفس build
   const asset = await prisma.asset.findFirst({
     where: { id: assetId, buildId },
     select: { id: true },
@@ -85,8 +87,8 @@ export async function actionSetPlacementAsset(buildId: string, formData: FormDat
 }
 
 export async function actionRemovePlacement(buildId: string, formData: FormData) {
-  const userId = await requireUserId();
-  await assertBuildAccess(userId, buildId);
+  const userId = await getUserId(); // ✅ guest allowed
+  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
 
   const designId = String(formData.get("designId") ?? "");
   const placement = asPlacement(formData.get("placement"));
