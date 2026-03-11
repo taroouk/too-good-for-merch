@@ -1,21 +1,23 @@
-// app/studio/projects/[buildId]/builder/page.tsx
+// file: app/studio/projects/[buildId]/builder/page.tsx
 import { prisma } from "src/lib/prisma";
-import { requireUserId } from "src/studio/authz";
+import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
 
 export default async function BuilderPage({
   params,
 }: {
-  params: Promise<{ buildId: string }>;
+  params: { buildId: string };
 }) {
-  const { buildId } = await params;
+  const { buildId } = params;
 
-  const userId = await requireUserId();
+  // ✅ Guest allowed
+  const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
 
-  const build = await prisma.build.findFirst({
-    where: { id: buildId, userId },
+  // ✅ Important: don't filter by userId here (guest builds have userId = null)
+  const build = await prisma.build.findUnique({
+    where: { id: buildId },
     select: {
       id: true,
       name: true,
@@ -37,9 +39,14 @@ export default async function BuilderPage({
     },
   });
 
-  if (!build || !build.draft) return <div className="text-sm text-gray-600">Not found.</div>;
+  if (!build || !build.draft) {
+    return <div className="text-sm text-gray-600">Not found.</div>;
+  }
 
-  const placementsCount = build.designs.reduce((acc: any, d: { placements: string | any[]; }) => acc + d.placements.length, 0);
+  const placementsCount = build.designs.reduce(
+    (acc, d) => acc + d.placements.length,
+    0
+  );
 
   return (
     <BuilderClient
