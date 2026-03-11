@@ -13,8 +13,8 @@ export default async function ProjectLayout({
 }) {
   const { buildId } = params;
 
-  const userId = await getUserId();
-  await assertBuildAccess(userId, buildId);
+  const userId = await getUserId(); // ✅ guest allowed (string | null)
+  await assertBuildAccess(userId, buildId); // ✅ owner OR guest cookie
 
   return (
     <div>
