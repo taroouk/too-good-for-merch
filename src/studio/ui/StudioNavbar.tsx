@@ -68,7 +68,7 @@ export default function StudioNavbar() {
       <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
         {/* TOP ROW */}
         <div className="flex items-center justify-between gap-4 py-3 sm:py-4">
-          <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
+          <Link href="/studio/projects" className="flex items-start gap-3 shrink-0">
             <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
           </Link>
 
