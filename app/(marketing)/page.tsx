@@ -2,7 +2,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const WHATSAPP_PHONE = "201118399923";
 const WHATSAPP_MESSAGE =
@@ -11,93 +11,70 @@ const WHATSAPP_MESSAGE =
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 
-function HeroTypewriterRestart() {
-  const elRef = useRef<HTMLSpanElement | null>(null);
+const HERO_SLIDES = [
+  { image: "/images/hero1.jpg", text: "FOR ARTISTS." },
+  { image: "/images/hero2.jpg", text: "EVENTS." },
+  { image: "/images/hero3.jpg", text: "BRANDS." },
+  { image: "/images/hero4.jpg", text: "THAT TAKE MERCH SERIOUSLY." },
+];
 
-  const lines = useMemo(
-    () => ["FOR ARTISTS.", "EVENTS.", "BRANDS.", "THAT TAKE", "MERCH SERIOUSLY."],
-    []
-  );
+function HeroDynamic() {
+  const [mounted, setMounted] = useState(false);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
-    const el = elRef.current;
-    if (!el) return;
+    setMounted(true);
+  }, []);
 
-    let lineIndex = 0;
-    let charIndex = 0;
-    let raf = 0;
-    let last = performance.now();
+  useEffect(() => {
+    if (!mounted) return;
 
-    const TYPE_SPEED = 60;
-    const HOLD_MS = 1000;
-    const GAP_MS = 120;
+    const interval = setInterval(() => {
+      setIndex((prev) => (prev + 1) % HERO_SLIDES.length);
+    }, 2500);
 
-    let holdUntil = 0;
+    return () => clearInterval(interval);
+  }, [mounted]);
 
-    const render = () => {
-      const done = lines.slice(0, lineIndex).join("\n");
-      const current = lines[lineIndex]?.slice(0, charIndex) ?? "";
-      const text = done ? `${done}\n${current}` : current;
-      el.textContent = text;
-    };
+  if (!mounted) {
+    return (
+      <section className="hero">
+        <div className="heroMedia">
+          <img
+            src={HERO_SLIDES[0].image}
+            alt={HERO_SLIDES[0].text}
+            className="heroImg active"
+          />
+          <div className="heroOverlay" />
+        </div>
 
-    const doRestart = () => {
-      el.classList.add("flashOut");
-      setTimeout(() => {
-        lineIndex = 0;
-        charIndex = 0;
-        el.textContent = "";
-        el.classList.remove("flashOut");
-      }, 160);
-    };
-
-    const tick = (now: number) => {
-      const delta = now - last;
-
-      if (holdUntil && now < holdUntil) {
-        raf = requestAnimationFrame(tick);
-        return;
-      }
-
-      if (delta >= TYPE_SPEED) {
-        last = now;
-
-        if (lineIndex >= lines.length) {
-          holdUntil = now + HOLD_MS;
-          setTimeout(() => {
-            doRestart();
-            holdUntil = performance.now() + 100;
-          }, HOLD_MS);
-          raf = requestAnimationFrame(tick);
-          return;
-        }
-
-        const currentLine = lines[lineIndex];
-
-        if (charIndex <= currentLine.length) {
-          render();
-          charIndex++;
-        } else {
-          lineIndex++;
-          charIndex = 0;
-          holdUntil = now + GAP_MS;
-        }
-      }
-
-      raf = requestAnimationFrame(tick);
-    };
-
-    el.textContent = "";
-    raf = requestAnimationFrame(tick);
-
-    return () => cancelAnimationFrame(raf);
-  }, [lines]);
+        <div className="heroInner">
+          <h1 className="heroDynamicText">{HERO_SLIDES[0].text}</h1>
+        </div>
+      </section>
+    );
+  }
 
   return (
-    <p className="heroTagline">
-      <span ref={elRef} className="typewriter" />
-      <span className="caret" aria-hidden="true" />
-    </p>
+    <section className="hero">
+      <div className="heroMedia">
+        {HERO_SLIDES.map((slide, i) => (
+          <img
+            key={slide.image}
+            src={slide.image}
+            alt={slide.text}
+            className={`heroImg ${i === index ? "active" : ""}`}
+          />
+        ))}
+        <div className="heroOverlay" />
+      </div>
+
+      <div className="heroInner">
+        <h1 key={HERO_SLIDES[index].text} className="heroDynamicText">
+          {HERO_SLIDES[index].text}
+        </h1>
+      </div>
+    </section>
   );
 }
 
@@ -114,21 +91,21 @@ const BOUTIQUE_ITEMS: BoutiqueItem[] = [
     title: "MK wedding | PARIS",
     year: "2024",
     bullets: ["Boutique run", "+30 printed T-shirts"],
-    imageSrc: "/images/wedding1.jpg",
+    imageSrc: "/images/wedding1.png",
     imageAlt: "Paris Wedding",
   },
   {
     title: "KN WEDDING | GOUNA",
     year: "2024",
     bullets: ["Boutique run", "+50 printed T-shirts"],
-    imageSrc: "/images/wedding2.jpg",
+    imageSrc: "/images/wedding2.png",
     imageAlt: "Gouna Wedding",
   },
   {
     title: "FA WEDDING | CAIRO",
     year: "2026",
     bullets: ["Boutique run", "+100 printed T-shirts"],
-    imageSrc: "/images/wedding3.jpg",
+    imageSrc: "/images/wedding3.png",
     imageAlt: "Cairo Wedding",
   },
 ];
@@ -316,12 +293,11 @@ function BoutiqueSection() {
                 }}
               >
                 <div className="boutiqueLeft">
-                  <h2 className="boutiqueTitle">{item.title}</h2>
+                  <h2 className="boutiqueTitle cardHeading">{item.title}</h2>
                 </div>
 
                 <div className="boutiqueMeta">
                   <p>{item.year}</p>
-                  
                   <p>• {item.bullets[1]}</p>
                 </div>
 
@@ -339,11 +315,18 @@ function BoutiqueSection() {
             --boutique-gap: 22px;
           }
 
+          .cardHeading {
+            font-size: 18px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+          }
+
           .boutiqueSection .boutiqueBleed {
-            width: 100vw;
-            margin-left: calc(50% - 50vw);
-            padding-left: var(--boutique-left, clamp(28px, 4.5vw, 52px));
-            padding-right: clamp(12px, 2vw, 24px);
+            width: 100%;
+            margin-left: 0;
+            padding-left: 0;
+            padding-right: 0;
           }
 
           .boutiqueSection .boutiqueRows {
@@ -390,11 +373,7 @@ function BoutiqueSection() {
 
           .boutiqueSection .boutiqueTitle {
             margin: 0;
-            font-size: 16px;
-            line-height: 1.25;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.02em;
+            line-height: 1.2;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -410,6 +389,20 @@ function BoutiqueSection() {
 
           .boutiqueSection .boutiqueMeta p {
             margin: 0;
+          }
+
+          .boutiqueSection .boutiqueMeta p:first-child {
+            font-size: 16px;
+            line-height: 1.35;
+            font-weight: 400;
+            color: rgba(0, 0, 0, 0.72);
+          }
+
+          .boutiqueSection .boutiqueMeta p:last-child {
+            font-size: 16px;
+            line-height: 1.35;
+            font-weight: 700;
+            color: rgba(0, 0, 0, 0.78);
           }
 
           .boutiqueSection .boutiqueThumb {
@@ -458,12 +451,11 @@ function BoutiqueSection() {
           }
 
           @media (max-width: 980px) {
-            /* ✅ أهم تعديل: نخلي المحتوى جوه الصفحة (Padding ثابت للموبايل) */
             .boutiqueSection .boutiqueBleed {
               width: 100%;
               margin-left: 0;
-              padding-left: clamp(28px, 4.5vw, 52px);
-              padding-right: clamp(28px, 4.5vw, 52px);
+              padding-left: 0;
+              padding-right: 0;
             }
 
             .boutiqueSection .boutiqueRow {
@@ -516,23 +508,16 @@ function BoutiqueSection() {
 export default function HomePage() {
   return (
     <main className="lp" id="hero">
-      <section className="hero">
-        <div className="heroMedia">
-          <img src="/images/hero.jpg" alt="Hero" />
-        </div>
-        <div className="heroInner">
-          <HeroTypewriterRestart />
-        </div>
-      </section>
+      <HeroDynamic />
 
       <section className="enter">
-        <div className="enterInner">
+        <Link href="/studio" className="enterInner">
           <span className="enterWord">ENTER</span>
-          <Link href="/studio" className="enterPanel">
+          <div className="enterPanel">
             <img src="/images/enter.jpg" alt="Enter Studio" />
-          </Link>
+          </div>
           <span className="enterWord">STUDIO</span>
-        </div>
+        </Link>
       </section>
 
       <section className="section our-work" id="our-work">
