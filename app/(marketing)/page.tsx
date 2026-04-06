@@ -1,4 +1,3 @@
-// app/page.tsx (or wherever this component lives)
 "use client";
 
 import Link from "next/link";
@@ -11,16 +10,94 @@ const WHATSAPP_MESSAGE =
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 
-const HERO_SLIDES = [
-  { image: "/images/hero1.jpg", text: "FOR ARTISTS." },
-  { image: "/images/hero2.jpg", text: "EVENTS." },
-  { image: "/images/hero3.jpg", text: "BRANDS." },
-  { image: "/images/hero4.jpg", text: "THAT TAKE MERCH SERIOUSLY." },
+type HeroSlide =
+  | {
+      image: string;
+      layout: "split";
+      left: string;
+      right: string;
+    }
+  | {
+      image: string;
+      layout: "stack";
+      line1: string;
+      line2?: string;
+      line3?: string;
+    };
+
+const HERO_SLIDES: HeroSlide[] = [
+  {
+    image: "/images/hero1.jpg",
+    layout: "split",
+    left: "FOR",
+    right: "ARTISTS",
+  },
+  {
+    image: "/images/hero2.jpg",
+    layout: "split",
+    left: "EVENTS",
+    right: "BRANDS",
+  },
+  {
+    image: "/images/hero4.jpg",
+    layout: "split",
+    left: "THAT TAKE",
+    right: "MERCH",
+  },
+  {
+    image: "/images/hero3.jpg",
+    layout: "stack",
+    line1: "SERIOUSLY",
+  },
 ];
 
-function HeroDynamic() {
+function HeroWords({ slide, wordKey }: { slide: HeroSlide; wordKey: number }) {
+  return (
+    <div
+      key={wordKey}
+      className={`heroFigmaWords ${slide.layout === "stack" ? "stack" : "split"}`}
+    >
+      {slide.layout === "split" ? (
+        <>
+          <span className="heroSplitLeft">{slide.left}</span>
+          <span className="heroSplitRight">{slide.right}</span>
+        </>
+      ) : (
+        <div className="heroStackWrap">
+          {slide.line1 && <span className="heroStackLine heroStackLine1">{slide.line1}</span>}
+          {slide.line2 && <span className="heroStackLine heroStackLine2">{slide.line2}</span>}
+          {slide.line3 && <span className="heroStackLine heroStackLine3">{slide.line3}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HeroMedia({
+  slide,
+  active,
+}: {
+  slide: HeroSlide;
+  active: boolean;
+}) {
+  const mediaClass = active ? "heroFigmaMedia isActive" : "heroFigmaMedia";
+
+  return (
+    <div className={mediaClass} aria-hidden={!active}>
+      <div
+        className="heroFigmaBg"
+        style={{ backgroundImage: `url(${slide.image})` }}
+      />
+      <img src={slide.image} alt="" className="heroFigmaImage" />
+      <div className="heroFigmaImageVignette" />
+    </div>
+  );
+}
+
+function HeroFigma() {
   const [mounted, setMounted] = useState(false);
   const [index, setIndex] = useState(0);
+  const [wordKey, setWordKey] = useState(0);
 
   useEffect(() => {
     setMounted(true);
@@ -29,50 +106,42 @@ function HeroDynamic() {
   useEffect(() => {
     if (!mounted) return;
 
-    const interval = setInterval(() => {
-      setIndex((prev) => (prev + 1) % HERO_SLIDES.length);
-    }, 2500);
+    const interval = window.setInterval(() => {
+      setIndex((prev) => {
+        const next = (prev + 1) % HERO_SLIDES.length;
+        setWordKey((current) => current + 1);
+        return next;
+      });
+    }, 3600);
 
-    return () => clearInterval(interval);
+    return () => window.clearInterval(interval);
   }, [mounted]);
 
-  if (!mounted) {
-    return (
-      <section className="hero">
-        <div className="heroMedia">
-          <img
-            src={HERO_SLIDES[0].image}
-            alt={HERO_SLIDES[0].text}
-            className="heroImg active"
-          />
-          <div className="heroOverlay" />
-        </div>
-
-        <div className="heroInner">
-          <h1 className="heroDynamicText">{HERO_SLIDES[0].text}</h1>
-        </div>
-      </section>
-    );
-  }
+  const activeSlide = HERO_SLIDES[index];
+  const firstSlide = HERO_SLIDES[0];
 
   return (
-    <section className="hero">
-      <div className="heroMedia">
-        {HERO_SLIDES.map((slide, i) => (
-          <img
-            key={slide.image}
-            src={slide.image}
-            alt={slide.text}
-            className={`heroImg ${i === index ? "active" : ""}`}
-          />
-        ))}
-        <div className="heroOverlay" />
-      </div>
-
-      <div className="heroInner">
-        <h1 key={HERO_SLIDES[index].text} className="heroDynamicText">
-          {HERO_SLIDES[index].text}
-        </h1>
+    <section className="hero heroFigma">
+      <div className="heroFigmaShell">
+        <div className="heroFigmaStage">
+          {!mounted ? (
+            <>
+              <HeroMedia slide={firstSlide} active />
+              <HeroWords slide={firstSlide} wordKey={0} />
+            </>
+          ) : (
+            <>
+              {HERO_SLIDES.map((slide, i) => (
+                <HeroMedia
+                  key={`${slide.image}-${i}`}
+                  slide={slide}
+                  active={i === index}
+                />
+              ))}
+              <HeroWords slide={activeSlide} wordKey={wordKey} />
+            </>
+          )}
+        </div>
       </div>
     </section>
   );
@@ -117,7 +186,6 @@ function BoutiqueSection() {
 
   const sectionRef = useRef<HTMLElement | null>(null);
   const narrowRef = useRef<HTMLDivElement | null>(null);
-
   const previewRef = useRef<HTMLDivElement | null>(null);
 
   const targetRef = useRef({ x: 0, y: 0 });
@@ -340,9 +408,7 @@ function BoutiqueSection() {
             border: 0;
             padding: 24px 0;
             cursor: pointer;
-
             position: relative;
-
             display: grid;
             grid-template-columns: minmax(0, 1fr) var(--boutique-meta-w);
             grid-template-areas: "left meta";
@@ -436,9 +502,7 @@ function BoutiqueSection() {
               0 2px 10px rgba(0,0,0,0.08);
           }
 
-          .boutiqueSection
-            .boutiquePreview[data-visible="true"]
-            .boutiquePreviewInner {
+          .boutiqueSection .boutiquePreview[data-visible="true"] .boutiquePreviewInner {
             transform: translate(-50%, -50%) scale(1);
           }
 
@@ -508,7 +572,7 @@ function BoutiqueSection() {
 export default function HomePage() {
   return (
     <main className="lp" id="hero">
-      <HeroDynamic />
+      <HeroFigma />
 
       <section className="enter">
         <Link href="/studio" className="enterInner">
