@@ -10,139 +10,33 @@ const WHATSAPP_MESSAGE =
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 
-type HeroSlide =
-  | {
-      image: string;
-      layout: "split";
-      left: string;
-      right: string;
-    }
-  | {
-      image: string;
-      layout: "stack";
-      line1: string;
-      line2?: string;
-      line3?: string;
-    };
-
-const HERO_SLIDES: HeroSlide[] = [
-  {
-    image: "/images/hero1.jpg",
-    layout: "split",
-    left: "FOR",
-    right: "ARTISTS",
-  },
-  {
-    image: "/images/hero2.jpg",
-    layout: "split",
-    left: "EVENTS",
-    right: "BRANDS",
-  },
-  {
-    image: "/images/hero4.jpg",
-    layout: "split",
-    left: "THAT TAKE",
-    right: "MERCH",
-  },
-  {
-    image: "/images/hero3.jpg",
-    layout: "stack",
-    line1: "SERIOUSLY",
-  },
-];
-
-function HeroWords({ slide, wordKey }: { slide: HeroSlide; wordKey: number }) {
-  return (
-    <div
-      key={wordKey}
-      className={`heroFigmaWords ${slide.layout === "stack" ? "stack" : "split"}`}
-    >
-      {slide.layout === "split" ? (
-        <>
-          <span className="heroSplitLeft">{slide.left}</span>
-          <span className="heroSplitRight">{slide.right}</span>
-        </>
-      ) : (
-        <div className="heroStackWrap">
-          {slide.line1 && <span className="heroStackLine heroStackLine1">{slide.line1}</span>}
-          {slide.line2 && <span className="heroStackLine heroStackLine2">{slide.line2}</span>}
-          {slide.line3 && <span className="heroStackLine heroStackLine3">{slide.line3}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function HeroMedia({
-  slide,
-  active,
-}: {
-  slide: HeroSlide;
-  active: boolean;
-}) {
-  const mediaClass = active ? "heroFigmaMedia isActive" : "heroFigmaMedia";
-
-  return (
-    <div className={mediaClass} aria-hidden={!active}>
-      <div
-        className="heroFigmaBg"
-        style={{ backgroundImage: `url(${slide.image})` }}
-      />
-      <img src={slide.image} alt="" className="heroFigmaImage" />
-      <div className="heroFigmaImageVignette" />
-    </div>
-  );
-}
+const HERO_VIDEO = "/videos/hero.mp4";
 
 function HeroFigma() {
-  const [mounted, setMounted] = useState(false);
-  const [index, setIndex] = useState(0);
-  const [wordKey, setWordKey] = useState(0);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!mounted) return;
-
-    const interval = window.setInterval(() => {
-      setIndex((prev) => {
-        const next = (prev + 1) % HERO_SLIDES.length;
-        setWordKey((current) => current + 1);
-        return next;
-      });
-    }, 3600);
-
-    return () => window.clearInterval(interval);
-  }, [mounted]);
-
-  const activeSlide = HERO_SLIDES[index];
-  const firstSlide = HERO_SLIDES[0];
-
   return (
     <section className="hero heroFigma">
       <div className="heroFigmaShell">
         <div className="heroFigmaStage">
-          {!mounted ? (
-            <>
-              <HeroMedia slide={firstSlide} active />
-              <HeroWords slide={firstSlide} wordKey={0} />
-            </>
-          ) : (
-            <>
-              {HERO_SLIDES.map((slide, i) => (
-                <HeroMedia
-                  key={`${slide.image}-${i}`}
-                  slide={slide}
-                  active={i === index}
-                />
-              ))}
-              <HeroWords slide={activeSlide} wordKey={wordKey} />
-            </>
-          )}
+          <div className="heroFigmaMedia isActive" aria-hidden="false">
+            <div className="heroVideoWrap">
+              <video
+                className="heroVideo"
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="auto"
+              >
+                <source src={HERO_VIDEO} type="video/mp4" />
+              </video>
+            </div>
+          </div>
+
+
         </div>
       </div>
+
+
     </section>
   );
 }
