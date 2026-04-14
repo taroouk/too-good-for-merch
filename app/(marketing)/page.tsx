@@ -15,28 +15,27 @@ const HERO_VIDEO = "/videos/hero.mp4";
 function HeroFigma() {
   return (
     <section className="hero heroFigma">
-      <div className="heroFigmaShell">
-        <div className="heroFigmaStage">
-          <div className="heroFigmaMedia isActive" aria-hidden="false">
-            <div className="heroVideoWrap">
-              <video
-                className="heroVideo"
-                autoPlay
-                muted
-                loop
-                playsInline
-                preload="auto"
-              >
-                <source src={HERO_VIDEO} type="video/mp4" />
-              </video>
-            </div>
-          </div>
-
-
+      <div className="heroFigmaStage">
+        
+        <div className="videoArea">
+          <video
+            className="heroVideo"
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+          >
+            <source src={HERO_VIDEO} type="video/mp4" />
+          </video>
         </div>
+
+        <div className="heroText">
+          <p>FOR ARTISTS.EVENTS.BRANDS</p>
+          <text>THAT TAKE MERCH SERIOUSLY</text>
+        </div>
+
       </div>
-
-
     </section>
   );
 }
