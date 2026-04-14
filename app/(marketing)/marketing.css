@@ -265,7 +265,10 @@ a{ color: inherit; }
   }
 
   .heroText p {
-    font-size: 16px;
+    font-size: 20px;
+  }
+  .heroText text{
+    font-size: 17;
   }
 }
 
