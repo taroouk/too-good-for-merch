@@ -67,32 +67,30 @@ function HeroFigma() {
   return (
     <section className="hero heroFigma">
 
-      {/* FIXED STAGE (NO CENTER SHIFT) */}
-      <div className="heroFigmaStage">
+<div className="heroStage">
 
-        {/* VIDEO (STATIC) */}
-        <div className="videoArea">
-          <video
-            className="heroVideo"
-            autoPlay
-            muted
-            loop
-            playsInline
-          >
-            <source src={HERO_VIDEO} type="video/mp4" />
-          </video>
-        </div>
+  {/* WRAPPER */}
+  <div className="heroInner">
 
-        {/* TEXT BELOW VIDEO */}
-        <div className="heroText">
-  {words.map((w, i) => (
-    <p key={i} className="wordLine">
-      {w}
-    </p>
-  ))}
+    {/* VIDEO */}
+    <div className="videoArea">
+      <video className="heroVideo" autoPlay muted loop playsInline>
+        <source src={HERO_VIDEO} type="video/mp4" />
+      </video>
+    </div>
+
+    {/* TEXT (same width as video) */}
+    <div className="heroText">
+      {words.map((w, i) => (
+        <p key={i} className="wordLine">
+          {w}
+        </p>
+      ))}
+    </div>
+
+  </div>
+
 </div>
-
-      </div>
 
       <style jsx>{`
         .hero {
@@ -101,6 +99,13 @@ function HeroFigma() {
           background:black;
          
         }
+        .heroInner {
+          width: 100%;
+          max-width: 900px;   /* نفس “container” واحد للفيديو + النص */
+          margin: 80 auto;     /* يخليهم في النص */
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;}
 
         /* ❗ IMPORTANT: NOT CENTERED ANYMORE */
         .heroFigmaStage {
