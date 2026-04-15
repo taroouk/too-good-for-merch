@@ -53,9 +53,9 @@ function HeroFigma() {
         setTimeout(() => {
           setWords([]);
           setLineIndex((prev) => (prev + 1) % LINES.length);
-        }, 1200);
+        }, 1500);
       }
-    }, 60);
+    }, 100);
 
     return () => clearInterval(typing);
   }, [lineIndex]);
