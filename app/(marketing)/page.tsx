@@ -11,12 +11,41 @@ const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 
 const HERO_VIDEO = "/videos/hero.mp4";
+const LINES = [
+  "FOR ARTISTS. EVENTS. BRANDS",
+  "THAT TAKE MERCH SERIOUSLY",
+];
 
 function HeroFigma() {
+  const [text, setText] = useState("");
+  const [lineIndex, setLineIndex] = useState(0);
+
+  useEffect(() => {
+    let i = 0;
+    let currentLine = LINES[lineIndex];
+
+    const typing = setInterval(() => {
+      setText(currentLine.slice(0, i + 1));
+      i++;
+
+      if (i === currentLine.length) {
+        clearInterval(typing);
+
+        setTimeout(() => {
+          setText("");
+          setLineIndex((prev) => (prev + 1) % LINES.length);
+        }, 1200); // وقت قبل ما يختفي
+      }
+    }, 40);
+
+    return () => clearInterval(typing);
+  }, [lineIndex]);
+
   return (
     <section className="hero heroFigma">
       <div className="heroFigmaStage">
-        
+
+       
         <div className="videoArea">
           <video
             className="heroVideo"
@@ -29,13 +58,81 @@ function HeroFigma() {
             <source src={HERO_VIDEO} type="video/mp4" />
           </video>
         </div>
-
+        
         <div className="heroText">
-          <p>FOR ARTISTS.EVENTS.BRANDS</p>
-          <text>THAT TAKE MERCH SERIOUSLY</text>
+          <p>{text}</p>
         </div>
 
       </div>
+
+      <style jsx>{`
+        .heroFigma {
+          height: 100vh;
+          background:black;
+        }
+
+        .heroFigmaStage {
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+
+        /* 👇 الفيديو يحافظ على ratio */
+        .videoArea {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+        }
+
+        .heroVideo {
+          width: 100%;
+          height: auto; /* 👈 يحافظ على الـ ratio */
+          max-height: 75vh; /* يمنع إنه يكسر الشاشة */
+          object-fit: contain; /* 👈 مفيش crop */
+        }
+
+        /* 👇 النص */
+        .heroText {
+          margin-top: 12px;
+          text-align: center;
+          min-height: 28px; /* يمنع القفز */
+        }
+
+        .heroText p {
+          margin: 0;
+          font-size: 30px;
+          font-weight: 700;
+          line-height: 1.4;
+          color:white;
+        }
+
+        /* override قوي لأي height قديم */
+        @media (max-width: 768px) {
+          .hero,
+          .heroFigma,
+          .heroFigmaStage {
+            height: auto !important;
+            min-height: auto !important;
+            
+          }
+        }
+        @media (max-width: 768px) {
+          .heroFigmaStage {
+            padding-top: 70px;
+            padding-bottom: 10px;
+          }
+        
+          .heroText {
+            margin-top: 8px;
+          }
+          .heroText p {
+            font-size: 20px;
+          }
+
+        }
+      `}</style>
     </section>
   );
 }
