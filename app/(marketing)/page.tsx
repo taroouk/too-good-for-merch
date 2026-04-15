@@ -12,8 +12,8 @@ const WHATSAPP_URL =
 
 const HERO_VIDEO = "/videos/hero.mp4";
 const LINES = [
-  "FOR ARTISTS. EVENTS. BRANDS",
-  "THAT TAKE MERCH SERIOUSLY",
+  ["FOR ARTISTS.", "EVENTS.", "BRANDS."],
+  ["THAT", "TAKE", "MERCH", "SERIOUSLY."],
 ];
 
 function HeroFigma() {
@@ -21,55 +21,52 @@ function HeroFigma() {
   const [lineIndex, setLineIndex] = useState(0);
 
   useEffect(() => {
-    const currentLine = LINES[lineIndex].split(" ");
-  
+    const currentLine = LINES[lineIndex];
+
     setWords([]);
-  
-    let wordIndex = 0;
+
+    let index = 0;
     let charIndex = 0;
-  
-    // local buffer (source of truth)
+
     const buffer: string[] = [];
-  
+
     const typing = setInterval(() => {
-      const word = currentLine[wordIndex];
-  
-      if (!word) return;
-  
-      // build current word safely
-      const typedWord = word.slice(0, charIndex + 1);
-      buffer[wordIndex] = typedWord;
-  
-      // commit FULL buffer (not incremental prev state)
+      const chunk = currentLine[index];
+
+      if (!chunk) return;
+
+      const typed = chunk.slice(0, charIndex + 1);
+      buffer[index] = typed;
+
       setWords([...buffer]);
-  
+
       charIndex++;
-  
-      // move to next word ONLY after full completion
-      if (charIndex === word.length) {
-        wordIndex++;
+
+      if (charIndex === chunk.length) {
+        index++;
         charIndex = 0;
       }
-  
-      // finished line
-      if (wordIndex === currentLine.length) {
+
+      if (index === currentLine.length) {
         clearInterval(typing);
-  
+
         setTimeout(() => {
           setWords([]);
           setLineIndex((prev) => (prev + 1) % LINES.length);
-        }, 1500);
+        }, 1200);
       }
-    }, 100);
-  
+    }, 60);
+
     return () => clearInterval(typing);
   }, [lineIndex]);
 
   return (
     <section className="hero heroFigma">
+
+      {/* FIXED STAGE (NO CENTER SHIFT) */}
       <div className="heroFigmaStage">
 
-        {/* VIDEO */}
+        {/* VIDEO (STATIC) */}
         <div className="videoArea">
           <video
             className="heroVideo"
@@ -82,7 +79,7 @@ function HeroFigma() {
           </video>
         </div>
 
-        {/* TEXT */}
+        {/* TEXT BELOW VIDEO */}
         <div className="heroText">
           {words.map((w, i) => (
             <p key={i} className="wordLine">
@@ -94,75 +91,73 @@ function HeroFigma() {
       </div>
 
       <style jsx>{`
-        .heroFigma {
+        .hero {
           height: 100vh;
+          overflow: hidden;
           background:black;
+         
         }
 
+        /* ❗ IMPORTANT: NOT CENTERED ANYMORE */
         .heroFigmaStage {
           height: 100%;
           display: flex;
           flex-direction: column;
           align-items: center;
-          justify-content: center;
+          justify-content: flex-start; /* 👈 FIX: stop vertical shifting */
+          padding-top: 70px;
         }
 
-        /* =========================
-           DESKTOP (default)
-        ========================== */
-
+        /* VIDEO STAYS FIXED */
         .videoArea {
+          width: 100%;
           display: flex;
           justify-content: center;
-          align-items: center;
         }
 
         .heroVideo {
           width: 100%;
-          max-height: 75vh;
+          max-height: 60vh; /* 👈 smaller + stable */
           object-fit: contain;
         }
 
+        /* TEXT BELOW VIDEO */
         .heroText {
-          margin-top: 18px;
+          width: 100%;
+          margin-top: 55px;
           text-align: center;
           display: flex;
           flex-direction: column;
-          gap: 0px; /* desktop زي ما هو */
+          gap: 0px;
+          color:white;
         }
 
         .wordLine {
           margin: 0;
-          font-size: 20px;
+          font-size: 25px;
+          font-weight: 800;
           line-height: 1.3;
-          font-weight: 500;
-          color:white;
         }
 
-        /* =========================
-           MOBILE ONLY
-        ========================== */
+        /* MOBILE */
         @media (max-width: 768px) {
           .heroFigmaStage {
-            justify-content: flex-start;
-            padding-top: 110px;
+            padding-top: 100px;
+            align-items: flex-start;
           }
 
           .heroVideo {
-            max-height: 38vh; /* 👈 أصغر في الموبايل */
+            max-height: 35vh;
           }
 
           .heroText {
-            width: 100%;
             text-align: left;
-            padding: 0 20px;
-            margin-top: 26px;
-            gap: 10px; /* 👈 spacing بين الكلمات (موبايل فقط) */
+            padding: 20px 20px;
+            gap: 10px;
           }
 
           .wordLine {
-            font-size: 35px;
-            text-align: left;
+            font-size: 30px;
           }
         }
       `}</style>
