@@ -11,9 +11,12 @@ const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
 
 const HERO_VIDEO = "/videos/hero.mp4";
-const LINES = [
-  ["FOR ARTISTS.", "EVENTS.", "BRANDS."],
-  ["THAT", "TAKE", "MERCH", "SERIOUSLY."],
+const WORDS = [
+  "FOR ARTISTS.",
+  "EVENTS.",
+  "BRANDS.",
+  "THAT TAKE MERCH",
+  "SERIOUSLY.",
 ];
 
 function HeroFigma() {
@@ -21,42 +24,43 @@ function HeroFigma() {
   const [lineIndex, setLineIndex] = useState(0);
 
   useEffect(() => {
-    const currentLine = LINES[lineIndex];
-
     setWords([]);
-
+  
     let index = 0;
     let charIndex = 0;
-
+  
     const buffer: string[] = [];
-
+  
     const typing = setInterval(() => {
-      const chunk = currentLine[index];
-
-      if (!chunk) return;
-
-      const typed = chunk.slice(0, charIndex + 1);
+      const word = WORDS[index];
+      if (!word) return;
+  
+      const typed = word.slice(0, charIndex + 1);
       buffer[index] = typed;
-
+  
       setWords([...buffer]);
-
+  
       charIndex++;
-
-      if (charIndex === chunk.length) {
+  
+      if (charIndex === word.length) {
         index++;
         charIndex = 0;
       }
-
-      if (index === currentLine.length) {
+  
+      // FINISH → restart clean
+      if (index === WORDS.length) {
         clearInterval(typing);
-
+  
         setTimeout(() => {
           setWords([]);
-          setLineIndex((prev) => (prev + 1) % LINES.length);
-        }, 1500);
+          setTimeout(() => {
+            // restart loop
+            setLineIndex((p) => (p + 1) % 9999);
+          }, 100);
+        }, 1100);
       }
-    }, 100);
-
+    }, 90);
+  
     return () => clearInterval(typing);
   }, [lineIndex]);
 
@@ -81,12 +85,12 @@ function HeroFigma() {
 
         {/* TEXT BELOW VIDEO */}
         <div className="heroText">
-          {words.map((w, i) => (
-            <p key={i} className="wordLine">
-              {w}
-            </p>
-          ))}
-        </div>
+  {words.map((w, i) => (
+    <p key={i} className="wordLine">
+      {w}
+    </p>
+  ))}
+</div>
 
       </div>
 
@@ -117,13 +121,13 @@ function HeroFigma() {
 
         .heroVideo {
           width: 100%;
-          max-height: 60vh; /* 👈 smaller + stable */
+          max-height: 55vh; /* 👈 smaller + stable */
           object-fit: contain;
         }
 
         /* TEXT BELOW VIDEO */
         .heroText {
-          width: 100%;
+          width: fit-content;
           margin-top: 55px;
           text-align: center;
           display: flex;
@@ -137,6 +141,7 @@ function HeroFigma() {
           font-size: 25px;
           font-weight: 800;
           line-height: 1.3;
+          text-align: left;
         }
 
         /* MOBILE */
