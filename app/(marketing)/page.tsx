@@ -102,7 +102,7 @@ function HeroFigma() {
         .heroInner {
           width: 100%;
           max-width: 900px;   /* نفس “container” واحد للفيديو + النص */
-          margin: 80 auto;     /* يخليهم في النص */
+          margin: 55 auto;     /* يخليهم في النص */
           display: flex;
           flex-direction: column;
           align-items: flex-start;}
@@ -126,8 +126,9 @@ function HeroFigma() {
 
         .heroVideo {
           width: 100%;
-          max-height: 55vh; /* 👈 smaller + stable */
+          max-height: 65vh; /* 👈 smaller + stable */
           object-fit: contain;
+          padding-top: 10px;
         }
 
         /* TEXT BELOW VIDEO */
@@ -143,7 +144,7 @@ function HeroFigma() {
 
         .wordLine {
           margin: 0;
-          font-size: 25px;
+          font-size: 20px;
           font-weight: 800;
           line-height: 1.3;
           text-align: left;
