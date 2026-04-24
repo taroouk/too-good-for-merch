@@ -1,119 +1,95 @@
-// file: src/studio/ui/StudioNavbar.tsx
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useMemo } from "react";
-import { useSession } from "next-auth/react";
-import SignOutButton from "app/studio/SignOutButton";
 
-const LOGO_SRC = "/logo.svg";
-
-function cn(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(" ");
+function cn(...classes: (string | false | null | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
 }
 
-function extractBuildId(pathname: string): string | null {
-  const m = pathname.match(/^\/studio\/projects\/([^/]+)(?:\/|$)/);
-  if (!m) return null;
-  const id = m[1];
-  if (!id || id === "new") return null;
-  return id;
-}
-
-function buildAuthUrl(base: "/login" | "/register", pathname: string) {
-  const callbackUrl = encodeURIComponent(pathname || "/studio/projects");
-  return `${base}?callbackUrl=${callbackUrl}`;
-}
-
-function NavLink({ href, label }: { href: string; label: string }) {
+export default function StudioNavbar({
+  projectId,
+  projectName,
+}: {
+  projectId: string;
+  projectName: string;
+}) {
   const pathname = usePathname();
-  const active = pathname === href;
+
+  const tabs = [
+    {
+      name: "Builder",
+      href: `/studio/projects/${projectId}/builder`,
+    },
+    {
+      name: "Assets",
+      href: `/studio/projects/${projectId}/assets`,
+    },
+    {
+      name: "Designs",
+      href: `/studio/projects/${projectId}/designs`,
+    },
+  ];
 
   return (
-    <Link
-      href={href}
-      className={cn(
-        "shrink-0 px-2.5 py-1.5 text-sm rounded-md transition whitespace-nowrap",
-        active
-          ? "font-semibold underline"
-          : "text-gray-700 hover:bg-gray-50 hover:underline"
-      )}
-    >
-      {label}
-    </Link>
-  );
-}
+    <div className="w-full border-b bg-white">
+      <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-6">
+        
+        {/* LEFT */}
+        <div className="flex items-center gap-6">
+          
+          {/* LOGO */}
+          <Link href="/" className="flex items-center h-full">
+            <Image
+              src="/logo.svg"
+              alt="Too Good For Merch"
+              width={160}
+              height={60}
+              className="h-[42px] w-auto object-contain"
+              priority
+            />
+          </Link>
 
-export default function StudioNavbar() {
-  const pathname = usePathname();
-  const buildId = extractBuildId(pathname);
-  const { status } = useSession();
-  const isAuthed = status === "authenticated";
-
-  const projectTabs = useMemo(() => {
-    if (!buildId) return [];
-    const base = `/studio/projects/${buildId}`;
-    return [
-      { href: `${base}`, label: "Overview" },
-      { href: `${base}/builder`, label: "Builder" },
-      { href: `${base}/assets`, label: "Assets" },
-      { href: `${base}/designs`, label: "Designs" },
-      { href: `${base}/settings`, label: "Settings" },
-    ];
-  }, [buildId]);
-
-  return (
-    <header className="w-full border-b bg-white">
-      <div className="mx-auto w-full max-w-6xl px-4 sm:px-6">
-        <div className="flex items-center justify-between gap-4 py-3 sm:py-4">
-          {/* LEFT: logo + links */}
-          <div className="flex items-center gap-3 min-w-0">
-            <Link href="/studio/projects" className="flex items-center gap-3 shrink-0">
-              <img src={LOGO_SRC} alt="Too Good For Merch" className="h-7 w-auto" />
+          {/* BREADCRUMB */}
+          <div className="flex items-center gap-2 text-sm text-gray-500">
+            <Link href="/studio/projects" className="hover:text-black transition">
+              Projects
             </Link>
 
-            <nav
-              className={cn(
-                "flex items-center gap-2 min-w-0",
-                // mobile: horizontal scroll
-                "overflow-x-auto",
-                // desktop: no scroll, wrap if needed
-                "sm:overflow-visible sm:flex-wrap"
-              )}
-            >
-              <NavLink href="/studio/projects" label="Projects" />
-              <NavLink href="/studio/projects/new" label="New Project" />
+            <span>/</span>
 
-              {projectTabs.length > 0 && (
-                <>
-                  <span className="mx-2 h-4 w-px bg-gray-200 shrink-0 hidden sm:block" />
-                  {projectTabs.map((t) => (
-                    <NavLink key={t.href} href={t.href} label={t.label} />
-                  ))}
-                </>
-              )}
-            </nav>
-          </div>
+            <span className="font-medium text-black">{projectName}</span>
 
-          {/* RIGHT: auth */}
-          <div className="flex items-center gap-3 text-sm shrink-0">
-            {isAuthed ? (
-              <SignOutButton />
-            ) : (
-              <>
-                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/login", pathname)}>
-                  Login
-                </Link>
-                <span className="opacity-40">/</span>
-                <Link className="hover:underline whitespace-nowrap" href={buildAuthUrl("/register", pathname)}>
-                  Sign up
-                </Link>
-              </>
-            )}
+            <span>/</span>
+
+            <span className="font-medium text-black">Builder</span>
           </div>
         </div>
+
+        {/* RIGHT */}
+        <div className="flex items-center gap-6">
+          {tabs.map((tab) => {
+            const active = pathname === tab.href;
+
+            return (
+              <Link
+                key={tab.name}
+                href={tab.href}
+                className={cn(
+                  "text-sm font-medium transition",
+                  active
+                    ? "text-black underline underline-offset-4"
+                    : "text-gray-500 hover:text-black"
+                )}
+              >
+                {tab.name}
+              </Link>
+            );
+          })}
+        </div>
+
       </div>
-    </header>
+    </div>
   );
 }

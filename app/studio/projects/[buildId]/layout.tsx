@@ -1,19 +1,21 @@
-// file: app/studio/projects/[buildId]/layout.tsx
-import type { ReactNode } from "react";
-import { getUserId } from "src/studio/authz";
-import { assertBuildAccess } from "src/studio/permissions";
+import StudioNavbar from "src/studio/ui/StudioNavbar";
 
-export default async function ProjectLayout({
+export default function ProjectLayout({
   children,
   params,
 }: {
-  children: ReactNode;
-  params: Promise<{ buildId: string }>;
+  children: React.ReactNode;
+  params: { id: string };
 }) {
-  const { buildId } = await params;
+  const projectName = "My Project";
 
-  const userId = await getUserId();
-  await assertBuildAccess(userId, buildId);
-
-  return <>{children}</>;
+  return (
+    <div>
+      <StudioNavbar
+        projectId={params.id}
+        projectName={projectName}
+      />
+      <div className="p-6">{children}</div>
+    </div>
+  );
 }

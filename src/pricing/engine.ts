@@ -1,29 +1,111 @@
-// src/pricing/engine.ts
-import type { FabricType, GarmentColor, ProductType } from "@prisma/client";
+export type PriceResult =
+  | {
+      mode: "standard";
+      unit: number;
+      total: number;
+      currency: "EGP";
+    }
+  | {
+      mode: "custom" | "bulk";
+      unit: null;
+      total: null;
+      currency: "EGP";
+      message: string;
+    };
 
-export type PricingInput = {
-  product: ProductType | null;
-  color: GarmentColor | null;
-  fabric: FabricType | null;
+const GOOGLE_SHEET_JSON_LINK =
+  "https://docs.google.com/spreadsheets/d/1UVKygcyZkYFG43B0ow6qL93MpJ6jLl6C1f0WqPHk0ik/gviz/tq?tqx=out:json";
+
+export async function computePrice({
+  product,
+  fabric,
+  quantity,
+}: {
+  product: string | null;
+  fabric: string | null;
   quantity: number;
-  placementsCount: number;
-};
+}): Promise<PriceResult> {
+  const qty = Math.max(1, Math.floor(Number(quantity) || 1));
 
-export function computePriceStub(input: PricingInput): { unit: number; total: number; currency: "EGP" } {
-  const qty = Math.max(1, Math.floor(input.quantity || 1));
+  if (product === "CUSTOM") {
+    return {
+      mode: "custom",
+      unit: null,
+      total: null,
+      currency: "EGP",
+      message: "Custom garments require a tailored quote.",
+    };
+  }
 
-  let base = 0;
-  if (input.product === "FITTED") base += 450;
-  if (input.product === "OVERSIZED") base += 520;
-  if (input.product === "CUSTOM") base += 0;
+  if (qty >= 501) {
+    return {
+      mode: "bulk",
+      unit: null,
+      total: null,
+      currency: "EGP",
+      message: "We will contact you for pricing",
+    };
+  }
 
-  if (input.fabric === "ESSENTIALS_170") base += 0;
-  if (input.fabric === "SIGNATURE_200") base += 60;
-  if (input.fabric === "HEAVYWEIGHT_300") base += 120;
+  if (!product || !fabric) {
+    return {
+      mode: "custom",
+      unit: null,
+      total: null,
+      currency: "EGP",
+      message: "Select product and fabric",
+    };
+  }
 
-  const placementsFee = Math.max(0, input.placementsCount) * 80;
+  try {
+    const res = await fetch(GOOGLE_SHEET_JSON_LINK, { cache: "no-store" });
+    const text = await res.text();
 
-  const unit = Math.max(0, base + placementsFee);
-  const total = unit * qty;
-  return { unit, total, currency: "EGP" };
+    const json = JSON.parse(text.substring(47).slice(0, -2));
+
+    const rows = json.table.rows.map((r: any) =>
+      r.c.map((c: any) => c?.v ?? "")
+    );
+
+    const match = rows.find((r: any[]) => {
+      const rowProduct = String(r[0]).trim();
+      const rowFabric = String(r[1]).trim();
+      const min = Number(r[2]);
+      const max = Number(r[3]);
+
+      return (
+        rowProduct === product &&
+        rowFabric === fabric &&
+        qty >= min &&
+        qty <= max
+      );
+    });
+
+    if (!match) {
+      return {
+        mode: "custom",
+        unit: null,
+        total: null,
+        currency: "EGP",
+        message: "No pricing found",
+      };
+    }
+
+    const unit = Number(match[4]);
+
+    return {
+      mode: "standard",
+      unit,
+      total: unit * qty,
+      currency: "EGP",
+    };
+  } catch {
+    return {
+      mode: "custom",
+      unit: null,
+      total: null,
+      currency: "EGP",
+      message: "Pricing error",
+    };
+  }
 }

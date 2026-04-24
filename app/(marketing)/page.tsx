@@ -604,7 +604,7 @@ export default function HomePage() {
       <HeroFigma />
 
       <section className="enter">
-        <Link href="/studio" className="enterInner">
+      <Link href="/api/create-and-open-project" className="enterInner">
           <span className="enterWord">ENTER</span>
           <div className="enterPanel">
             <img src="/images/enter.jpg" alt="Enter Studio" />

@@ -1,13 +1,6 @@
-// src/studio/ui/BuilderClient.tsx
 "use client";
 
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useTransition,
-} from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import type {
   BuildDraft,
@@ -18,6 +11,17 @@ import type {
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { actionCreateAsset } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
+import LiveMockupPreview from "src/studio/ui/LiveMockupPreview";
+
+type PriceResult =
+  | { mode: "standard"; unit: number; total: number; currency: "USD" | "EGP" }
+  | {
+      mode: "custom" | "bulk";
+      unit: null;
+      total: null;
+      currency: "USD" | "EGP";
+      message: string;
+    };
 
 type DraftDTO = Pick<
   BuildDraft,
@@ -34,16 +38,12 @@ type PlacementKey =
   | "CENTER_BACK"
   | "FULL_BACK";
 
-const PLACEMENTS: Array<{ key: PlacementKey; label: string }> = [
-  { key: "LEFT_CHEST", label: "Left Chest" },
-  { key: "RIGHT_CHEST", label: "Right Chest" },
-  { key: "RIGHT_SLEEVE", label: "Right Sleeve" },
-  { key: "LEFT_SLEEVE", label: "Left Sleeve" },
-  { key: "CENTER_FRONT", label: "Center Front" },
-  { key: "FULL_FRONT", label: "Full Front" },
-  { key: "CENTER_BACK", label: "Center back" },
-  { key: "FULL_BACK", label: "Full back" },
-];
+type BuilderClientProps = {
+  buildId: string;
+  buildName: string;
+  draft: DraftDTO;
+  placementsCount: number;
+};
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -54,233 +54,23 @@ function clampQty(qty: number) {
   return Math.max(1, Math.min(9999, Math.floor(qty)));
 }
 
-function pillDark(active: boolean) {
-  return cn(
-    "px-4 py-2 rounded-full border text-sm transition",
-    active
-      ? "bg-white text-black border-white"
-      : "bg-transparent text-white border-white/30 hover:border-white/60 hover:bg-white/5"
-  );
-}
-
 function extractHexFromNotes(notes?: string | null): string | null {
   if (!notes) return null;
-  const m = notes.match(/COLOR_HEX=#[0-9a-fA-F]{6}/);
-  return m ? m[0].replace("COLOR_HEX=", "") : null;
+  const match = notes.match(/COLOR_HEX=#[0-9a-fA-F]{6}/);
+  return match ? match[0].replace("COLOR_HEX=", "") : null;
 }
 
-function upsertHexInNotes(notes: string | null | undefined, hex: string): string {
+function upsertHexInNotes(notes: string | null | undefined, hex: string) {
   const clean = (notes ?? "").trim();
   const tag = `COLOR_HEX=${hex.toUpperCase()}`;
+
   if (!clean) return tag;
+
   if (/COLOR_HEX=#[0-9a-fA-F]{6}/.test(clean)) {
     return clean.replace(/COLOR_HEX=#[0-9a-fA-F]{6}/, tag);
   }
+
   return `${clean}\n${tag}`;
-}
-
-function ColorPaletteButton({
-  active,
-  initialHex,
-  onOpen,
-  onPick,
-}: {
-  active: boolean;
-  initialHex: string;
-  onOpen: () => void;
-  onPick: (hex: string) => void;
-}) {
-  const btnRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-
-  const [open, setOpen] = useState(false);
-  const [hex, setHex] = useState(initialHex);
-  const [mounted, setMounted] = useState(false);
-
-  const [pos, setPos] = useState<{ left: number; top: number }>({
-    left: 0,
-    top: 0,
-  });
-
-  const presets = [
-    "#111827",
-    "#FFFFFF",
-    "#000000",
-    "#EF4444",
-    "#F97316",
-    "#EAB308",
-    "#22C55E",
-    "#06B6D4",
-    "#3B82F6",
-    "#8B5CF6",
-    "#EC4899",
-    "#94A3B8",
-  ];
-
-  useEffect(() => setMounted(true), []);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const update = () => {
-      const btn = btnRef.current;
-      if (!btn) return;
-
-      const rect = btn.getBoundingClientRect();
-      const vw = window.innerWidth;
-      const vh = window.innerHeight;
-
-      // Mobile: handled by CSS bottom sheet
-      if (vw < 640) return;
-
-      const PANEL_W = 260;
-      const M = 12;
-
-      const desiredLeft = rect.left;
-      const belowTop = rect.bottom + 8;
-      const aboveTop = rect.top - 8;
-
-      const left = Math.min(Math.max(desiredLeft, M), vw - PANEL_W - M);
-
-      const panelH = panelRef.current?.offsetHeight ?? 220;
-      let top = belowTop;
-      if (top + panelH + M > vh) top = Math.max(M, aboveTop - panelH);
-      top = Math.min(Math.max(top, M), vh - panelH - M);
-
-      setPos({ left, top });
-    };
-
-    update();
-    window.addEventListener("resize", update);
-    window.addEventListener("scroll", update, true);
-
-    return () => {
-      window.removeEventListener("resize", update);
-      window.removeEventListener("scroll", update, true);
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-
-    const onClick = (e: MouseEvent) => {
-      const panel = panelRef.current;
-      const btn = btnRef.current;
-      const t = e.target as Node | null;
-      if (!t) return;
-
-      if (panel?.contains(t)) return;
-      if (btn?.contains(t)) return;
-
-      setOpen(false);
-    };
-
-    document.addEventListener("keydown", onKey);
-    document.addEventListener("mousedown", onClick);
-
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.removeEventListener("mousedown", onClick);
-    };
-  }, [open]);
-
-  const button = (
-    <button
-      ref={btnRef}
-      type="button"
-      className={cn(
-        "px-4 py-2 rounded-full border text-sm transition flex items-center gap-2",
-        active
-          ? "bg-white text-black border-white"
-          : "bg-transparent text-white border-white/30 hover:border-white/60 hover:bg-white/5"
-      )}
-      onClick={() => {
-        onOpen();
-        setOpen((v) => !v);
-      }}
-    >
-      <span
-        className="inline-block h-4 w-4 rounded-full border border-white/40"
-        style={{ background: hex }}
-      />
-      Custom
-    </button>
-  );
-
-  if (!mounted) return <div className="relative">{button}</div>;
-
-  const panel = (
-    <div
-      ref={panelRef}
-      className={cn(
-        // Mobile: bottom sheet
-        "fixed inset-x-4 bottom-4 z-[9999] sm:inset-x-auto sm:bottom-auto",
-        // Desktop size
-        "sm:w-[260px]",
-        "rounded-xl border border-white/15 bg-black p-3 shadow-lg"
-      )}
-      style={window.innerWidth >= 640 ? { left: pos.left, top: pos.top } : undefined}
-    >
-      <div className="text-xs text-white/70 mb-2">Pick a custom colour</div>
-
-      <div className="grid grid-cols-6 gap-2">
-        {presets.map((c) => (
-          <button
-            key={c}
-            type="button"
-            className={cn(
-              "h-7 w-7 rounded-full border border-white/25",
-              c.toLowerCase() === hex.toLowerCase() ? "ring-2 ring-white" : ""
-            )}
-            style={{ background: c }}
-            onClick={() => {
-              setHex(c);
-              onPick(c);
-              setOpen(false);
-            }}
-            aria-label={`Pick ${c}`}
-            title={c}
-          />
-        ))}
-      </div>
-
-      <div className="mt-3 flex items-center gap-2">
-        <input
-          className="flex-1 min-w-0 border border-white/20 bg-black/40 rounded-md p-2 text-xs text-white"
-          value={hex}
-          onChange={(e) => setHex(e.target.value)}
-          placeholder="#RRGGBB"
-        />
-        <button
-          type="button"
-          className="border border-white/20 rounded-md px-3 py-2 text-xs text-white hover:bg-white/10"
-          onClick={() => {
-            const v = hex.trim();
-            if (!/^#[0-9a-fA-F]{6}$/.test(v)) return;
-            onPick(v);
-            setOpen(false);
-          }}
-        >
-          Apply
-        </button>
-      </div>
-
-      <div className="mt-2 text-[11px] text-white/50 sm:hidden">
-        Tap outside to close
-      </div>
-    </div>
-  );
-
-  return (
-    <div className="relative">
-      {button}
-      {open ? createPortal(panel, document.body) : null}
-    </div>
-  );
 }
 
 export default function BuilderClient({
@@ -288,32 +78,91 @@ export default function BuilderClient({
   buildName,
   draft,
   placementsCount,
-}: {
-  buildId: string;
-  buildName: string;
-  draft: DraftDTO;
-  placementsCount: number;
-}) {
+}: BuilderClientProps) {
   const [isPending, startTransition] = useTransition();
-  const [state, setState] = useState<DraftDTO>(draft);
 
-  const [placementPick, setPlacementPick] =
-    useState<PlacementKey>("LEFT_CHEST");
+  const [state, setState] = useState<DraftDTO>(draft);
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(
     []
   );
 
+  const [uploadName, setUploadName] = useState("");
+  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+
+  const [showCustomPopup, setShowCustomPopup] = useState(false);
+  const [customRequest, setCustomRequest] = useState(state.customNotes ?? "");
+
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [uploadName, setUploadName] = useState<string>("");
 
   const qty = useMemo(
     () => clampQty(Number(state.quantity ?? 1)),
     [state.quantity]
   );
-  const isCustomProduct = state.product === "CUSTOM";
+
   const customHex = extractHexFromNotes(state.customNotes) ?? "#111827";
 
-  const priceText = "5,250 EGP";
+  const [price, setPrice] = useState<PriceResult | null>(null);
+  const [loadingPrice, setLoadingPrice] = useState(false);
+
+  const isValid = Boolean(
+    state.product &&
+      state.fabric &&
+      qty > 0 &&
+      selectedPlacements.length > 0 &&
+      artworkUrl &&
+      price?.mode === "standard"
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadPrice() {
+      setLoadingPrice(true);
+
+      try {
+        const res = await fetch("/api/pricing/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            product: state.product,
+            fabric: state.fabric,
+            quantity: qty,
+          }),
+        });
+
+        const data = (await res.json()) as PriceResult;
+
+        if (!cancelled) setPrice(data);
+      } catch {
+        if (!cancelled) {
+          setPrice({
+            mode: "custom",
+            unit: null,
+            total: null,
+            currency: "USD",
+            message: "Pricing error",
+          });
+        }
+      } finally {
+        if (!cancelled) setLoadingPrice(false);
+      }
+    }
+
+    if (state.product && state.fabric) loadPrice();
+    else setPrice(null);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.product, state.fabric, qty]);
+
+  const priceText = loadingPrice
+    ? "Calculating..."
+    : !state.product || !state.fabric
+      ? "Select product & fabric"
+      : price?.mode === "standard"
+        ? `$${price.total.toFixed(2)}`
+        : price?.message ?? "—";
 
   function save(next: DraftDTO) {
     setState(next);
@@ -329,8 +178,9 @@ export default function BuilderClient({
     startTransition(() => actionUpdateDraft(buildId, fd));
   }
 
-  async function handleUploadFile(file: File) {
+  async function handleUpload(file: File) {
     setUploadName(file.name);
+    setArtworkUrl(URL.createObjectURL(file));
 
     const fd = new FormData();
     fd.set("fileName", file.name);
@@ -343,350 +193,468 @@ export default function BuilderClient({
   function decQty() {
     save({ ...state, quantity: Math.max(1, qty - 1) });
   }
+
   function incQty() {
     save({ ...state, quantity: Math.min(9999, qty + 1) });
   }
 
-  function addPlacement() {
-    setSelectedPlacements((prev) => {
-      if (prev.includes(placementPick)) return prev;
-      if (prev.length >= 4) return prev;
-      return [...prev, placementPick];
-    });
-  }
+  const productOptions: Array<{ key: ProductType; label: string }> = [
+    { key: "FITTED" as ProductType, label: "Fitted T-shirt" },
+    { key: "OVERSIZED" as ProductType, label: "Oversized T-shirt" },
+    { key: "CUSTOM" as ProductType, label: "Custom" },
+  ];
 
-  function removePlacement(key: PlacementKey) {
-    setSelectedPlacements((prev) => prev.filter((p) => p !== key));
-  }
+  const fabricOptions: Array<{
+    key: FabricType;
+    name: string;
+    gsm: string;
+    desc: string;
+  }> = [
+    {
+      key: "ESSENTIALS_170" as FabricType,
+      name: "Essentials",
+      gsm: "170 GSM",
+      desc: "Lightweight everyday fabric",
+    },
+    {
+      key: "SIGNATURE_200" as FabricType,
+      name: "Signature",
+      gsm: "200 GSM",
+      desc: "Premium balanced weight",
+    },
+    {
+      key: "HEAVYWEIGHT_300" as FabricType,
+      name: "Heavyweight",
+      gsm: "300 GSM",
+      desc: "Thick elevated feel",
+    },
+  ];
 
-  return (
-    <div className="w-full">
-      <div className="grid gap-4 lg:gap-6 lg:grid-cols-[380px_1fr_320px]">
-        {/* LEFT: DETAILS */}
-        <section className="bg-black text-white p-6 sm:p-8 rounded-sm">
-          <div className="text-5xl sm:text-6xl font-medium tracking-tight leading-none">
-            Details
-          </div>
+  const placementCards: Array<{
+    key: PlacementKey;
+    label: string;
+    image: string;
+  }> = [
+    { key: "LEFT_CHEST", label: "Left Chest", image: "/images/placements/left-chest.png" },
+    { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/placements/right-chest.png" },
+    { key: "RIGHT_SLEEVE", label: "Right Sleeve", image: "/images/placements/right-sleeve.png" },
+    { key: "LEFT_SLEEVE", label: "Left Sleeve", image: "/images/placements/left-sleeve.png" },
+    { key: "CENTER_FRONT", label: "Center Front", image: "/images/placements/center-front.png" },
+    { key: "FULL_FRONT", label: "Full Front", image: "/images/placements/full-front.png" },
+    { key: "CENTER_BACK", label: "Center Back", image: "/images/placements/center-back.png" },
+    { key: "FULL_BACK", label: "Full Back", image: "/images/placements/full-back.png" },
+  ];
 
-          <div className="mt-7 space-y-8">
-            {/* Product */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Product</div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className={pillDark(state.product === "FITTED")}
-                  onClick={() =>
-                    save({ ...state, product: "FITTED" as ProductType })
-                  }
-                >
-                  Fitted T-shirt
-                </button>
-                <button
-                  type="button"
-                  className={pillDark(state.product === "OVERSIZED")}
-                  onClick={() =>
-                    save({ ...state, product: "OVERSIZED" as ProductType })
-                  }
-                >
-                  Oversized T-shirt
-                </button>
-                <button
-                  type="button"
-                  className={pillDark(state.product === "CUSTOM")}
-                  onClick={() =>
-                    save({ ...state, product: "CUSTOM" as ProductType })
-                  }
-                >
-                  Custom
-                </button>
+  const customPopup = showCustomPopup
+    ? createPortal(
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
+          <div className="w-full max-w-[540px] rounded-[26px] bg-white p-6 shadow-[0_30px_100px_rgba(0,0,0,0.38)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-[24px] font-semibold text-black">
+                  Custom Garment Request
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-gray-600">
+                  Custom garments require a tailored quote. Tell us what you need.
+                </p>
               </div>
 
-              {isCustomProduct && (
-                <div className="border border-white/15 rounded-lg p-3 bg-white/5 space-y-2 text-sm">
-                  <div className="font-semibold">Custom Garment Request</div>
-                  <div className="text-white/70">
-                    Custom garment constructions are not available for instant
-                    checkout. We’ll review your request and provide a tailored
-                    quote.
-                  </div>
+              <button
+                type="button"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-gray-400 hover:bg-gray-100 hover:text-black"
+                onClick={() => setShowCustomPopup(false)}
+              >
+                ×
+              </button>
+            </div>
 
-                  <textarea
-                    className="w-full border border-white/15 bg-black/40 rounded-md p-2 text-white placeholder:text-white/40"
-                    value={state.customNotes ?? ""}
-                    onChange={(e) =>
-                      save({ ...state, customNotes: e.target.value })
-                    }
-                    placeholder="Describe what you need..."
-                    rows={4}
-                  />
+            <textarea
+              value={customRequest}
+              onChange={(e) => setCustomRequest(e.target.value)}
+              placeholder="Example: oversized hoodie, heavyweight fabric, front and back print..."
+              className="mt-5 h-[150px] w-full resize-none rounded-2xl border border-gray-300 p-4 text-sm text-black outline-none focus:border-black focus:ring-4 focus:ring-black/5"
+            />
 
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    <a
-                      className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
-                      href={WHATSAPP_URL}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Continue on WhatsApp
-                    </a>
-                    <button
-                      type="button"
-                      className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
-                      onClick={() =>
-                        save({ ...state, product: "FITTED" as ProductType })
-                      }
-                    >
-                      Go Back
-                    </button>
-                  </div>
-                </div>
-              )}
-            </section>
+            <div className="mt-5 grid gap-3 sm:flex sm:justify-end">
+              <button
+                type="button"
+                className="h-11 rounded-xl border border-gray-300 px-5 text-sm font-semibold text-black hover:bg-gray-50"
+                onClick={() => setShowCustomPopup(false)}
+              >
+                Cancel
+              </button>
 
-            {/* Colour */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Colour</div>
-
-              <div className="flex flex-wrap gap-2 items-center">
-                <button
-                  type="button"
-                  className={pillDark(state.color === "BLACK")}
-                  onClick={() =>
-                    save({ ...state, color: "BLACK" as GarmentColor })
-                  }
-                >
-                  Black
-                </button>
-
-                <button
-                  type="button"
-                  className={pillDark(state.color === "WHITE")}
-                  onClick={() =>
-                    save({ ...state, color: "WHITE" as GarmentColor })
-                  }
-                >
-                  White
-                </button>
-
-                <ColorPaletteButton
-                  active={state.color === "CUSTOM"}
-                  initialHex={customHex}
-                  onOpen={() =>
-                    save({ ...state, color: "CUSTOM" as GarmentColor })
-                  }
-                  onPick={(hex) => {
-                    const nextNotes = upsertHexInNotes(state.customNotes, hex);
-                    save({
-                      ...state,
-                      color: "CUSTOM" as GarmentColor,
-                      customNotes: nextNotes,
-                    });
-                  }}
-                />
-              </div>
-            </section>
-
-            {/* Fabric */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Fabric</div>
-              <select
-                className="w-full border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
-                value={state.fabric ?? ""}
-                onChange={(e) =>
+              <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex h-11 items-center justify-center rounded-xl bg-black px-6 text-sm font-semibold text-white hover:opacity-90"
+                onClick={() => {
                   save({
                     ...state,
-                    fabric: (e.target.value || null) as FabricType | null,
-                  })
-                }
+                    product: "CUSTOM" as ProductType,
+                    customNotes: customRequest,
+                  });
+                }}
               >
-                <option value="">Select fabric…</option>
-                <option value="ESSENTIALS_170">Essentials · 170 GSM</option>
-                <option value="SIGNATURE_200">Signature · 200 GSM</option>
-                <option value="HEAVYWEIGHT_300">Heavyweight · 300 GSM</option>
-              </select>
-            </section>
+                Continue on WhatsApp
+              </a>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
 
-            {/* Upload artwork */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Upload artwork</div>
+  return (
+    <>
+      {customPopup}
 
-              <div className="flex items-center gap-3">
+      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-0">
+        <div className="mb-4 text-sm text-black/60">
+          Build: <span className="font-medium text-black">{buildName}</span>
+        </div>
+
+        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(360px,500px)_minmax(420px,600px)_280px]">
+          <section className="min-w-0 rounded-[26px] bg-[linear-gradient(180deg,rgba(200,120,50,0.35)_0%,rgba(200,120,50,0.18)_35%,#120d09_75%,#0a0705_100%)] p-4 text-white sm:p-8 lg:p-10">
+            <div className="text-4xl font-medium leading-none tracking-tight text-black sm:text-6xl">
+              Details
+            </div>
+
+            <div className="mt-7 space-y-8">
+              <section className="space-y-3">
+                <div className="text-sm font-semibold text-black">Product</div>
+
+                <div className="grid grid-cols-1 gap-2 rounded-[24px] border border-[#7a4a16] bg-black/90 p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)] sm:grid-cols-3">
+                  {productOptions.map((p) => (
+                    <button
+                      key={p.key}
+                      type="button"
+                      onClick={() => {
+                        if (p.key === "CUSTOM") {
+                          save({ ...state, product: p.key });
+                          setShowCustomPopup(true);
+                          return;
+                        }
+                        save({ ...state, product: p.key });
+                      }}
+                      className={cn(
+                        "min-h-[44px] w-full rounded-full px-4 text-sm font-medium transition-all duration-200",
+                        state.product === p.key
+                          ? "bg-gradient-to-r from-[#6b3a12] to-black text-white shadow-[0_6px_16px_rgba(0,0,0,0.45)]"
+                          : "text-[#f3d2aa] hover:bg-white/10 hover:text-white"
+                      )}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <div className="text-sm font-semibold text-black">Colour</div>
+
+                <div className="grid grid-cols-1 gap-2 rounded-[24px] border border-[#7a4a16] bg-[linear-gradient(90deg,#5a3410_0%,#241304_45%,#050505_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)] sm:grid-cols-3">
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-h-[44px] w-full rounded-full border px-5 text-sm font-medium transition-all duration-200",
+                      state.color === "BLACK"
+                        ? "border-black bg-black text-white"
+                        : "border-transparent text-[#f3d2aa] hover:bg-black hover:text-white"
+                    )}
+                    onClick={() =>
+                      save({ ...state, color: "BLACK" as GarmentColor })
+                    }
+                  >
+                    Black
+                  </button>
+
+                  <button
+                    type="button"
+                    className={cn(
+                      "min-h-[44px] w-full rounded-full border px-5 text-sm font-medium transition-all duration-200",
+                      state.color === "WHITE"
+                        ? "border-white bg-white text-black"
+                        : "border-transparent text-[#f3d2aa] hover:bg-white hover:text-black"
+                    )}
+                    onClick={() =>
+                      save({ ...state, color: "WHITE" as GarmentColor })
+                    }
+                  >
+                    White
+                  </button>
+
+                  <label
+                    className={cn(
+                      "flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border px-5 text-sm font-medium transition-all duration-200",
+                      state.color === "CUSTOM"
+                        ? "border-black bg-black text-white"
+                        : "border-transparent text-[#f3d2aa] hover:bg-white/10 hover:text-white"
+                    )}
+                  >
+                    <input
+                      type="color"
+                      value={customHex}
+                      className="h-5 w-5 cursor-pointer rounded-full border-0 bg-transparent p-0"
+                      onChange={(e) =>
+                        save({
+                          ...state,
+                          color: "CUSTOM" as GarmentColor,
+                          customNotes: upsertHexInNotes(
+                            state.customNotes,
+                            e.target.value
+                          ),
+                        })
+                      }
+                    />
+                    Custom
+                  </label>
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-black">Fabric</span>
+
+                  <div className="relative group cursor-pointer">
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-black/40 bg-white/40 text-xs text-black">
+                      i
+                    </span>
+
+                    <div className="absolute left-0 top-6 z-30 hidden w-80 rounded-2xl border border-black/10 bg-white p-4 text-[12px] leading-5 text-black shadow-2xl group-hover:block">
+                      <div className="mb-3">
+                        <div className="font-semibold">Essentials - 170 GSM</div>
+                        <div>Lightweight, breathable, and built for everyday wear.</div>
+                      </div>
+                      <div className="mb-3">
+                        <div className="font-semibold">Signature - 200 GSM</div>
+                        <div>Smooth, buttery, structured, and designed to hold shape.</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">Heavyweight - 300 GSM</div>
+                        <div>Bold, substantial, durable, with elevated presence.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  {fabricOptions.map((fabric) => {
+                    const active = state.fabric === fabric.key;
+
+                    return (
+                      <button
+                        key={fabric.key}
+                        type="button"
+                        onClick={() =>
+                          save({ ...state, fabric: fabric.key as FabricType })
+                        }
+                        className={cn(
+                          "flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition-all duration-200",
+                          active
+                            ? "border-[#a56a2a] bg-white text-black shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
+                            : "border-white/15 bg-black/20 text-white hover:border-white/35 hover:bg-black/30"
+                        )}
+                      >
+                        <div>
+                          <div className="text-sm font-semibold">
+                            {fabric.name} · {fabric.gsm}
+                          </div>
+                          <div
+                            className={cn(
+                              "mt-1 text-xs",
+                              active ? "text-black/55" : "text-white/55"
+                            )}
+                          >
+                            {fabric.desc}
+                          </div>
+                        </div>
+
+                        <div
+                          className={cn(
+                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs",
+                            active
+                              ? "border-[#a56a2a] bg-[#a56a2a] text-white"
+                              : "border-white/30 text-white/50"
+                          )}
+                        >
+                          {active ? "✓" : ""}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section className="space-y-3">
+                <div className="text-sm font-semibold text-black">Upload artwork</div>
+
                 <input
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
                   className="hidden"
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (!f) return;
-                    handleUploadFile(f);
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    handleUpload(file);
                     e.currentTarget.value = "";
                   }}
                 />
 
                 <button
                   type="button"
-                  className="border border-white/20 rounded-md px-3 py-2 text-sm hover:bg-white/10"
+                  className="rounded-md border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   Choose file
                 </button>
 
-                <div className="text-xs text-white/70 truncate">
+                <div className="max-w-full truncate text-xs text-white/70">
                   {uploadName ? `Selected: ${uploadName}` : "No file selected"}
                 </div>
-              </div>
+              </section>
 
-              <div className="text-xs text-white/50">
-                Phase 4: creates an Asset record only (storage comes in Phase 5).
-              </div>
-            </section>
+              <section className="space-y-3">
+                <div className="text-sm font-semibold text-white">Placement</div>
 
-            {/* Placement */}
-            <section className="space-y-3">
-              <div className="text-sm font-semibold">Placement</div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {placementCards.map((p) => {
+                    const active = selectedPlacements.includes(p.key);
 
-              <div className="flex gap-2">
-                <select
-                  className="flex-1 border border-white/20 bg-black/30 rounded-md p-2 text-sm text-white"
-                  value={placementPick}
-                  onChange={(e) =>
-                    setPlacementPick(e.target.value as PlacementKey)
-                  }
-                  disabled={selectedPlacements.length >= 4}
-                >
-                  {PLACEMENTS.map((p) => (
-                    <option key={p.key} value={p.key}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
+                    return (
+                      <button
+                        key={p.key}
+                        type="button"
+                        onClick={() => {
+                          const next = selectedPlacements.includes(p.key)
+                            ? selectedPlacements.filter((x) => x !== p.key)
+                            : selectedPlacements.length >= 4
+                              ? selectedPlacements
+                              : [...selectedPlacements, p.key];
+
+                          setSelectedPlacements(next);
+
+                          save({
+                            ...state,
+                            customNotes: JSON.stringify({ placement: next }),
+                          });
+                        }}
+                        className={cn(
+                          "flex items-center gap-3 rounded-xl border p-2 text-left transition-all",
+                          active
+                            ? "border-white bg-white text-black shadow"
+                            : "border-white/20 bg-black/20 text-white hover:bg-white/10"
+                        )}
+                      >
+                        <img
+                          src={p.image}
+                          alt={p.label}
+                          className="h-12 w-12 shrink-0 rounded-md bg-white object-cover"
+                        />
+                        <span className="text-sm font-medium">{p.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="text-xs text-white/60">
+                  Max 4 placements · Saved placements:{" "}
+                  <span className="font-semibold text-white">
+                    {placementsCount}
+                  </span>
+                </div>
+              </section>
+            </div>
+
+            <div className="mt-6 text-xs text-white/60">
+              {isPending ? "Saving…" : "Saved"}
+            </div>
+          </section>
+
+          <LiveMockupPreview
+            product={state.product}
+            color={state.color}
+            customHex={customHex}
+            artworkUrl={artworkUrl}
+            selectedPlacements={selectedPlacements}
+          />
+
+          <section className="min-w-0 lg:sticky lg:top-6">
+            <div className="w-full rounded-3xl border border-black/5 bg-[#faf8f6] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-5 lg:max-w-[280px]">
+              <div className="rounded-2xl bg-white p-5 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-6">
+                <div className="text-[26px] font-semibold leading-tight text-[#a56a2a]">
+                  {priceText}
+                </div>
+
+                <div className="mt-5 text-sm leading-5 text-gray-700">
+                  Order EST. 1 week after confirmation
+                </div>
+
+                <div className="mt-6 text-xs font-medium tracking-wide text-gray-600">
+                  QUANTITY
+                </div>
+
+                <div className="mt-2 grid h-11 w-full max-w-[180px] grid-cols-[44px_1fr_44px] border border-black bg-white">
+                  <button type="button" onClick={decQty} className="border-r border-black text-lg">
+                    −
+                  </button>
+
+                  <input
+                    type="number"
+                    min={1}
+                    max={9999}
+                    value={qty}
+                    onChange={(e) =>
+                      save({ ...state, quantity: clampQty(Number(e.target.value)) })
+                    }
+                    className="w-full text-center text-sm font-semibold outline-none"
+                  />
+
+                  <button type="button" onClick={incQty} className="border-l border-black text-lg">
+                    +
+                  </button>
+                </div>
 
                 <button
                   type="button"
-                  onClick={addPlacement}
-                  disabled={selectedPlacements.length >= 4}
-                  className={cn(
-                    "border border-white/20 rounded-md px-3 text-sm",
-                    selectedPlacements.length >= 4
-                      ? "text-white/40"
-                      : "hover:bg-white/10"
-                  )}
+                  className="mt-4 h-11 w-full bg-black px-4 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={!isValid}
                 >
-                  Add
+                  ADD TO BAG
                 </button>
-              </div>
 
-              {selectedPlacements.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {selectedPlacements.map((k) => (
-                    <span
-                      key={k}
-                      className="inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1 text-xs bg-white/5"
-                    >
-                      {PLACEMENTS.find((p) => p.key === k)?.label ?? k}
-                      <button
-                        type="button"
-                        className="text-white/70 hover:text-white"
-                        onClick={() => removePlacement(k)}
-                        aria-label="Remove"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
+                <button
+                  type="button"
+                  className="mt-3 h-11 w-full border border-black bg-white px-4 text-xs font-semibold text-black"
+                  disabled
+                >
+                  ADD TO WISHLIST
+                </button>
+
+                <div className="mt-5 text-[11px] leading-5 text-gray-600">
+                  Model is 5ft 8’ and wears size XS.{" "}
+                  <span className="underline">SIZE GUIDE</span>
                 </div>
-              )}
 
-              <div className="text-xs text-white/60">
-                Saved placements (Designs tab):{" "}
-                <span className="text-white font-semibold">
-                  {placementsCount}
-                </span>
+                <div className="mt-4 text-[11px] italic leading-5 text-gray-500">
+                  Instant pricing and shipping estimate for 1-500 pieces
+                </div>
+
+                <a
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1 block text-[12px] font-medium text-black underline"
+                >
+                  Live Assistance
+                </a>
               </div>
-            </section>
-          </div>
-
-          <div className="mt-6 text-xs text-white/60">
-            {isPending ? "Saving…" : "Saved"}
-          </div>
-        </section>
-
-        {/* CENTER: PREVIEW */}
-        <section className="flex items-center justify-center">
-          <div className="w-full max-w-[620px] border-[6px] border-black bg-white h-[420px] sm:h-[560px] lg:h-[720px] flex items-center justify-center">
-            <div className="text-5xl sm:text-6xl font-medium tracking-tight">
-              preview
             </div>
-          </div>
-        </section>
-
-        {/* RIGHT: PRICE/QUANTITY */}
-        <section className="flex flex-col justify-between bg-white">
-          <div className="pt-8 sm:pt-10 space-y-4">
-            <div className="text-lg font-semibold">{priceText}</div>
-            <div className="text-sm text-gray-700">
-              Order EST. 1 week after confirmation
-            </div>
-
-            <div className="text-xs tracking-wide text-gray-600">QUANTITY</div>
-            <div className="grid grid-cols-[44px_1fr_44px] border h-10 bg-white">
-              <button
-                type="button"
-                onClick={decQty}
-                className="border-r hover:bg-gray-50"
-              >
-                −
-              </button>
-              <div className="flex items-center justify-center text-sm font-medium">
-                {qty}
-              </div>
-              <button
-                type="button"
-                onClick={incQty}
-                className="border-l hover:bg-gray-50"
-              >
-                +
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <button
-                type="button"
-                className="h-11 bg-black text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
-                disabled
-                title="Phase 5"
-              >
-                ADD TO BAG
-              </button>
-
-              <button
-                type="button"
-                className="h-11 border text-sm font-medium hover:bg-gray-50"
-                disabled
-              >
-                ADD TO WISHLIST
-              </button>
-            </div>
-
-            <div className="text-xs text-gray-600">
-              Model is 5ft 8’ and wears size XS.{" "}
-              <span className="underline">SIZE GUIDE</span>
-            </div>
-
-            <div className="text-xs text-gray-500 italic">
-              Instant pricing and shipping estimate for 1-500 pieces
-            </div>
-          </div>
-
-          <div className="pb-8 text-sm underline text-right">
-            <a href={WHATSAPP_URL} target="_blank" rel="noreferrer">
-              Live Assistance
-            </a>
-          </div>
-        </section>
+          </section>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

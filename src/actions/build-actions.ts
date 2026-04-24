@@ -4,7 +4,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
-import { assertBuildAccess, rememberGuestBuildId } from "src/studio/permissions";
+import { assertBuildAccess } from "src/studio/permissions";
 import { BuildStatus } from "@prisma/client";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
@@ -111,4 +111,8 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
       primaryAssetId: primaryAssetId.length ? primaryAssetId : null,
     },
   });
+}
+
+function rememberGuestBuildId(id: string) {
+  throw new Error("Function not implemented.");
 }

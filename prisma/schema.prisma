@@ -236,3 +236,30 @@ model VerificationToken {
 
   @@unique([identifier, token])
 }
+
+model PricingTier {
+  id        String      @id @default(cuid())
+  createdAt DateTime    @default(now())
+
+  product   ProductType
+  fabric    FabricType
+
+  minQty    Int
+  maxQty    Int?
+
+  tshirt    Float
+  print     Float
+
+  @@index([product, fabric])
+  @@index([minQty, maxQty])
+}
+
+model ExchangeRate {
+  id        String   @id @default(cuid())
+  base      String
+  target    String
+  rate      Float
+  updatedAt DateTime @updatedAt
+
+  @@unique([base, target], name: "base_target")
+}
