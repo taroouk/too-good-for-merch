@@ -40,6 +40,9 @@
     "tailwindcss": "^4.2.1",
     "typescript": "^5"
   },
+  "optionalDependencies": {
+    "lightningcss-linux-x64-gnu": "^1.29.2"
+  },
   "prisma": {
     "schema": "prisma/schema.prisma"
   }
