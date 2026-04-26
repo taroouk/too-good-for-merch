@@ -11,7 +11,6 @@ import type {
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { actionCreateAsset } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
-import LiveMockupPreview from "src/studio/ui/LiveMockupPreview";
 
 type PriceResult =
   | { mode: "standard"; unit: number; total: number; currency: "USD" | "EGP" }
@@ -71,6 +70,127 @@ function upsertHexInNotes(notes: string | null | undefined, hex: string) {
   }
 
   return `${clean}\n${tag}`;
+}
+
+function getTryOnImage(product: ProductType | null, color: GarmentColor | null) {
+  if (product === "OVERSIZED") {
+    if (color === "BLACK") {
+      return "/assets/tryon/oversized-black.png";
+    }
+
+    return "/assets/tryon/oversized-white.png";
+  }
+
+  if (color === "BLACK") {
+    return "/assets/tryon/fitted-black.png";
+  }
+
+  return "/assets/tryon/fitted-white.png";
+}
+
+function getArtworkStyle(placement: PlacementKey | undefined) {
+  switch (placement) {
+    case "LEFT_CHEST":
+      return { left: "46%", top: "34%", width: "7%" };
+    case "RIGHT_CHEST":
+      return { left: "54%", top: "34%", width: "7%" };
+    case "CENTER_FRONT":
+      return { left: "50%", top: "39%", width: "16%" };
+    case "FULL_FRONT":
+      return { left: "50%", top: "41%", width: "25%" };
+    case "CENTER_BACK":
+      return { left: "50%", top: "39%", width: "16%" };
+    case "FULL_BACK":
+      return { left: "50%", top: "41%", width: "25%" };
+    case "LEFT_SLEEVE":
+      return { left: "35%", top: "37%", width: "6%" };
+    case "RIGHT_SLEEVE":
+      return { left: "65%", top: "37%", width: "6%" };
+    default:
+      return { left: "50%", top: "39%", width: "16%" };
+  }
+}
+type TryOnPreviewProps = {
+  product: ProductType | null;
+  color: GarmentColor | null;
+  customHex: string;
+  artworkUrl: string | null;
+  selectedPlacements: PlacementKey[];
+};
+function TryOnPreview({
+  product,
+  color,
+  customHex,
+  artworkUrl,
+  selectedPlacements,
+}: TryOnPreviewProps) {
+  const tryOnImage = getTryOnImage(product, color);
+
+  const placements =
+    selectedPlacements.length > 0
+      ? selectedPlacements
+      : (["CENTER_FRONT"] as PlacementKey[]);
+
+  const isCustomColor = color === "CUSTOM";
+
+  return (
+    <section className="min-w-0 rounded-[26px] bg-[#faf8f6] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-5">
+      <div className="mb-4">
+        <h2 className="text-xl font-semibold text-black">Live Try-On</h2>
+        <p className="mt-1 text-sm text-black/55">
+          Choose a garment and preview your artwork on a real model.
+        </p>
+      </div>
+
+      <div className="relative mx-auto aspect-[9/16] w-full max-w-[420px] overflow-hidden rounded-[22px] border border-black/10 bg-white">
+        <img
+          src={tryOnImage}
+          alt="Selected garment on model"
+          className="absolute inset-0 h-full w-full object-contain"
+          draggable={false}
+        />
+
+        {isCustomColor && (
+          <div className="absolute left-4 top-4 z-30 rounded-full bg-white/90 px-3 py-2 text-xs font-semibold text-black shadow-sm">
+            Custom colour selected{" "}
+            <span
+              className="ml-1 inline-block h-3 w-3 rounded-full align-middle"
+              style={{ backgroundColor: customHex }}
+            />
+          </div>
+        )}
+
+        {artworkUrl &&
+          placements.map((placement) => {
+            const style = getArtworkStyle(placement);
+
+            return (
+              <img
+                key={placement}
+                src={artworkUrl}
+                alt="Artwork preview"
+                className="absolute z-20 -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-sm"
+                style={{
+                  left: style.left,
+                  top: style.top,
+                  width: style.width,
+                }}
+                draggable={false}
+              />
+            );
+          })}
+
+        <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-white/85 px-4 py-2 text-xs font-medium text-black/60 shadow-sm">
+          {product === "OVERSIZED" ? "Oversized T-shirt" : "Fitted T-shirt"}
+        </div>
+      </div>
+
+      <div className="mt-4 rounded-2xl bg-white p-3 text-xs leading-5 text-black/60">
+        For clean colours, this preview uses prepared model images instead of
+        recolouring the full photo.
+      </div>
+    </section>
+  );
 }
 
 export default function BuilderClient({
@@ -233,16 +353,16 @@ export default function BuilderClient({
   const placementCards: Array<{
     key: PlacementKey;
     label: string;
-    image: string;
+    initials: string;
   }> = [
-    { key: "LEFT_CHEST", label: "Left Chest", image: "/images/placements/left-chest.png" },
-    { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/placements/right-chest.png" },
-    { key: "RIGHT_SLEEVE", label: "Right Sleeve", image: "/images/placements/right-sleeve.png" },
-    { key: "LEFT_SLEEVE", label: "Left Sleeve", image: "/images/placements/left-sleeve.png" },
-    { key: "CENTER_FRONT", label: "Center Front", image: "/images/placements/center-front.png" },
-    { key: "FULL_FRONT", label: "Full Front", image: "/images/placements/full-front.png" },
-    { key: "CENTER_BACK", label: "Center Back", image: "/images/placements/center-back.png" },
-    { key: "FULL_BACK", label: "Full Back", image: "/images/placements/full-back.png" },
+    { key: "LEFT_CHEST", label: "Left Chest", initials: "LC" },
+    { key: "RIGHT_CHEST", label: "Right Chest", initials: "RC" },
+    { key: "RIGHT_SLEEVE", label: "Right Sleeve", initials: "RS" },
+    { key: "LEFT_SLEEVE", label: "Left Sleeve", initials: "LS" },
+    { key: "CENTER_FRONT", label: "Center Front", initials: "CF" },
+    { key: "FULL_FRONT", label: "Full Front", initials: "FF" },
+    { key: "CENTER_BACK", label: "Center Back", initials: "CB" },
+    { key: "FULL_BACK", label: "Full Back", initials: "FB" },
   ];
 
   const customPopup = showCustomPopup
@@ -548,11 +668,9 @@ export default function BuilderClient({
                             : "border-white/20 bg-black/20 text-white hover:bg-white/10"
                         )}
                       >
-                        <img
-                          src={p.image}
-                          alt={p.label}
-                          className="h-12 w-12 shrink-0 rounded-md bg-white object-cover"
-                        />
+                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white text-[10px] font-semibold text-black">
+                          {p.initials}
+                        </div>
                         <span className="text-sm font-medium">{p.label}</span>
                       </button>
                     );
@@ -573,7 +691,7 @@ export default function BuilderClient({
             </div>
           </section>
 
-          <LiveMockupPreview
+          <TryOnPreview
             product={state.product}
             color={state.color}
             customHex={customHex}
