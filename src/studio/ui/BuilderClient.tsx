@@ -11,6 +11,7 @@ import type {
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { actionCreateAsset } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
+import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
 type PriceResult =
   | { mode: "standard"; unit: number; total: number; currency: "USD" | "EGP" }
@@ -53,146 +54,6 @@ function clampQty(qty: number) {
   return Math.max(1, Math.min(9999, Math.floor(qty)));
 }
 
-function extractHexFromNotes(notes?: string | null): string | null {
-  if (!notes) return null;
-  const match = notes.match(/COLOR_HEX=#[0-9a-fA-F]{6}/);
-  return match ? match[0].replace("COLOR_HEX=", "") : null;
-}
-
-function upsertHexInNotes(notes: string | null | undefined, hex: string) {
-  const clean = (notes ?? "").trim();
-  const tag = `COLOR_HEX=${hex.toUpperCase()}`;
-
-  if (!clean) return tag;
-
-  if (/COLOR_HEX=#[0-9a-fA-F]{6}/.test(clean)) {
-    return clean.replace(/COLOR_HEX=#[0-9a-fA-F]{6}/, tag);
-  }
-
-  return `${clean}\n${tag}`;
-}
-
-function getTryOnImage(product: ProductType | null, color: GarmentColor | null) {
-  if (product === "OVERSIZED") {
-    if (color === "BLACK") {
-      return "/assets/tryon/oversized-black.png";
-    }
-
-    return "/assets/tryon/oversized-white.png";
-  }
-
-  if (color === "BLACK") {
-    return "/assets/tryon/fitted-black.png";
-  }
-
-  return "/assets/tryon/fitted-white.png";
-}
-
-function getArtworkStyle(placement: PlacementKey | undefined) {
-  switch (placement) {
-    case "LEFT_CHEST":
-      return { left: "46%", top: "34%", width: "7%" };
-    case "RIGHT_CHEST":
-      return { left: "54%", top: "34%", width: "7%" };
-    case "CENTER_FRONT":
-      return { left: "50%", top: "39%", width: "16%" };
-    case "FULL_FRONT":
-      return { left: "50%", top: "41%", width: "25%" };
-    case "CENTER_BACK":
-      return { left: "50%", top: "39%", width: "16%" };
-    case "FULL_BACK":
-      return { left: "50%", top: "41%", width: "25%" };
-    case "LEFT_SLEEVE":
-      return { left: "35%", top: "37%", width: "6%" };
-    case "RIGHT_SLEEVE":
-      return { left: "65%", top: "37%", width: "6%" };
-    default:
-      return { left: "50%", top: "39%", width: "16%" };
-  }
-}
-type TryOnPreviewProps = {
-  product: ProductType | null;
-  color: GarmentColor | null;
-  customHex: string;
-  artworkUrl: string | null;
-  selectedPlacements: PlacementKey[];
-};
-function TryOnPreview({
-  product,
-  color,
-  customHex,
-  artworkUrl,
-  selectedPlacements,
-}: TryOnPreviewProps) {
-  const tryOnImage = getTryOnImage(product, color);
-
-  const placements =
-    selectedPlacements.length > 0
-      ? selectedPlacements
-      : (["CENTER_FRONT"] as PlacementKey[]);
-
-  const isCustomColor = color === "CUSTOM";
-
-  return (
-    <section className="min-w-0 rounded-[26px] bg-[#faf8f6] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-5">
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold text-black">Live Try-On</h2>
-        <p className="mt-1 text-sm text-black/55">
-          Choose a garment and preview your artwork on a real model.
-        </p>
-      </div>
-
-      <div className="relative mx-auto aspect-[9/16] w-full max-w-[420px] overflow-hidden rounded-[22px] border border-black/10 bg-white">
-        <img
-          src={tryOnImage}
-          alt="Selected garment on model"
-          className="absolute inset-0 h-full w-full object-contain"
-          draggable={false}
-        />
-
-        {isCustomColor && (
-          <div className="absolute left-4 top-4 z-30 rounded-full bg-white/90 px-3 py-2 text-xs font-semibold text-black shadow-sm">
-            Custom colour selected{" "}
-            <span
-              className="ml-1 inline-block h-3 w-3 rounded-full align-middle"
-              style={{ backgroundColor: customHex }}
-            />
-          </div>
-        )}
-
-        {artworkUrl &&
-          placements.map((placement) => {
-            const style = getArtworkStyle(placement);
-
-            return (
-              <img
-                key={placement}
-                src={artworkUrl}
-                alt="Artwork preview"
-                className="absolute z-20 -translate-x-1/2 -translate-y-1/2 object-contain drop-shadow-sm"
-                style={{
-                  left: style.left,
-                  top: style.top,
-                  width: style.width,
-                }}
-                draggable={false}
-              />
-            );
-          })}
-
-        <div className="absolute bottom-4 left-1/2 z-30 -translate-x-1/2 rounded-full bg-white/85 px-4 py-2 text-xs font-medium text-black/60 shadow-sm">
-          {product === "OVERSIZED" ? "Oversized T-shirt" : "Fitted T-shirt"}
-        </div>
-      </div>
-
-      <div className="mt-4 rounded-2xl bg-white p-3 text-xs leading-5 text-black/60">
-        For clean colours, this preview uses prepared model images instead of
-        recolouring the full photo.
-      </div>
-    </section>
-  );
-}
-
 export default function BuilderClient({
   buildId,
   buildName,
@@ -201,7 +62,14 @@ export default function BuilderClient({
 }: BuilderClientProps) {
   const [isPending, startTransition] = useTransition();
 
-  const [state, setState] = useState<DraftDTO>(draft);
+  const [state, setState] = useState<DraftDTO>({
+    ...draft,
+    product: draft.product ?? ("FITTED" as ProductType),
+    color: draft.color ?? ("WHITE" as GarmentColor),
+    fabric: draft.fabric ?? ("ESSENTIALS_170" as FabricType),
+    quantity: draft.quantity ?? 1,
+  });
+
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(
     []
   );
@@ -219,17 +87,14 @@ export default function BuilderClient({
     [state.quantity]
   );
 
-  const customHex = extractHexFromNotes(state.customNotes) ?? "#111827";
-
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
 
   const isValid = Boolean(
     state.product &&
+      state.color &&
       state.fabric &&
       qty > 0 &&
-      selectedPlacements.length > 0 &&
-      artworkUrl &&
       price?.mode === "standard"
   );
 
@@ -375,7 +240,8 @@ export default function BuilderClient({
                   Custom Garment Request
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-gray-600">
-                  Custom garments require a tailored quote. Tell us what you need.
+                  Custom garments require a tailored quote. Tell us what you
+                  need.
                 </p>
               </div>
 
@@ -456,6 +322,7 @@ export default function BuilderClient({
                           setShowCustomPopup(true);
                           return;
                         }
+
                         save({ ...state, product: p.key });
                       }}
                       className={cn(
@@ -474,7 +341,7 @@ export default function BuilderClient({
               <section className="space-y-3">
                 <div className="text-sm font-semibold text-black">Colour</div>
 
-                <div className="grid grid-cols-1 gap-2 rounded-[24px] border border-[#7a4a16] bg-[linear-gradient(90deg,#5a3410_0%,#241304_45%,#050505_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)] sm:grid-cols-3">
+                <div className="grid grid-cols-2 gap-2 rounded-[24px] border border-[#7a4a16] bg-[linear-gradient(90deg,#5a3410_0%,#241304_45%,#050505_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)]">
                   <button
                     type="button"
                     className={cn(
@@ -504,38 +371,14 @@ export default function BuilderClient({
                   >
                     White
                   </button>
-
-                  <label
-                    className={cn(
-                      "flex min-h-[44px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border px-5 text-sm font-medium transition-all duration-200",
-                      state.color === "CUSTOM"
-                        ? "border-black bg-black text-white"
-                        : "border-transparent text-[#f3d2aa] hover:bg-white/10 hover:text-white"
-                    )}
-                  >
-                    <input
-                      type="color"
-                      value={customHex}
-                      className="h-5 w-5 cursor-pointer rounded-full border-0 bg-transparent p-0"
-                      onChange={(e) =>
-                        save({
-                          ...state,
-                          color: "CUSTOM" as GarmentColor,
-                          customNotes: upsertHexInNotes(
-                            state.customNotes,
-                            e.target.value
-                          ),
-                        })
-                      }
-                    />
-                    Custom
-                  </label>
                 </div>
               </section>
 
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-black">Fabric</span>
+                  <span className="text-sm font-semibold text-black">
+                    Fabric
+                  </span>
 
                   <div className="relative group cursor-pointer">
                     <span className="flex h-4 w-4 items-center justify-center rounded-full border border-black/40 bg-white/40 text-xs text-black">
@@ -544,16 +387,31 @@ export default function BuilderClient({
 
                     <div className="absolute left-0 top-6 z-30 hidden w-80 rounded-2xl border border-black/10 bg-white p-4 text-[12px] leading-5 text-black shadow-2xl group-hover:block">
                       <div className="mb-3">
-                        <div className="font-semibold">Essentials - 170 GSM</div>
-                        <div>Lightweight, breathable, and built for everyday wear.</div>
+                        <div className="font-semibold">
+                          Essentials - 170 GSM
+                        </div>
+                        <div>
+                          Lightweight, breathable, and built for everyday wear.
+                        </div>
                       </div>
+
                       <div className="mb-3">
-                        <div className="font-semibold">Signature - 200 GSM</div>
-                        <div>Smooth, buttery, structured, and designed to hold shape.</div>
+                        <div className="font-semibold">
+                          Signature - 200 GSM
+                        </div>
+                        <div>
+                          Smooth, buttery, structured, and designed to hold
+                          shape.
+                        </div>
                       </div>
+
                       <div>
-                        <div className="font-semibold">Heavyweight - 300 GSM</div>
-                        <div>Bold, substantial, durable, with elevated presence.</div>
+                        <div className="font-semibold">
+                          Heavyweight - 300 GSM
+                        </div>
+                        <div>
+                          Bold, substantial, durable, with elevated presence.
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -581,6 +439,7 @@ export default function BuilderClient({
                           <div className="text-sm font-semibold">
                             {fabric.name} · {fabric.gsm}
                           </div>
+
                           <div
                             className={cn(
                               "mt-1 text-xs",
@@ -608,7 +467,9 @@ export default function BuilderClient({
               </section>
 
               <section className="space-y-3">
-                <div className="text-sm font-semibold text-black">Upload artwork</div>
+                <div className="text-sm font-semibold text-black">
+                  Upload artwork
+                </div>
 
                 <input
                   ref={fileInputRef}
@@ -618,6 +479,7 @@ export default function BuilderClient({
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
+
                     handleUpload(file);
                     e.currentTarget.value = "";
                   }}
@@ -637,7 +499,9 @@ export default function BuilderClient({
               </section>
 
               <section className="space-y-3">
-                <div className="text-sm font-semibold text-white">Placement</div>
+                <div className="text-sm font-semibold text-white">
+                  Placement
+                </div>
 
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {placementCards.map((p) => {
@@ -671,6 +535,7 @@ export default function BuilderClient({
                         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white text-[10px] font-semibold text-black">
                           {p.initials}
                         </div>
+
                         <span className="text-sm font-medium">{p.label}</span>
                       </button>
                     );
@@ -691,12 +556,10 @@ export default function BuilderClient({
             </div>
           </section>
 
-          <TryOnPreview
+          <TryOn3DPreview
             product={state.product}
             color={state.color}
-            customHex={customHex}
             artworkUrl={artworkUrl}
-            selectedPlacements={selectedPlacements}
           />
 
           <section className="min-w-0 lg:sticky lg:top-6">
@@ -715,7 +578,11 @@ export default function BuilderClient({
                 </div>
 
                 <div className="mt-2 grid h-11 w-full max-w-[180px] grid-cols-[44px_1fr_44px] border border-black bg-white">
-                  <button type="button" onClick={decQty} className="border-r border-black text-lg">
+                  <button
+                    type="button"
+                    onClick={decQty}
+                    className="border-r border-black text-lg"
+                  >
                     −
                   </button>
 
@@ -725,12 +592,19 @@ export default function BuilderClient({
                     max={9999}
                     value={qty}
                     onChange={(e) =>
-                      save({ ...state, quantity: clampQty(Number(e.target.value)) })
+                      save({
+                        ...state,
+                        quantity: clampQty(Number(e.target.value)),
+                      })
                     }
                     className="w-full text-center text-sm font-semibold outline-none"
                   />
 
-                  <button type="button" onClick={incQty} className="border-l border-black text-lg">
+                  <button
+                    type="button"
+                    onClick={incQty}
+                    className="border-l border-black text-lg"
+                  >
                     +
                   </button>
                 </div>
