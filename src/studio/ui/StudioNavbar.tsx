@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -10,12 +11,17 @@ function cn(...classes: (string | false | null | undefined)[]) {
 
 export default function StudioNavbar({
   projectId,
-  projectName,
 }: {
   projectId: string;
   projectName: string;
 }) {
   const pathname = usePathname();
+
+  const { data: session } = useSession();
+
+  const projectsHref = session
+    ? "/studio/projects"
+    : "/login";
 
   const tabs = [
     {
@@ -33,42 +39,64 @@ export default function StudioNavbar({
   ];
 
   return (
-    <div className="w-full border-b bg-white">
-      <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between px-6">
-        
-        {/* LEFT */}
-        <div className="flex items-center gap-6">
-          
-          {/* LOGO */}
-          <Link href="/" className="flex items-center h-full">
+    <header className="studio-navbar">
+      <div className="studio-navbar-inner">
+        <div className="studio-navbar-left">
+          <Link
+            href="/"
+            className="studio-navbar-logo-link"
+            aria-label="Too Good For Merch home"
+          >
             <Image
               src="/logo.svg"
               alt="Too Good For Merch"
-              width={160}
-              height={60}
-              className="h-[42px] w-auto object-contain"
+              width={170}
+              height={62}
+              className="studio-navbar-logo"
               priority
             />
           </Link>
 
-          {/* BREADCRUMB */}
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Link href="/studio/projects" className="hover:text-black transition">
+          <nav className="studio-breadcrumb" aria-label="Main navigation">
+            <Link
+              href={projectsHref}
+              className="studio-breadcrumb-link"
+            >
               Projects
             </Link>
 
-            <span>/</span>
+            <span className="studio-breadcrumb-separator">/</span>
 
-            <span className="font-medium text-black">{projectName}</span>
+            {!session ? (
+              <>
+                <Link
+                  href="/login"
+                  className="studio-breadcrumb-current"
+                >
+                  Sign In
+                </Link>
 
-            <span>/</span>
+                <span className="studio-breadcrumb-separator">/</span>
 
-            <span className="font-medium text-black">Builder</span>
-          </div>
+                <Link
+                  href="/register"
+                  className="studio-breadcrumb-current"
+                >
+                  Sign Up
+                </Link>
+              </>
+            ) : (
+              <span className="studio-breadcrumb-current">
+                My Account
+              </span>
+            )}
+          </nav>
         </div>
 
-        {/* RIGHT */}
-        <div className="flex items-center gap-6">
+        <nav
+          className="studio-navbar-tabs"
+          aria-label="Studio navigation"
+        >
           {tabs.map((tab) => {
             const active = pathname === tab.href;
 
@@ -77,19 +105,18 @@ export default function StudioNavbar({
                 key={tab.name}
                 href={tab.href}
                 className={cn(
-                  "text-sm font-medium transition",
+                  "studio-navbar-tab",
                   active
-                    ? "text-black underline underline-offset-4"
-                    : "text-gray-500 hover:text-black"
+                    ? "studio-navbar-tab-active"
+                    : "studio-navbar-tab-idle",
                 )}
               >
                 {tab.name}
               </Link>
             );
           })}
-        </div>
-
+        </nav>
       </div>
-    </div>
+    </header>
   );
 }

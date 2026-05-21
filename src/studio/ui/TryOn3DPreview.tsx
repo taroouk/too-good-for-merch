@@ -1,17 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useMemo } from "react";
-import { Canvas, useLoader } from "@react-three/fiber";
-import {
-  Bounds,
-  Center,
-  Decal,
-  Environment,
-  OrbitControls,
-  useGLTF,
-} from "@react-three/drei";
-import { Mesh, MeshStandardMaterial, Object3D, TextureLoader } from "three";
+import { useMemo, useState } from "react";
 import type { GarmentColor, ProductType } from "@prisma/client";
+
+type PreviewSide = "front" | "back";
 
 type TryOn3DPreviewProps = {
   product: ProductType | null;
@@ -19,94 +11,50 @@ type TryOn3DPreviewProps = {
   artworkUrl: string | null;
 };
 
-function getModelPath(product: ProductType | null) {
-  return "/assets/3d/fitted-tshirt.glb";
+function getFrontModelImage(
+  product: ProductType | null,
+  color: GarmentColor | null,
+): string {
+  if (product === "OVERSIZED") {
+    return color === "BLACK"
+      ? "/images/Oversized Black.png"
+      : "/images/Oversized White.png";
+  }
+
+  return color === "BLACK"
+    ? "/images/TGFM Black.png"
+    : "/images/TGFM White.png";
 }
 
-function getGarmentColor(color: GarmentColor | null) {
-  return color === "BLACK" ? "#050505" : "#ffffff";
+function getBackModelImage(
+  product: ProductType | null,
+  color: GarmentColor | null,
+): string {
+  if (product === "OVERSIZED") {
+    return color === "BLACK"
+      ? "/images/Oversized Black Back.png"
+      : "/images/Oversized White Back.png";
+  }
+
+  return color === "BLACK"
+    ? "/images/TGFM Black Back.png"
+    : "/images/TGFM White Back.png";
 }
 
-function isMesh(object: Object3D): object is Mesh {
-  return object instanceof Mesh;
-}
+function getPreviewLabel(
+  product: ProductType | null,
+  color: GarmentColor | null,
+): string {
+  const productLabel =
+    product === "OVERSIZED"
+      ? "Oversized"
+      : product === "CUSTOM"
+        ? "Bespoke"
+        : "Fitted";
 
-function isShirtMesh(object: Object3D) {
-  const name = object.name.toLowerCase();
+  const colorLabel = color === "BLACK" ? "Black" : "White";
 
-  return (
-    name.includes("shirt") ||
-    name.includes("tshirt") ||
-    name.includes("tee") ||
-    name.includes("top") ||
-    name.includes("garment")
-  );
-}
-
-function Model3D({ product, color, artworkUrl }: TryOn3DPreviewProps) {
-  const { scene } = useGLTF(getModelPath(product));
-
-  const textureUrl = artworkUrl || "/assets/transparent-pixel.png";
-  const artworkTexture = useLoader(TextureLoader, textureUrl);
-
-  const shirtMaterial = useMemo(() => {
-    return new MeshStandardMaterial({
-      color: getGarmentColor(color),
-      roughness: 0.75,
-      metalness: 0,
-    });
-  }, [color]);
-
-  const shirtMesh = useMemo<Mesh | null>(() => {
-    let selectedMesh: Mesh | null = null;
-
-    scene.traverse((object) => {
-      if (!isMesh(object)) return;
-
-      if (!selectedMesh && isShirtMesh(object)) {
-        selectedMesh = object;
-      }
-    });
-
-    return selectedMesh;
-  }, [scene]);
-
-  useEffect(() => {
-    scene.traverse((object) => {
-      if (!isMesh(object)) return;
-
-      object.castShadow = true;
-      object.receiveShadow = true;
-
-      if (isShirtMesh(object)) {
-        object.material = shirtMaterial;
-      }
-    });
-  }, [scene, shirtMaterial]);
-
-  return (
-    <Center top>
-      <primitive object={scene} />
-
-      {shirtMesh && artworkUrl && (
-        <mesh
-          geometry={shirtMesh.geometry}
-          position={shirtMesh.position}
-          rotation={shirtMesh.rotation}
-          scale={shirtMesh.scale}
-        >
-          <meshStandardMaterial transparent opacity={0} />
-
-          <Decal
-            position={[0, 1.15, 0.25]}
-            rotation={[0, 0, 0]}
-            scale={[0.28, 0.28, 0.28]}
-            map={artworkTexture}
-          />
-        </mesh>
-      )}
-    </Center>
-  );
+  return `${productLabel} / ${colorLabel}`;
 }
 
 export default function TryOn3DPreview({
@@ -114,42 +62,168 @@ export default function TryOn3DPreview({
   color,
   artworkUrl,
 }: TryOn3DPreviewProps) {
+  const [previewSide, setPreviewSide] = useState<PreviewSide>("front");
+
+  const frontImage = useMemo(
+    () => getFrontModelImage(product, color),
+    [product, color],
+  );
+
+  const backImage = useMemo(
+    () => getBackModelImage(product, color),
+    [product, color],
+  );
+
+  const modelImage = previewSide === "front" ? frontImage : backImage;
+
+  function togglePreviewSide() {
+    setPreviewSide((side) => (side === "front" ? "back" : "front"));
+  }
+
   return (
-    <section className="min-w-0 rounded-[26px] bg-[#faf8f6] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-5">
-      <div className="mb-4">
-        <h2 className="text-xl font-semibold text-black">3D Try-On</h2>
-        <p className="mt-1 text-sm text-black/55">
-          Drag to rotate. Scroll to zoom.
-        </p>
+    <section className="studio-preview-panel" aria-label="3D garment preview">
+      <div className="studio-preview-chrome">
+        <div>
+          <div className="studio-preview-kicker">Live Model Preview</div>
+
+          <div className="studio-preview-label">
+            {getPreviewLabel(product, color)}
+          </div>
+        </div>
+
+        <div className="studio-preview-status">
+          <span />
+          Ready
+        </div>
       </div>
 
-      <div className="h-[620px] w-full overflow-hidden rounded-[22px] border border-black/10 bg-white">
-        <Canvas camera={{ position: [0, 1.2, 7], fov: 28 }} shadows>
-          <ambientLight intensity={0.9} />
-          <directionalLight position={[4, 6, 6]} intensity={1.25} castShadow />
+      <div
+        className="studio-preview-inner studio-preview-inner-clean"
+        style={{
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div className="studio-preview-gridline studio-preview-gridline-left" />
+        <div className="studio-preview-gridline studio-preview-gridline-right" />
+        <div className="studio-preview-glow" />
 
-          <Suspense fallback={null}>
-            <Bounds fit clip observe margin={1.15}>
-              <Model3D product={product} color={color} artworkUrl={artworkUrl} />
-            </Bounds>
+        <img
+          key={modelImage}
+          src={modelImage}
+          alt={
+            previewSide === "front"
+              ? "TGFM front model preview"
+              : "TGFM back model preview"
+          }
+          className="studio-model-image"
+          draggable={false}
+          onError={(event) => {
+            if (previewSide === "back") {
+              event.currentTarget.src = frontImage;
+            }
+          }}
+        />
 
-            <Environment preset="studio" />
-          </Suspense>
-
-          <OrbitControls
-            makeDefault
-            target={[0, 1, 0]}
-            enablePan={false}
-            enableZoom
-            enableRotate
-            minDistance={2}
-            maxDistance={12}
+        {artworkUrl && previewSide === "front" ? (
+          <img
+            src={artworkUrl}
+            alt="Artwork preview"
+            className="studio-artwork-preview"
+            draggable={false}
           />
-        </Canvas>
-      </div>
+        ) : null}
 
-      <div className="mt-4 rounded-2xl bg-white p-3 text-xs leading-5 text-black/60">
-        3D preview auto-fits the GLB model inside the viewer. Drag to rotate.
+        <div
+          style={{
+            position: "absolute",
+            left: "50%",
+            bottom: 74,
+            zIndex: 999999,
+            width: 156,
+            height: 36,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: 13,
+            border: "2px solid #000000",
+            borderRadius: 999,
+            background: "#ffffff",
+            transform: "translateX(-50%)",
+            boxShadow: "0 18px 34px rgba(0,0,0,0.14)",
+          }}
+          aria-label="Preview side switch"
+        >
+          <button
+            type="button"
+            onClick={togglePreviewSide}
+            aria-label="Previous preview side"
+            style={{
+              width: 24,
+              height: 24,
+              border: 0,
+              padding: 0,
+              background: "transparent",
+              color: "#000000",
+              fontSize: 22,
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ‹
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setPreviewSide("front")}
+            aria-label="Show front preview"
+            style={{
+              width: previewSide === "front" ? 10 : 8,
+              height: previewSide === "front" ? 10 : 8,
+              border: 0,
+              padding: 0,
+              borderRadius: 999,
+              background: previewSide === "front" ? "#000000" : "#d8d8d8",
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={() => setPreviewSide("back")}
+            aria-label="Show back preview"
+            style={{
+              width: previewSide === "back" ? 10 : 8,
+              height: previewSide === "back" ? 10 : 8,
+              border: 0,
+              padding: 0,
+              borderRadius: 999,
+              background: previewSide === "back" ? "#000000" : "#d8d8d8",
+            }}
+          />
+
+          <button
+            type="button"
+            onClick={togglePreviewSide}
+            aria-label="Next preview side"
+            style={{
+              width: 24,
+              height: 24,
+              border: 0,
+              padding: 0,
+              background: "transparent",
+              color: "#000000",
+              fontSize: 22,
+              lineHeight: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            ›
+          </button>
+        </div>
       </div>
     </section>
   );

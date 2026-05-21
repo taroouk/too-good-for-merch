@@ -8,6 +8,7 @@ import type {
   GarmentColor,
   ProductType,
 } from "@prisma/client";
+
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { actionCreateAsset } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
@@ -45,6 +46,13 @@ type BuilderClientProps = {
   placementsCount: number;
 };
 
+type CreateOrderResponse = {
+  orderId: string;
+  orderNumber: string;
+  totalCents: number;
+  error?: string;
+};
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -60,6 +68,7 @@ export default function BuilderClient({
   draft,
   placementsCount,
 }: BuilderClientProps) {
+  const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const [state, setState] = useState<DraftDTO>({
@@ -70,33 +79,66 @@ export default function BuilderClient({
     quantity: draft.quantity ?? 1,
   });
 
-  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(
-    []
-  );
-
+  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
   const [uploadName, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-
   const [showCustomPopup, setShowCustomPopup] = useState(false);
-  const [customRequest, setCustomRequest] = useState(state.customNotes ?? "");
+  const [showBespokeModal, setShowBespokeModal] = useState(false);
+  const [selectedSize, setSelectedSize] = useState<"S" | "M" | "L" | "XL">("M");
+  const [fabricOpen, setFabricOpen] = useState(false);
+  const [price, setPrice] = useState<PriceResult | null>(null);
+  const [loadingPrice, setLoadingPrice] = useState(false);
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const qty = useMemo(
-    () => clampQty(Number(state.quantity ?? 1)),
-    [state.quantity]
-  );
+  const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
 
-  const [price, setPrice] = useState<PriceResult | null>(null);
-  const [loadingPrice, setLoadingPrice] = useState(false);
+  const fabricOptions = [
+    {
+      key: "ESSENTIALS_170" as FabricType,
+      name: "ESSENTIALS",
+      gsm: "170 GSM Cotton",
+      desc: "Lightweight everyday cotton with a clean minimal hand feel.",
+    },
+    {
+      key: "SIGNATURE_200" as FabricType,
+      name: "SIGNATURE",
+      gsm: "200 GSM Cotton",
+      desc: "Our balanced premium weight. Smooth, buttery, structured, and designed to hold its shape.",
+    },
+    {
+      key: "HEAVYWEIGHT_300" as FabricType,
+      name: "HEAVYWEIGHT",
+      gsm: "300 GSM Cotton",
+      desc: "Dense luxury cotton with elevated structure and a substantial drape.",
+    },
+  ];
 
-  const isValid = Boolean(
-    state.product &&
-      state.color &&
-      state.fabric &&
-      qty > 0 &&
-      price?.mode === "standard"
-  );
+  const placementCards: Array<{ key: PlacementKey; label: string; image: string }> = [
+    { key: "FULL_FRONT", label: "Full Front", image: "/images/Frame 1.png" },
+    { key: "CENTER_FRONT", label: "Center Front", image: "/images/Frame 2.png" },
+    { key: "LEFT_CHEST", label: "Left Chest", image: "/images/Frame 3.png" },
+    { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/Frame 4.png" },
+    { key: "FULL_BACK", label: "Full Back", image: "/images/Frame 5.png" },
+    { key: "CENTER_BACK", label: "Center Back", image: "/images/Frame 6.png" },
+  ];
+
+  const currentFabric =
+    fabricOptions.find((fabric) => fabric.key === state.fabric) ?? fabricOptions[0];
+
+  const currentProductLabel =
+    state.product === "FITTED"
+      ? "Fitted T-Shirt"
+      : state.product === "OVERSIZED"
+        ? "Oversized T-Shirt"
+        : "Bespoke";
+
+  const currentColorLabel = state.color === "BLACK" ? "Black" : "White";
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,7 +158,6 @@ export default function BuilderClient({
         });
 
         const data = (await res.json()) as PriceResult;
-
         if (!cancelled) setPrice(data);
       } catch {
         if (!cancelled) {
@@ -125,7 +166,7 @@ export default function BuilderClient({
             unit: null,
             total: null,
             currency: "USD",
-            message: "Pricing error",
+            message: "Pricing unavailable",
           });
         }
       } finally {
@@ -140,14 +181,6 @@ export default function BuilderClient({
       cancelled = true;
     };
   }, [state.product, state.fabric, qty]);
-
-  const priceText = loadingPrice
-    ? "Calculating..."
-    : !state.product || !state.fabric
-      ? "Select product & fabric"
-      : price?.mode === "standard"
-        ? `$${price.total.toFixed(2)}`
-        : price?.message ?? "—";
 
   function save(next: DraftDTO) {
     setState(next);
@@ -175,415 +208,630 @@ export default function BuilderClient({
     startTransition(() => actionCreateAsset(buildId, fd));
   }
 
-  function decQty() {
-    save({ ...state, quantity: Math.max(1, qty - 1) });
+  async function handleAddToBag() {
+    if (!price || price.mode !== "standard") return;
+    if (!state.product || !state.fabric || !state.color) return;
+
+    setIsCreatingOrder(true);
+
+    try {
+      const res = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buildId,
+          product: state.product,
+          fabric: state.fabric,
+          color: state.color,
+          quantity: qty,
+          unitPrice: price.unit,
+          total: price.total,
+          placements: selectedPlacements.length > 0 ? selectedPlacements : ["CENTER_FRONT"],
+          assetId: state.primaryAssetId,
+          notes: state.customNotes,
+        }),
+      });
+
+      const data = (await res.json()) as CreateOrderResponse;
+      if (!res.ok) throw new Error(data.error ?? "Failed to create order.");
+      window.location.href = `/orders/${data.orderId}`;
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Something went wrong.");
+    } finally {
+      setIsCreatingOrder(false);
+    }
   }
 
-  function incQty() {
-    save({ ...state, quantity: Math.min(9999, qty + 1) });
+  function openCustomRequestPopup() {
+    setShowCustomPopup(true);
   }
 
-  const productOptions: Array<{ key: ProductType; label: string }> = [
-    { key: "FITTED" as ProductType, label: "Fitted T-shirt" },
-    { key: "OVERSIZED" as ProductType, label: "Oversized T-shirt" },
-    { key: "CUSTOM" as ProductType, label: "Custom" },
-  ];
+  function continueCustomRequest() {
+    save({
+      ...state,
+      product: "CUSTOM" as ProductType,
+      customNotes: state.customNotes ?? "",
+    });
 
-  const fabricOptions: Array<{
-    key: FabricType;
-    name: string;
-    gsm: string;
-    desc: string;
-  }> = [
-    {
-      key: "ESSENTIALS_170" as FabricType,
-      name: "Essentials",
-      gsm: "170 GSM",
-      desc: "Lightweight everyday fabric",
-    },
-    {
-      key: "SIGNATURE_200" as FabricType,
-      name: "Signature",
-      gsm: "200 GSM",
-      desc: "Premium balanced weight",
-    },
-    {
-      key: "HEAVYWEIGHT_300" as FabricType,
-      name: "Heavyweight",
-      gsm: "300 GSM",
-      desc: "Thick elevated feel",
-    },
-  ];
+    setShowCustomPopup(false);
+    setShowBespokeModal(true);
+  }
 
-  const placementCards: Array<{
-    key: PlacementKey;
-    label: string;
-    initials: string;
-  }> = [
-    { key: "LEFT_CHEST", label: "Left Chest", initials: "LC" },
-    { key: "RIGHT_CHEST", label: "Right Chest", initials: "RC" },
-    { key: "RIGHT_SLEEVE", label: "Right Sleeve", initials: "RS" },
-    { key: "LEFT_SLEEVE", label: "Left Sleeve", initials: "LS" },
-    { key: "CENTER_FRONT", label: "Center Front", initials: "CF" },
-    { key: "FULL_FRONT", label: "Full Front", initials: "FF" },
-    { key: "CENTER_BACK", label: "Center Back", initials: "CB" },
-    { key: "FULL_BACK", label: "Full Back", initials: "FB" },
-  ];
+  function togglePlacement(key: PlacementKey) {
+    const next = selectedPlacements.includes(key)
+      ? selectedPlacements.filter((item) => item !== key)
+      : selectedPlacements.length >= 4
+        ? selectedPlacements
+        : [...selectedPlacements, key];
 
-  const customPopup = showCustomPopup
-    ? createPortal(
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 p-4 backdrop-blur-[2px]">
-          <div className="w-full max-w-[540px] rounded-[26px] bg-white p-6 shadow-[0_30px_100px_rgba(0,0,0,0.38)]">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-[24px] font-semibold text-black">
-                  Custom Garment Request
-                </h2>
-                <p className="mt-2 text-sm leading-6 text-gray-600">
-                  Custom garments require a tailored quote. Tell us what you
-                  need.
-                </p>
-              </div>
+    setSelectedPlacements(next);
 
+    save({
+      ...state,
+      product: "CUSTOM" as ProductType,
+      customNotes: JSON.stringify({ placement: next }),
+    });
+  }
+
+  const priceText = loadingPrice
+    ? "Calculating..."
+    : state.product === "CUSTOM"
+      ? "Custom garments require a tailored quote."
+      : price?.mode === "standard"
+        ? `$${price.total.toFixed(2)}`
+        : price?.message ?? "Pricing unavailable";
+
+  const selectionSummary = [
+    state.product === "FITTED"
+      ? "FITTED"
+      : state.product === "OVERSIZED"
+        ? "OVERSIZED"
+        : "BESPOKE",
+    state.color === "BLACK" ? "BLACK" : "WHITE",
+    currentFabric.gsm.replace(" Cotton", ""),
+  ].join(" / ");
+
+  const isStandardCheckout =
+    Boolean(state.product && state.color && state.fabric) &&
+    price?.mode === "standard" &&
+    state.product !== "CUSTOM";
+
+  const customPopup =
+    mounted && showCustomPopup
+      ? createPortal(
+          <div className="studio-modal-overlay">
+            <div className="studio-custom-request-modal studio-modal-panel">
               <button
                 type="button"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-2xl text-gray-400 hover:bg-gray-100 hover:text-black"
                 onClick={() => setShowCustomPopup(false)}
+                className="studio-modal-close"
+                aria-label="Close custom garment request"
               >
                 ×
               </button>
-            </div>
 
-            <textarea
-              value={customRequest}
-              onChange={(e) => setCustomRequest(e.target.value)}
-              placeholder="Example: oversized hoodie, heavyweight fabric, front and back print..."
-              className="mt-5 h-[150px] w-full resize-none rounded-2xl border border-gray-300 p-4 text-sm text-black outline-none focus:border-black focus:ring-4 focus:ring-black/5"
-            />
+              <div className="studio-modal-kicker">TGFM Bespoke</div>
 
-            <div className="mt-5 grid gap-3 sm:flex sm:justify-end">
+              <h2 className="studio-custom-request-title">
+                Custom Garment Request
+              </h2>
+
+              <p className="studio-custom-request-copy">
+                Custom garment constructions are not available for instant
+                checkout. We&apos;ll review your request and provide a tailored
+                quote based on your customization needs.
+              </p>
+
               <button
                 type="button"
-                className="h-11 rounded-xl border border-gray-300 px-5 text-sm font-semibold text-black hover:bg-gray-50"
-                onClick={() => setShowCustomPopup(false)}
+                onClick={continueCustomRequest}
+                className="studio-modal-primary-button"
               >
-                Cancel
+                Continue With Custom Request
               </button>
 
-              <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex h-11 items-center justify-center rounded-xl bg-black px-6 text-sm font-semibold text-white hover:opacity-90"
-                onClick={() => {
-                  save({
-                    ...state,
-                    product: "CUSTOM" as ProductType,
-                    customNotes: customRequest,
-                  });
-                }}
+              <button
+                type="button"
+                onClick={() => setShowCustomPopup(false)}
+                className="studio-modal-secondary-button"
               >
-                Continue on WhatsApp
-              </a>
+                Go Back
+              </button>
             </div>
-          </div>
-        </div>,
-        document.body
-      )
-    : null;
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const bespokeModal =
+    mounted && showBespokeModal
+      ? createPortal(
+          <div className="studio-modal-overlay">
+            <div className="studio-bespoke-modal studio-modal-panel">
+              <button
+                type="button"
+                onClick={() => setShowBespokeModal(false)}
+                className="studio-modal-close"
+                aria-label="Close bespoke builder"
+              >
+                ×
+              </button>
+
+              <div className="studio-bespoke-preview">
+                <div className="studio-bespoke-canvas">
+                  <img
+                    src="/images/front-tshirt.png"
+                    alt="T-shirt preview"
+                    className="studio-bespoke-shirt"
+                  />
+
+                  <img
+                    src={artworkUrl ?? "/images/artwork-placeholder.png"}
+                    alt="Artwork preview"
+                    className="studio-bespoke-artwork"
+                  />
+                </div>
+
+                <div className="studio-bespoke-placement-area">
+                  <div className="studio-bespoke-label">Select Placement</div>
+
+                  <div className="studio-placement-grid">
+                    {placementCards.map((placement) => {
+                      const active = selectedPlacements.includes(placement.key);
+
+                      return (
+                        <button
+                          key={placement.key}
+                          type="button"
+                          onClick={() => togglePlacement(placement.key)}
+                          className={cn(
+                            "studio-placement-card",
+                            active ? "studio-placement-card-active" : "",
+                          )}
+                          aria-label={placement.label}
+                        >
+                          <img
+                            src={placement.image}
+                            alt={placement.label}
+                            className="studio-placement-image"
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div className="studio-bespoke-controls">
+                <div>
+                  <div className="studio-bespoke-kicker">Custom Artwork</div>
+
+                  <h2 className="studio-bespoke-title">Build Your T-Shirt</h2>
+                </div>
+
+                {selectedPlacements.length > 0 ? (
+                  <div className="studio-selected-artwork-area">
+                    <div className="studio-bespoke-label">Selected Artwork</div>
+
+                    <div className="studio-selected-artwork-grid">
+                      {selectedPlacements.map((placement) => (
+                        <div key={placement} className="studio-selected-artwork-card">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedPlacements((prev) =>
+                                prev.filter((item) => item !== placement),
+                              )
+                            }
+                            className="studio-selected-artwork-remove"
+                            aria-label={`Remove ${placement}`}
+                          >
+                            ×
+                          </button>
+
+                          <img
+                            src={artworkUrl ?? "/images/artwork-placeholder.png"}
+                            alt={placement}
+                            className="studio-selected-artwork-image"
+                          />
+                        </div>
+                      ))}
+
+                      {selectedPlacements.length < 4 ? (
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="studio-selected-artwork-add"
+                        >
+                          + Add
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="studio-bespoke-upload-button"
+                >
+                  Upload Artwork
+                </button>
+
+                <div>
+                  <div className="studio-bespoke-label">Your Uploads</div>
+
+                  <div className="studio-upload-grid">
+                    {[0, 1, 2, 3].map((index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="studio-upload-slot"
+                      >
+                        {index === 0 && uploadName ? (
+                          <span className="studio-upload-name">
+                            {uploadName}
+                          </span>
+                        ) : (
+                          <span className="studio-upload-placeholder">▧</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    save({
+                      ...state,
+                      product: "CUSTOM" as ProductType,
+                    });
+
+                    setShowBespokeModal(false);
+                  }}
+                  className="studio-bespoke-save-button"
+                >
+                  Save T-Shirt
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   return (
     <>
       {customPopup}
+      {bespokeModal}
 
-      <div className="w-full px-4 sm:px-6 lg:px-8 xl:px-0">
-        <div className="mb-4 text-sm text-black/60">
-          Build: <span className="font-medium text-black">{buildName}</span>
-        </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (!file) return;
+          handleUpload(file);
+          event.currentTarget.value = "";
+        }}
+      />
 
-        <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(360px,500px)_minmax(420px,600px)_280px]">
-          <section className="min-w-0 rounded-[26px] bg-[linear-gradient(180deg,rgba(200,120,50,0.35)_0%,rgba(200,120,50,0.18)_35%,#120d09_75%,#0a0705_100%)] p-4 text-white sm:p-8 lg:p-10">
-            <div className="text-4xl font-medium leading-none tracking-tight text-black sm:text-6xl">
-              Details
-            </div>
+      <main className="studio-builder-shell">
+        <div className="studio-builder-frame">
+          <div className="studio-builder-grid">
+            <section
+              className="studio-left-panel"
+              aria-label="Product controls"
+              style={{ overflow: "visible" }}
+            >
+              <div className="studio-panel-header">
 
-            <div className="mt-7 space-y-8">
-              <section className="space-y-3">
-                <div className="text-sm font-semibold text-black">Product</div>
+                <h1
+                  className="studio-title"
+                  style={{
+                    textAlign: "center",
+                    fontWeight: 800,
+                    fontStyle: "italic",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  The Studio
+                </h1>
 
-                <div className="grid grid-cols-1 gap-2 rounded-[24px] border border-[#7a4a16] bg-black/90 p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)] sm:grid-cols-3">
-                  {productOptions.map((p) => (
-                    <button
-                      key={p.key}
-                      type="button"
-                      onClick={() => {
-                        if (p.key === "CUSTOM") {
-                          save({ ...state, product: p.key });
-                          setShowCustomPopup(true);
-                          return;
-                        }
+                <p className="studio-panel-subtitle">
+                  Configure your base garment, fabric and artwork placement.
+                </p>
+              </div>
 
-                        save({ ...state, product: p.key });
-                      }}
-                      className={cn(
-                        "min-h-[44px] w-full rounded-full px-4 text-sm font-medium transition-all duration-200",
-                        state.product === p.key
-                          ? "bg-gradient-to-r from-[#6b3a12] to-black text-white shadow-[0_6px_16px_rgba(0,0,0,0.45)]"
-                          : "text-[#f3d2aa] hover:bg-white/10 hover:text-white"
-                      )}
-                    >
-                      {p.label}
-                    </button>
-                  ))}
-                </div>
-              </section>
+              <div className="studio-left-stack">
+                <div className="studio-control-group">
+                  <div className="studio-control-heading">
+                    <div>
+                      <div className="studio-eyebrow">Product Type</div>
 
-              <section className="space-y-3">
-                <div className="text-sm font-semibold text-black">Colour</div>
-
-                <div className="grid grid-cols-2 gap-2 rounded-[24px] border border-[#7a4a16] bg-[linear-gradient(90deg,#5a3410_0%,#241304_45%,#050505_100%)] p-2 shadow-[inset_0_1px_0_rgba(255,210,140,0.18),0_10px_24px_rgba(0,0,0,0.35)]">
-                  <button
-                    type="button"
-                    className={cn(
-                      "min-h-[44px] w-full rounded-full border px-5 text-sm font-medium transition-all duration-200",
-                      state.color === "BLACK"
-                        ? "border-black bg-black text-white"
-                        : "border-transparent text-[#f3d2aa] hover:bg-black hover:text-white"
-                    )}
-                    onClick={() =>
-                      save({ ...state, color: "BLACK" as GarmentColor })
-                    }
-                  >
-                    Black
-                  </button>
-
-                  <button
-                    type="button"
-                    className={cn(
-                      "min-h-[44px] w-full rounded-full border px-5 text-sm font-medium transition-all duration-200",
-                      state.color === "WHITE"
-                        ? "border-white bg-white text-black"
-                        : "border-transparent text-[#f3d2aa] hover:bg-white hover:text-black"
-                    )}
-                    onClick={() =>
-                      save({ ...state, color: "WHITE" as GarmentColor })
-                    }
-                  >
-                    White
-                  </button>
-                </div>
-              </section>
-
-              <section className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-black">
-                    Fabric
-                  </span>
-
-                  <div className="relative group cursor-pointer">
-                    <span className="flex h-4 w-4 items-center justify-center rounded-full border border-black/40 bg-white/40 text-xs text-black">
-                      i
-                    </span>
-
-                    <div className="absolute left-0 top-6 z-30 hidden w-80 rounded-2xl border border-black/10 bg-white p-4 text-[12px] leading-5 text-black shadow-2xl group-hover:block">
-                      <div className="mb-3">
-                        <div className="font-semibold">
-                          Essentials - 170 GSM
-                        </div>
-                        <div>
-                          Lightweight, breathable, and built for everyday wear.
-                        </div>
-                      </div>
-
-                      <div className="mb-3">
-                        <div className="font-semibold">
-                          Signature - 200 GSM
-                        </div>
-                        <div>
-                          Smooth, buttery, structured, and designed to hold
-                          shape.
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="font-semibold">
-                          Heavyweight - 300 GSM
-                        </div>
-                        <div>
-                          Bold, substantial, durable, with elevated presence.
-                        </div>
+                      <div className="studio-control-caption">
+                        Select the silhouette.
                       </div>
                     </div>
+                    <span className="studio-step-number">01</span>
+
+                  </div>
+
+                  <div className="studio-product-list">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        save({
+                          ...state,
+                          product: "FITTED" as ProductType,
+                        })
+                      }
+                      className={cn(
+                        "studio-product-button",
+                        state.product === "FITTED"
+                          ? "studio-product-button-active"
+                          : "studio-product-button-idle",
+                      )}
+                      style={{ borderRadius: 999 }}
+                    >
+                      <span>Fitted T-Shirt</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        save({
+                          ...state,
+                          product: "OVERSIZED" as ProductType,
+                        })
+                      }
+                      className={cn(
+                        "studio-product-button",
+                        state.product === "OVERSIZED"
+                          ? "studio-product-button-active"
+                          : "studio-product-button-idle",
+                      )}
+                      style={{ borderRadius: 999 }}
+                    >
+                      <span>Oversized T-Shirt</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={openCustomRequestPopup}
+                      className={cn(
+                        "studio-product-button",
+                        state.product === "CUSTOM"
+                          ? "studio-product-button-active"
+                          : "studio-product-button-idle",
+                      )}
+                      style={{ borderRadius: 999 }}
+                    >
+                      <span>Bespoke</span>
+                    </button>
                   </div>
                 </div>
 
-                <div className="grid gap-2">
-                  {fabricOptions.map((fabric) => {
-                    const active = state.fabric === fabric.key;
+                <div className="studio-control-group">
+                  <div className="studio-control-heading">
+                    <div>
+                      <div className="studio-eyebrow">Colour</div>
 
-                    return (
-                      <button
-                        key={fabric.key}
-                        type="button"
-                        onClick={() =>
-                          save({ ...state, fabric: fabric.key as FabricType })
-                        }
+                      <div className="studio-control-caption">
+                        Current: {currentColorLabel}
+                      </div>
+                    </div>
+
+                    <span className="studio-step-number">02</span>
+                  </div>
+
+                  <div className="studio-colour-row">
+                    <button
+                      type="button"
+                      aria-label="Select black"
+                      onClick={() =>
+                        save({
+                          ...state,
+                          color: "BLACK" as GarmentColor,
+                        })
+                      }
+                      className={cn(
+                        "studio-colour-dot",
+                        state.color === "BLACK" ? "studio-colour-dot-active" : "",
+                      )}
+                      style={{ backgroundColor: "#000000", borderColor: "#000000" }}
+                    />
+
+                    <button
+                      type="button"
+                      aria-label="Select white"
+                      onClick={() =>
+                        save({
+                          ...state,
+                          color: "WHITE" as GarmentColor,
+                        })
+                      }
+                      className={cn(
+                        "studio-colour-dot studio-colour-dot-white",
+                        state.color === "WHITE" ? "studio-colour-dot-active" : "",
+                      )}
+                      style={{ backgroundColor: "#ffffff", borderColor: "rgba(0,0,0,0.35)" }}
+                    />
+
+                    <button
+                      type="button"
+                      aria-label="Request custom colour"
+                      onClick={openCustomRequestPopup}
+                      className="studio-colour-dot studio-colour-dot-custom"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="studio-control-group">
+                  <div className="studio-control-heading">
+                    <div>
+                      <div className="studio-fabric-title-row">
+                        <span className="studio-eyebrow mb-0">Fabric</span>
+                      </div>
+
+                      <div className="studio-control-caption">
+                        Current: {currentFabric.gsm}
+                      </div>
+                    </div>
+
+                    <span className="studio-step-number">03</span>
+                  </div>
+
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => setFabricOpen((value) => !value)}
+                      className="studio-fabric-card"
+                      style={{ borderRadius: 24 }}
+                    >
+                      <span className="studio-fabric-swatch" />
+
+                      <span className="studio-fabric-content">
+                        <span className="studio-fabric-name">
+                          {currentFabric.name}
+                        </span>
+
+                        <span className="studio-fabric-gsm">
+                          {currentFabric.gsm}
+                        </span>
+
+                        <span className="studio-fabric-desc">
+                          {currentFabric.desc}
+                        </span>
+                      </span>
+
+                      <svg
                         className={cn(
-                          "flex w-full items-center justify-between gap-4 rounded-2xl border p-4 text-left transition-all duration-200",
-                          active
-                            ? "border-[#a56a2a] bg-white text-black shadow-[0_10px_24px_rgba(0,0,0,0.18)]"
-                            : "border-white/15 bg-black/20 text-white hover:border-white/35 hover:bg-black/30"
+                          "studio-fabric-arrow",
+                          fabricOpen ? "rotate-180" : "",
                         )}
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        aria-hidden="true"
                       >
-                        <div>
-                          <div className="text-sm font-semibold">
-                            {fabric.name} · {fabric.gsm}
-                          </div>
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={1.5}
+                          d="M19 9l-7 7-7-7"
+                        />
+                      </svg>
+                    </button>
 
-                          <div
+                    {fabricOpen ? (
+                      <div
+                        className="studio-fabric-menu"
+                        style={{
+                          top: "auto",
+                          bottom: "calc(100% + 8px)",
+                          transformOrigin: "bottom center",
+                          borderRadius: 24,
+                          overflow: "hidden",
+                        }}
+                      >
+                        {fabricOptions.map((fabric) => (
+                          <button
+                            key={fabric.key}
+                            type="button"
+                            onClick={() => {
+                              save({
+                                ...state,
+                                fabric: fabric.key,
+                              });
+
+                              setFabricOpen(false);
+                            }}
                             className={cn(
-                              "mt-1 text-xs",
-                              active ? "text-black/55" : "text-white/55"
+                              "studio-fabric-option",
+                              state.fabric === fabric.key ? "studio-fabric-option-active" : "",
                             )}
                           >
-                            {fabric.desc}
-                          </div>
-                        </div>
+                            <span className="studio-fabric-swatch studio-fabric-option-swatch" />
 
-                        <div
-                          className={cn(
-                            "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-xs",
-                            active
-                              ? "border-[#a56a2a] bg-[#a56a2a] text-white"
-                              : "border-white/30 text-white/50"
-                          )}
-                        >
-                          {active ? "✓" : ""}
-                        </div>
-                      </button>
-                    );
-                  })}
+                            <span className="studio-fabric-option-copy">
+                              <span className="studio-fabric-option-name">
+                                {fabric.name}
+                              </span>
+
+                              <span className="studio-fabric-option-desc">
+                                {fabric.desc}
+                              </span>
+                            </span>
+
+                            {state.fabric === fabric.key ? (
+                              <span className="studio-fabric-check">✓</span>
+                            ) : null}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
-              </section>
-
-              <section className="space-y-3">
-                <div className="text-sm font-semibold text-black">
-                  Upload artwork
-                </div>
-
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-
-                    handleUpload(file);
-                    e.currentTarget.value = "";
-                  }}
-                />
 
                 <button
                   type="button"
-                  className="rounded-md border border-white/20 px-3 py-2 text-sm hover:bg-white/10"
+                  className="studio-build-button"
                   onClick={() => fileInputRef.current?.click()}
                 >
-                  Choose file
+                  Build Your T-Shirt
                 </button>
 
-                <div className="max-w-full truncate text-xs text-white/70">
-                  {uploadName ? `Selected: ${uploadName}` : "No file selected"}
+                <div className="studio-save-row">
+                  <span className={cn("studio-save-dot", isPending ? "studio-save-dot-pending" : "")} />
+                  <span>{isPending ? "Saving..." : "Saved"}</span>
+                  <span className="studio-save-divider" />
+                  <span>{placementsCount} placements</span>
                 </div>
-              </section>
+              </div>
+            </section>
 
-              <section className="space-y-3">
-                <div className="text-sm font-semibold text-white">
-                  Placement
-                </div>
+            <TryOn3DPreview
+              product={state.product}
+              color={state.color}
+              artworkUrl={artworkUrl}
+            />
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                  {placementCards.map((p) => {
-                    const active = selectedPlacements.includes(p.key);
+            <section className="studio-right-panel" aria-label="Order controls">
+              <div className="studio-right-top">
+                <div>
+                  <div className="studio-right-kicker">{buildName}</div>
 
-                    return (
-                      <button
-                        key={p.key}
-                        type="button"
-                        onClick={() => {
-                          const next = selectedPlacements.includes(p.key)
-                            ? selectedPlacements.filter((x) => x !== p.key)
-                            : selectedPlacements.length >= 4
-                              ? selectedPlacements
-                              : [...selectedPlacements, p.key];
-
-                          setSelectedPlacements(next);
-
-                          save({
-                            ...state,
-                            customNotes: JSON.stringify({ placement: next }),
-                          });
-                        }}
-                        className={cn(
-                          "flex items-center gap-3 rounded-xl border p-2 text-left transition-all",
-                          active
-                            ? "border-white bg-white text-black shadow"
-                            : "border-white/20 bg-black/20 text-white hover:bg-white/10"
-                        )}
-                      >
-                        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-md bg-white text-[10px] font-semibold text-black">
-                          {p.initials}
-                        </div>
-
-                        <span className="text-sm font-medium">{p.label}</span>
-                      </button>
-                    );
-                  })}
+                  <div className="studio-price">{priceText}</div>
                 </div>
 
-                <div className="text-xs text-white/60">
-                  Max 4 placements · Saved placements:{" "}
-                  <span className="font-semibold text-white">
-                    {placementsCount}
-                  </span>
+                <div className="studio-shipping-note">
+                  Incl. VAT. Ships in 3-5 business days.
                 </div>
-              </section>
-            </div>
+              </div>
 
-            <div className="mt-6 text-xs text-white/60">
-              {isPending ? "Saving…" : "Saved"}
-            </div>
-          </section>
 
-          <TryOn3DPreview
-            product={state.product}
-            color={state.color}
-            artworkUrl={artworkUrl}
-          />
+              <div className="studio-field-block studio-quantity-block">
+                <div>
+                  <div className="studio-right-label">Quantity</div>
 
-          <section className="min-w-0 lg:sticky lg:top-6">
-            <div className="w-full rounded-3xl border border-black/5 bg-[#faf8f6] p-4 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-5 lg:max-w-[280px]">
-              <div className="rounded-2xl bg-white p-5 shadow-[0_12px_40px_rgba(0,0,0,0.08)] sm:p-6">
-                <div className="text-[26px] font-semibold leading-tight text-[#a56a2a]">
-                  {priceText}
+
                 </div>
 
-                <div className="mt-5 text-sm leading-5 text-gray-700">
-                  Order EST. 1 week after confirmation
-                </div>
-
-                <div className="mt-6 text-xs font-medium tracking-wide text-gray-600">
-                  QUANTITY
-                </div>
-
-                <div className="mt-2 grid h-11 w-full max-w-[180px] grid-cols-[44px_1fr_44px] border border-black bg-white">
+                <div className="studio-quantity">
                   <button
                     type="button"
-                    onClick={decQty}
-                    className="border-r border-black text-lg"
+                    onClick={() => save({ ...state, quantity: Math.max(1, qty - 1) })}
+                    className="studio-quantity-button"
+                    aria-label="Decrease quantity"
                   >
-                    −
+                    -
                   </button>
 
                   <input
@@ -591,62 +839,108 @@ export default function BuilderClient({
                     min={1}
                     max={9999}
                     value={qty}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       save({
                         ...state,
-                        quantity: clampQty(Number(e.target.value)),
+                        quantity: clampQty(Number(event.target.value)),
                       })
                     }
-                    className="w-full text-center text-sm font-semibold outline-none"
+                    className="studio-quantity-input"
+                    aria-label="Quantity"
                   />
 
                   <button
                     type="button"
-                    onClick={incQty}
-                    className="border-l border-black text-lg"
+                    onClick={() => save({ ...state, quantity: Math.min(9999, qty + 1) })}
+                    className="studio-quantity-button"
+                    aria-label="Increase quantity"
                   >
                     +
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  className="mt-4 h-11 w-full bg-black px-4 text-xs font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={!isValid}
-                >
-                  ADD TO BAG
-                </button>
-
-                <button
-                  type="button"
-                  className="mt-3 h-11 w-full border border-black bg-white px-4 text-xs font-semibold text-black"
-                  disabled
-                >
-                  ADD TO WISHLIST
-                </button>
-
-                <div className="mt-5 text-[11px] leading-5 text-gray-600">
-                  Model is 5ft 8’ and wears size XS.{" "}
-                  <span className="underline">SIZE GUIDE</span>
-                </div>
-
-                <div className="mt-4 text-[11px] italic leading-5 text-gray-500">
-                  Instant pricing and shipping estimate for 1-500 pieces
-                </div>
-
-                <a
-                  href={WHATSAPP_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 block text-[12px] font-medium text-black underline"
-                >
-                  Live Assistance
-                </a>
               </div>
-            </div>
-          </section>
+
+              <div className="studio-field-block">
+                <div className="studio-size-header">
+                  <div>
+                    <div className="studio-right-label">Size</div>
+
+                    <div className="studio-control-caption">
+                      Selected: {selectedSize}
+                    </div>
+                  </div>
+
+                  <button type="button" className="studio-size-guide-link">
+                    Size Guide
+                  </button>
+                </div>
+
+                <div className="studio-size-grid">
+                  {(["S", "M", "L", "XL"] as const).map((size) => (
+                    <button
+                      key={size}
+                      type="button"
+                      onClick={() => setSelectedSize(size)}
+                      className={cn(
+                        "studio-size-button",
+                        selectedSize === size ? "studio-size-button-active" : "",
+                      )}
+                    >
+                      {size}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+                <div className="studio-summary-value">{selectionSummary}</div>
+
+
+              <div className="studio-action-row">
+                <button
+                  type="button"
+                  onClick={handleAddToBag}
+                  disabled={!isStandardCheckout || isCreatingOrder}
+                  className="studio-add-button"
+                >
+                  {isCreatingOrder ? "Creating..." : "Add To Bag"}
+                </button>
+
+                <button type="button" className="studio-wishlist-button">
+                  Add To Wishlist
+                </button>
+              </div>
+
+              <div className="studio-right-divider" />
+
+              <div className="studio-product-info">
+                <div className="studio-info-title">Product Info</div>
+
+                <p>
+                  Constructed from 100% organic cotton, the Archive base is
+                  refined for everyday wear and premium artwork application.
+                </p>
+              </div>
+
+              <div className="studio-model-note">
+                Model is 5ft 8&apos; and wears size XS.
+                <span> SIZE GUIDE</span>
+              </div>
+
+              <div>              
+                <a
+                href={WHATSAPP_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="studio-live-assistance"
+              >
+                Live Assistance
+              </a>
+              </div>
+
+            </section>
+          </div>
         </div>
-      </div>
+      </main>
     </>
   );
 }

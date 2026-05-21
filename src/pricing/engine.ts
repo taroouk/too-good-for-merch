@@ -1,20 +1,19 @@
+import { prisma } from "src/lib/prisma";
+
 export type PriceResult =
   | {
       mode: "standard";
       unit: number;
       total: number;
-      currency: "EGP";
+      currency: "USD";
     }
   | {
       mode: "custom" | "bulk";
       unit: null;
       total: null;
-      currency: "EGP";
+      currency: "USD";
       message: string;
     };
-
-const GOOGLE_SHEET_JSON_LINK =
-  "https://docs.google.com/spreadsheets/d/1UVKygcyZkYFG43B0ow6qL93MpJ6jLl6C1f0WqPHk0ik/gviz/tq?tqx=out:json";
 
 export async function computePrice({
   product,
@@ -32,7 +31,7 @@ export async function computePrice({
       mode: "custom",
       unit: null,
       total: null,
-      currency: "EGP",
+      currency: "USD",
       message: "Custom garments require a tailored quote.",
     };
   }
@@ -42,7 +41,7 @@ export async function computePrice({
       mode: "bulk",
       unit: null,
       total: null,
-      currency: "EGP",
+      currency: "USD",
       message: "We will contact you for pricing",
     };
   }
@@ -52,59 +51,46 @@ export async function computePrice({
       mode: "custom",
       unit: null,
       total: null,
-      currency: "EGP",
+      currency: "USD",
       message: "Select product and fabric",
     };
   }
 
   try {
-    const res = await fetch(GOOGLE_SHEET_JSON_LINK, { cache: "no-store" });
-    const text = await res.text();
-
-    const json = JSON.parse(text.substring(47).slice(0, -2));
-
-    const rows = json.table.rows.map((r: any) =>
-      r.c.map((c: any) => c?.v ?? "")
-    );
-
-    const match = rows.find((r: any[]) => {
-      const rowProduct = String(r[0]).trim();
-      const rowFabric = String(r[1]).trim();
-      const min = Number(r[2]);
-      const max = Number(r[3]);
-
-      return (
-        rowProduct === product &&
-        rowFabric === fabric &&
-        qty >= min &&
-        qty <= max
-      );
+    const rule = await prisma.pricingRule.findFirst({
+      where: {
+        product,
+        fabric,
+        minQty: { lte: qty },
+        maxQty: { gte: qty },
+      },
+      orderBy: {
+        minQty: "asc",
+      },
     });
 
-    if (!match) {
+    if (!rule) {
       return {
         mode: "custom",
         unit: null,
         total: null,
-        currency: "EGP",
+        currency: "USD",
         message: "No pricing found",
       };
     }
 
-    const unit = Number(match[4]);
-
     return {
       mode: "standard",
-      unit,
-      total: unit * qty,
-      currency: "EGP",
+      unit: rule.unitPrice,
+      total: rule.unitPrice * qty,
+      currency: "USD",
     };
   } catch {
     return {
       mode: "custom",
       unit: null,
       total: null,
-      currency: "EGP",
+      currency: "USD",
       message: "Pricing error",
     };
   }
