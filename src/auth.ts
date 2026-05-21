@@ -1,58 +1,74 @@
-// src/auth.ts
 import type { NextAuthOptions } from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
+import Credentials from "next-auth/providers/credentials";
+import { PrismaAdapter } from "@next-auth/prisma-adapter";
+import { Role } from "@prisma/client";
 import { prisma } from "./lib/prisma";
 import argon2 from "argon2";
-
-function parseAdminEmails() {
-  return (process.env.ADMIN_EMAILS ?? "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-}
+import { getServerSession } from "next-auth";
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
-  secret: process.env.AUTH_SECRET,
-
-  // مهم للـ middleware على Edge
+  secret: process.env.NEXTAUTH_SECRET,
   session: { strategy: "jwt" },
 
-  debug: process.env.NODE_ENV !== "production",
-
   providers: [
-    CredentialsProvider({
+    Credentials({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
+
       async authorize(credentials) {
         const email = credentials?.email?.toString().toLowerCase().trim();
         const password = credentials?.password?.toString();
 
-        if (!email || !password) return null;
+        if (!email || !password) {
+          return null;
+        }
 
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (!user?.passwordHash) return null;
+        const user = await prisma.user.findUnique({
+          where: { email },
+        });
 
-        const ok = await argon2.verify(user.passwordHash, password);
-        if (!ok) return null;
+        if (!user?.passwordHash) {
+          return null;
+        }
 
-        // role من DB
-        return { id: user.id, email: user.email, role: user.role } as any;
+        const passwordIsValid = await argon2.verify(
+          user.passwordHash,
+          password,
+        );
+
+        if (!passwordIsValid) {
+          return null;
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          role: user.role,
+        };
       },
     }),
   ],
 
   callbacks: {
     async jwt({ token, user }) {
-      if (user) token.role = (user as any).role ?? "USER";
+      if (user) {
+        token.id = user.id;
+        token.role = user.role ?? Role.USER;
+      }
+
       return token;
     },
+
     async session({ session, token }) {
-      if (session.user) (session.user as any).role = (token as any).role ?? "USER";
+      if (session.user) {
+        session.user.id = token.id ?? token.sub ?? "";
+        session.user.role = token.role ?? Role.USER;
+      }
+
       return session;
     },
   },
@@ -61,3 +77,7 @@ export const authOptions: NextAuthOptions = {
     signIn: "/login",
   },
 };
+
+export async function auth() {
+  return getServerSession(authOptions);
+}

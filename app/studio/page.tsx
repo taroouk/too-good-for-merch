@@ -1,19 +1,6 @@
-import "../(marketing)/marketing.css";
+// app/studio/page.tsx
+import { redirect } from "next/navigation";
 
 export default function StudioPage() {
-  return (
-    <main className="studioMain">
-      <div className="studioWrap">
-        <h1 className="font-head studioTitle" style={{ fontSize: 60 }}>
-          ENTER
-        </h1>
-
-        <div className="studioBox" />
-
-        <h1 className="font-head studioTitle" style={{ fontSize: 60 }}>
-          STUDIO
-        </h1>
-      </div>
-    </main>
-  );
+  redirect("/studio/projects");
 }

@@ -8,65 +8,159 @@ datasource db {
 }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String?   @unique
-  createdAt    DateTime  @default(now())
-  phone        String?   @unique
-  updatedAt    DateTime  @updatedAt
+  id           String      @id @default(cuid())
+  email        String?     @unique
+  createdAt    DateTime    @default(now())
+  phone        String?     @unique
+  updatedAt    DateTime    @updatedAt
   passwordHash String?
-  role         Role      @default(USER)
+  role         Role        @default(USER)
   accounts     Account[]
+  adminNotes   AdminNote[]
   builds       Build[]
   orders       Order[]
   sessions     Session[]
 }
 
 model Build {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  name      String?
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id])
-}
-
-model Order {
   id        String      @id @default(cuid())
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
-  status    String      @default("draft")
-  total     Int         @default(0)
+  name      String?
   userId    String?
+  status    BuildStatus @default(ACTIVE)
+  assets    Asset[]
   user      User?       @relation(fields: [userId], references: [id])
-  items     OrderItem[]
+  draft     BuildDraft?
+  designs   Design[]
+  orders    Order[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BuildDraft {
+  id             String        @id @default(cuid())
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  buildId        String        @unique
+  product        ProductType?
+  color          GarmentColor?
+  fabric         FabricType?
+  quantity       Int           @default(1)
+  customNotes    String?
+  primaryAssetId String?
+  build          Build         @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  primaryAsset   Asset?        @relation("DraftPrimaryAsset", fields: [primaryAssetId], references: [id])
+}
+
+model Asset {
+  id              String            @id @default(cuid())
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  buildId         String
+  status          AssetStatus       @default(PENDING_UPLOAD)
+  fileName        String
+  mimeType        String?
+  sizeBytes       Int?
+  storageKey      String?
+  url             String?
+  build           Build             @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  usedAsPrimaryIn BuildDraft[]      @relation("DraftPrimaryAsset")
+  placements      DesignPlacement[]
+  orderItems      OrderItem[]
+
+  @@index([buildId])
+}
+
+model Design {
+  id         String            @id @default(cuid())
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+  buildId    String
+  name       String?
+  build      Build             @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  placements DesignPlacement[]
+}
+
+model DesignPlacement {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  designId  String
+  placement PlacementType
+  assetId   String
+  asset     Asset         @relation(fields: [assetId], references: [id])
+  design    Design        @relation(fields: [designId], references: [id], onDelete: Cascade)
+
+  @@unique([designId, placement])
+}
+
+model Order {
+  id                  String        @id @default(cuid())
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+  userId              String?
+  buildId             String?
+  currency            String        @default("EGP")
+  customerEmail       String?
+  customerName        String?
+  customerPhone       String?
+  orderNumber         String        @unique
+  paymentStatus       PaymentStatus @default(UNPAID)
+  paymentUrl          String?
+  paymobIntentionId   String?
+  paymobOrderId       String?
+  paymobTransactionId String?
+  subtotalCents       Int
+  totalCents          Int
+  status              OrderStatus   @default(NEW)
+  notes               AdminNote[]
+  build               Build?        @relation(fields: [buildId], references: [id])
+  user                User?         @relation(fields: [userId], references: [id])
+  items               OrderItem[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([paymentStatus])
 }
 
 model OrderItem {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  orderId        String
+  assetId        String?
+  color          GarmentColor
+  fabric         FabricType
+  placements     Json
+  preview        Json?
+  product        ProductType
+  quantity       Int
+  totalCents     Int
+  unitPriceCents Int
+  asset          Asset?       @relation(fields: [assetId], references: [id])
+  order          Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model AdminNote {
   id        String   @id @default(cuid())
   createdAt DateTime @default(now())
   orderId   String
-  qty       Int      @default(1)
-  unitPrice Int      @default(0)
+  authorId  String?
+  body      String
+  author    User?    @relation(fields: [authorId], references: [id])
   order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
 }
 
 model Account {
-  id                String  @id @default(cuid())
+  id                String @id @default(cuid())
   userId            String
   type              String
   provider          String
   providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
-  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user              User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
-  @@index([userId])
 }
 
 model Session {
@@ -75,8 +169,6 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
 }
 
 model VerificationToken {
@@ -90,4 +182,79 @@ model VerificationToken {
 enum Role {
   ADMIN
   USER
+}
+
+enum BuildStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum ProductType {
+  FITTED
+  OVERSIZED
+  CUSTOM
+}
+
+enum GarmentColor {
+  BLACK
+  WHITE
+  CUSTOM
+}
+
+enum FabricType {
+  ESSENTIALS_170
+  SIGNATURE_200
+  HEAVYWEIGHT_300
+}
+
+enum AssetStatus {
+  PENDING_UPLOAD
+  READY
+  FAILED
+}
+
+enum PlacementType {
+  LEFT_CHEST
+  RIGHT_CHEST
+  RIGHT_SLEEVE
+  LEFT_SLEEVE
+  CENTER_FRONT
+  FULL_FRONT
+  CENTER_BACK
+  FULL_BACK
+}
+
+enum OrderStatus {
+  NEW
+  PAID
+  IN_PRODUCTION
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  FAILED
+}
+
+model PricingRule {
+  id        String   @id @default(cuid())
+
+  product   String
+  fabric    String
+
+  minQty    Int
+  maxQty    Int
+
+  unitPrice Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([product])
+  @@index([fabric])
+  @@index([minQty])
+  @@index([maxQty])
 }
