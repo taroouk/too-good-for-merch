@@ -57,6 +57,18 @@ function getPreviewLabel(
   return `${productLabel} / ${colorLabel}`;
 }
 
+function getArtworkClassName(product: ProductType | null) {
+  if (product === "OVERSIZED") {
+    return "studio-artwork-preview studio-artwork-preview-oversized";
+  }
+
+  if (product === "CUSTOM") {
+    return "studio-artwork-preview studio-artwork-preview-bespoke";
+  }
+
+  return "studio-artwork-preview studio-artwork-preview-fitted";
+}
+
 export default function TryOn3DPreview({
   product,
   color,
@@ -66,17 +78,29 @@ export default function TryOn3DPreview({
 
   const frontImage = useMemo(
     () => getFrontModelImage(product, color),
-    [product, color],
+    [color, product],
   );
 
   const backImage = useMemo(
     () => getBackModelImage(product, color),
-    [product, color],
+    [color, product],
   );
 
   const modelImage = previewSide === "front" ? frontImage : backImage;
 
-  function togglePreviewSide() {
+  function showFront() {
+    setPreviewSide("front");
+  }
+
+  function showBack() {
+    setPreviewSide("back");
+  }
+
+  function showPrevious() {
+    setPreviewSide((side) => (side === "front" ? "back" : "front"));
+  }
+
+  function showNext() {
     setPreviewSide((side) => (side === "front" ? "back" : "front"));
   }
 
@@ -85,7 +109,6 @@ export default function TryOn3DPreview({
       <div className="studio-preview-chrome">
         <div>
           <div className="studio-preview-kicker">Live Model Preview</div>
-
           <div className="studio-preview-label">
             {getPreviewLabel(product, color)}
           </div>
@@ -97,16 +120,11 @@ export default function TryOn3DPreview({
         </div>
       </div>
 
-      <div
-        className="studio-preview-inner studio-preview-inner-clean"
-        style={{
-          position: "relative",
-          overflow: "hidden",
-        }}
-      >
+      <div className="studio-preview-inner studio-preview-inner-clean">
         <div className="studio-preview-gridline studio-preview-gridline-left" />
         <div className="studio-preview-gridline studio-preview-gridline-right" />
         <div className="studio-preview-glow" />
+        <div className="studio-preview-stage-shadow" />
 
         <img
           key={modelImage}
@@ -129,97 +147,40 @@ export default function TryOn3DPreview({
           <img
             src={artworkUrl}
             alt="Artwork preview"
-            className="studio-artwork-preview"
+            className={getArtworkClassName(product)}
             draggable={false}
           />
         ) : null}
 
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            bottom: 74,
-            zIndex: 999999,
-            width: 156,
-            height: 36,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 13,
-            border: "2px solid #000000",
-            borderRadius: 999,
-            background: "#ffffff",
-            transform: "translateX(-50%)",
-            boxShadow: "0 18px 34px rgba(0,0,0,0.14)",
-          }}
-          aria-label="Preview side switch"
-        >
+        <div className="studio-preview-side-switch" aria-label="Preview side switch">
           <button
             type="button"
-            onClick={togglePreviewSide}
+            onClick={showPrevious}
             aria-label="Previous preview side"
-            style={{
-              width: 24,
-              height: 24,
-              border: 0,
-              padding: 0,
-              background: "transparent",
-              color: "#000000",
-              fontSize: 22,
-              lineHeight: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            className="studio-preview-side-arrow"
           >
             ‹
           </button>
 
           <button
             type="button"
-            onClick={() => setPreviewSide("front")}
+            onClick={showFront}
             aria-label="Show front preview"
-            style={{
-              width: previewSide === "front" ? 10 : 8,
-              height: previewSide === "front" ? 10 : 8,
-              border: 0,
-              padding: 0,
-              borderRadius: 999,
-              background: previewSide === "front" ? "#000000" : "#d8d8d8",
-            }}
+            className={cnDot(previewSide === "front")}
           />
 
           <button
             type="button"
-            onClick={() => setPreviewSide("back")}
+            onClick={showBack}
             aria-label="Show back preview"
-            style={{
-              width: previewSide === "back" ? 10 : 8,
-              height: previewSide === "back" ? 10 : 8,
-              border: 0,
-              padding: 0,
-              borderRadius: 999,
-              background: previewSide === "back" ? "#000000" : "#d8d8d8",
-            }}
+            className={cnDot(previewSide === "back")}
           />
 
           <button
             type="button"
-            onClick={togglePreviewSide}
+            onClick={showNext}
             aria-label="Next preview side"
-            style={{
-              width: 24,
-              height: 24,
-              border: 0,
-              padding: 0,
-              background: "transparent",
-              color: "#000000",
-              fontSize: 22,
-              lineHeight: 1,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
+            className="studio-preview-side-arrow"
           >
             ›
           </button>
@@ -227,4 +188,10 @@ export default function TryOn3DPreview({
       </div>
     </section>
   );
+}
+
+function cnDot(active: boolean) {
+  return active
+    ? "studio-preview-side-dot studio-preview-side-dot-active"
+    : "studio-preview-side-dot";
 }
