@@ -53,6 +53,8 @@ type CreateOrderResponse = {
   error?: string;
 };
 
+type SizeOption = "S" | "M" | "L" | "XL";
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -84,13 +86,15 @@ export default function BuilderClient({
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [showCustomPopup, setShowCustomPopup] = useState(false);
   const [showBespokeModal, setShowBespokeModal] = useState(false);
-  const [selectedSize, setSelectedSize] = useState<"S" | "M" | "L" | "XL">("M");
+  const [selectedSize, setSelectedSize] = useState<SizeOption>("M");
   const [fabricOpen, setFabricOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const fabricMenuRef = useRef<HTMLDivElement | null>(null);
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
 
@@ -127,18 +131,23 @@ export default function BuilderClient({
   const currentFabric =
     fabricOptions.find((fabric) => fabric.key === state.fabric) ?? fabricOptions[0];
 
-  const currentProductLabel =
-    state.product === "FITTED"
-      ? "Fitted T-Shirt"
-      : state.product === "OVERSIZED"
-        ? "Oversized T-Shirt"
-        : "Bespoke";
-
   const currentColorLabel = state.color === "BLACK" ? "Black" : "White";
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    function handlePointerDown(event: MouseEvent) {
+      if (!fabricOpen) return;
+      if (!fabricMenuRef.current?.contains(event.target as Node)) {
+        setFabricOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => document.removeEventListener("mousedown", handlePointerDown);
+  }, [fabricOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +167,9 @@ export default function BuilderClient({
         });
 
         const data = (await res.json()) as PriceResult;
-        if (!cancelled) setPrice(data);
+        if (!cancelled) {
+          setPrice(data);
+        }
       } catch {
         if (!cancelled) {
           setPrice({
@@ -170,17 +181,22 @@ export default function BuilderClient({
           });
         }
       } finally {
-        if (!cancelled) setLoadingPrice(false);
+        if (!cancelled) {
+          setLoadingPrice(false);
+        }
       }
     }
 
-    if (state.product && state.fabric) loadPrice();
-    else setPrice(null);
+    if (state.product && state.fabric) {
+      void loadPrice();
+    } else {
+      setPrice(null);
+    }
 
     return () => {
       cancelled = true;
     };
-  }, [state.product, state.fabric, qty]);
+  }, [qty, state.fabric, state.product]);
 
   function save(next: DraftDTO) {
     setState(next);
@@ -233,7 +249,11 @@ export default function BuilderClient({
       });
 
       const data = (await res.json()) as CreateOrderResponse;
-      if (!res.ok) throw new Error(data.error ?? "Failed to create order.");
+
+      if (!res.ok) {
+        throw new Error(data.error ?? "Failed to create order.");
+      }
+
       window.location.href = `/orders/${data.orderId}`;
     } catch (error) {
       alert(error instanceof Error ? error.message : "Something went wrong.");
@@ -291,6 +311,22 @@ export default function BuilderClient({
     currentFabric.gsm.replace(" Cotton", ""),
   ].join(" / ");
 
+  const summaryItems = [
+    {
+      label: "Product",
+      value:
+        state.product === "CUSTOM"
+          ? "Bespoke"
+          : state.product === "OVERSIZED"
+            ? "Oversized"
+            : "Fitted",
+    },
+    { label: "Colour", value: currentColorLabel },
+    { label: "Fabric", value: currentFabric.gsm },
+    { label: "Size", value: selectedSize },
+    { label: "Quantity", value: String(qty) },
+  ];
+
   const isStandardCheckout =
     Boolean(state.product && state.color && state.fabric) &&
     price?.mode === "standard" &&
@@ -312,14 +348,12 @@ export default function BuilderClient({
 
               <div className="studio-modal-kicker">TGFM Bespoke</div>
 
-              <h2 className="studio-custom-request-title">
-                Custom Garment Request
-              </h2>
+              <h2 className="studio-custom-request-title">Custom Garment Request</h2>
 
               <p className="studio-custom-request-copy">
-                Custom garment constructions are not available for instant
-                checkout. We&apos;ll review your request and provide a tailored
-                quote based on your customization needs.
+                Custom garment constructions are not available for instant checkout.
+                We&apos;ll review your request and provide a tailored quote based on
+                your customization needs.
               </p>
 
               <button
@@ -346,7 +380,7 @@ export default function BuilderClient({
   const bespokeModal =
     mounted && showBespokeModal
       ? createPortal(
-          <div className="studio-modal-overlay">
+          <div className="studio-modal-overlay studio-modal-overlay-soft">
             <div className="studio-bespoke-modal studio-modal-panel">
               <button
                 type="button"
@@ -405,7 +439,6 @@ export default function BuilderClient({
               <div className="studio-bespoke-controls">
                 <div>
                   <div className="studio-bespoke-kicker">Custom Artwork</div>
-
                   <h2 className="studio-bespoke-title">Build Your T-Shirt</h2>
                 </div>
 
@@ -470,9 +503,7 @@ export default function BuilderClient({
                         className="studio-upload-slot"
                       >
                         {index === 0 && uploadName ? (
-                          <span className="studio-upload-name">
-                            {uploadName}
-                          </span>
+                          <span className="studio-upload-name">{uploadName}</span>
                         ) : (
                           <span className="studio-upload-placeholder">▧</span>
                         )}
@@ -488,7 +519,6 @@ export default function BuilderClient({
                       ...state,
                       product: "CUSTOM" as ProductType,
                     });
-
                     setShowBespokeModal(false);
                   }}
                   className="studio-bespoke-save-button"
@@ -515,7 +545,7 @@ export default function BuilderClient({
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (!file) return;
-          handleUpload(file);
+          void handleUpload(file);
           event.currentTarget.value = "";
         }}
       />
@@ -523,27 +553,13 @@ export default function BuilderClient({
       <main className="studio-builder-shell">
         <div className="studio-builder-frame">
           <div className="studio-builder-grid">
-            <section
-              className="studio-left-panel"
-              aria-label="Product controls"
-              style={{ overflow: "visible" }}
-            >
+            <section className="studio-left-panel" aria-label="Product controls">
               <div className="studio-panel-header">
-
-                <h1
-                  className="studio-title"
-                  style={{
-                    textAlign: "center",
-                    fontWeight: 800,
-                    fontStyle: "italic",
-                    letterSpacing: "0.12em",
-                  }}
-                >
-                  The Studio
-                </h1>
-
+                <div className="studio-overline">Luxury Merch Builder</div>
+                <h1 className="studio-title">Studio</h1>
                 <p className="studio-panel-subtitle">
-                  Configure your base garment, fabric and artwork placement.
+                  Configure your base garment, fabric, colour, and artwork flow
+                  with a premium live preview.
                 </p>
               </div>
 
@@ -552,13 +568,12 @@ export default function BuilderClient({
                   <div className="studio-control-heading">
                     <div>
                       <div className="studio-eyebrow">Product Type</div>
-
                       <div className="studio-control-caption">
                         Select the silhouette.
                       </div>
                     </div>
-                    <span className="studio-step-number">01</span>
 
+                    <span className="studio-step-number">01</span>
                   </div>
 
                   <div className="studio-product-list">
@@ -576,9 +591,9 @@ export default function BuilderClient({
                           ? "studio-product-button-active"
                           : "studio-product-button-idle",
                       )}
-                      style={{ borderRadius: 999 }}
                     >
                       <span>Fitted T-Shirt</span>
+                      <span className="studio-product-meta">Classic</span>
                     </button>
 
                     <button
@@ -595,9 +610,9 @@ export default function BuilderClient({
                           ? "studio-product-button-active"
                           : "studio-product-button-idle",
                       )}
-                      style={{ borderRadius: 999 }}
                     >
                       <span>Oversized T-Shirt</span>
+                      <span className="studio-product-meta">Relaxed</span>
                     </button>
 
                     <button
@@ -609,9 +624,9 @@ export default function BuilderClient({
                           ? "studio-product-button-active"
                           : "studio-product-button-idle",
                       )}
-                      style={{ borderRadius: 999 }}
                     >
                       <span>Bespoke</span>
+                      <span className="studio-product-meta">Custom</span>
                     </button>
                   </div>
                 </div>
@@ -620,7 +635,6 @@ export default function BuilderClient({
                   <div className="studio-control-heading">
                     <div>
                       <div className="studio-eyebrow">Colour</div>
-
                       <div className="studio-control-caption">
                         Current: {currentColorLabel}
                       </div>
@@ -643,8 +657,9 @@ export default function BuilderClient({
                         "studio-colour-dot",
                         state.color === "BLACK" ? "studio-colour-dot-active" : "",
                       )}
-                      style={{ backgroundColor: "#000000", borderColor: "#000000" }}
-                    />
+                    >
+                      <span className="studio-colour-dot-core studio-colour-dot-core-black" />
+                    </button>
 
                     <button
                       type="button"
@@ -659,8 +674,9 @@ export default function BuilderClient({
                         "studio-colour-dot studio-colour-dot-white",
                         state.color === "WHITE" ? "studio-colour-dot-active" : "",
                       )}
-                      style={{ backgroundColor: "#ffffff", borderColor: "rgba(0,0,0,0.35)" }}
-                    />
+                    >
+                      <span className="studio-colour-dot-core studio-colour-dot-core-white" />
+                    </button>
 
                     <button
                       type="button"
@@ -688,27 +704,20 @@ export default function BuilderClient({
                     <span className="studio-step-number">03</span>
                   </div>
 
-                  <div className="relative">
+                  <div ref={fabricMenuRef} className="relative">
                     <button
                       type="button"
                       onClick={() => setFabricOpen((value) => !value)}
                       className="studio-fabric-card"
-                      style={{ borderRadius: 24 }}
+                      aria-expanded={fabricOpen}
+                      aria-haspopup="listbox"
                     >
                       <span className="studio-fabric-swatch" />
 
                       <span className="studio-fabric-content">
-                        <span className="studio-fabric-name">
-                          {currentFabric.name}
-                        </span>
-
-                        <span className="studio-fabric-gsm">
-                          {currentFabric.gsm}
-                        </span>
-
-                        <span className="studio-fabric-desc">
-                          {currentFabric.desc}
-                        </span>
+                        <span className="studio-fabric-name">{currentFabric.name}</span>
+                        <span className="studio-fabric-gsm">{currentFabric.gsm}</span>
+                        <span className="studio-fabric-desc">{currentFabric.desc}</span>
                       </span>
 
                       <svg
@@ -731,16 +740,7 @@ export default function BuilderClient({
                     </button>
 
                     {fabricOpen ? (
-                      <div
-                        className="studio-fabric-menu"
-                        style={{
-                          top: "auto",
-                          bottom: "calc(100% + 8px)",
-                          transformOrigin: "bottom center",
-                          borderRadius: 24,
-                          overflow: "hidden",
-                        }}
-                      >
+                      <div className="studio-fabric-menu" role="listbox">
                         {fabricOptions.map((fabric) => (
                           <button
                             key={fabric.key}
@@ -750,12 +750,13 @@ export default function BuilderClient({
                                 ...state,
                                 fabric: fabric.key,
                               });
-
                               setFabricOpen(false);
                             }}
                             className={cn(
                               "studio-fabric-option",
-                              state.fabric === fabric.key ? "studio-fabric-option-active" : "",
+                              state.fabric === fabric.key
+                                ? "studio-fabric-option-active"
+                                : "",
                             )}
                           >
                             <span className="studio-fabric-swatch studio-fabric-option-swatch" />
@@ -783,13 +784,18 @@ export default function BuilderClient({
                 <button
                   type="button"
                   className="studio-build-button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => setShowCustomPopup(true)}
                 >
                   Build Your T-Shirt
                 </button>
 
                 <div className="studio-save-row">
-                  <span className={cn("studio-save-dot", isPending ? "studio-save-dot-pending" : "")} />
+                  <span
+                    className={cn(
+                      "studio-save-dot",
+                      isPending ? "studio-save-dot-pending" : "",
+                    )}
+                  />
                   <span>{isPending ? "Saving..." : "Saved"}</span>
                   <span className="studio-save-divider" />
                   <span>{placementsCount} placements</span>
@@ -804,139 +810,174 @@ export default function BuilderClient({
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
-              <div className="studio-right-top">
-                <div>
-                  <div className="studio-right-kicker">{buildName}</div>
-
-                  <div className="studio-price">{priceText}</div>
-                </div>
-
-                <div className="studio-shipping-note">
-                  Incl. VAT. Ships in 3-5 business days.
-                </div>
-              </div>
-
-
-              <div className="studio-field-block studio-quantity-block">
-                <div>
-                  <div className="studio-right-label">Quantity</div>
-
-
-                </div>
-
-                <div className="studio-quantity">
-                  <button
-                    type="button"
-                    onClick={() => save({ ...state, quantity: Math.max(1, qty - 1) })}
-                    className="studio-quantity-button"
-                    aria-label="Decrease quantity"
-                  >
-                    -
-                  </button>
-
-                  <input
-                    type="number"
-                    min={1}
-                    max={9999}
-                    value={qty}
-                    onChange={(event) =>
-                      save({
-                        ...state,
-                        quantity: clampQty(Number(event.target.value)),
-                      })
-                    }
-                    className="studio-quantity-input"
-                    aria-label="Quantity"
-                  />
-
-                  <button
-                    type="button"
-                    onClick={() => save({ ...state, quantity: Math.min(9999, qty + 1) })}
-                    className="studio-quantity-button"
-                    aria-label="Increase quantity"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              <div className="studio-field-block">
-                <div className="studio-size-header">
+              <div className="studio-right-sticky">
+                <div className="studio-right-top">
                   <div>
-                    <div className="studio-right-label">Size</div>
-
-                    <div className="studio-control-caption">
-                      Selected: {selectedSize}
-                    </div>
+                    <div className="studio-right-kicker">{buildName}</div>
+                    <div className="studio-price">{priceText}</div>
                   </div>
 
-                  <button type="button" className="studio-size-guide-link">
-                    Size Guide
+                  <div className="studio-shipping-note">
+                    Incl. VAT. Ships in 3-5 business days.
+                  </div>
+                </div>
+
+                <div className="studio-right-divider" />
+
+                <div className="studio-field-block studio-quantity-block">
+                  <div>
+                    <div className="studio-right-label">Quantity</div>
+                  </div>
+
+                  <div className="studio-quantity">
+                    <button
+                      type="button"
+                      onClick={() => save({ ...state, quantity: Math.max(1, qty - 1) })}
+                      className="studio-quantity-button"
+                      aria-label="Decrease quantity"
+                    >
+                      -
+                    </button>
+
+                    <input
+                      type="number"
+                      min={1}
+                      max={9999}
+                      value={qty}
+                      onChange={(event) =>
+                        save({
+                          ...state,
+                          quantity: clampQty(Number(event.target.value)),
+                        })
+                      }
+                      className="studio-quantity-input"
+                      aria-label="Quantity"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => save({ ...state, quantity: Math.min(9999, qty + 1) })}
+                      className="studio-quantity-button"
+                      aria-label="Increase quantity"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                <div className="studio-right-divider studio-right-divider-soft" />
+
+                <div className="studio-field-block">
+                  <div className="studio-size-header">
+                    <div>
+                      <div className="studio-right-label">Size</div>
+                      <div className="studio-control-caption">
+                        Selected: {selectedSize}
+                      </div>
+                    </div>
+
+                    <button type="button" className="studio-size-guide-link">
+                      Size Guide
+                    </button>
+                  </div>
+
+                  <div className="studio-size-grid">
+                    {(["S", "M", "L", "XL"] as const).map((size) => (
+                      <button
+                        key={size}
+                        type="button"
+                        onClick={() => setSelectedSize(size)}
+                        className={cn(
+                          "studio-size-button",
+                          selectedSize === size ? "studio-size-button-active" : "",
+                        )}
+                      >
+                        {size}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="studio-summary-card studio-summary-card-sticky">
+                  {summaryOpen ? (
+                    <dl className="studio-summary-dropdown" aria-label="Selection details">
+                      {summaryItems.map((item) => (
+                        <div key={item.label}>
+                          <dt>{item.label}</dt>
+                          <dd>{item.value}</dd>
+                        </div>
+                      ))}
+
+                      <div>
+                        <dt>Total</dt>
+                        <dd>
+                          {price?.mode === "standard"
+                            ? `$${price.total.toFixed(2)}`
+                            : "Quote"}
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={() => setSummaryOpen((value) => !value)}
+                    className="studio-summary-trigger"
+                    aria-expanded={summaryOpen}
+                    aria-label="Toggle selection summary"
+                  >
+                    <span className="studio-summary-value">{selectionSummary}</span>
+                    <span
+                      className={cn(
+                        "studio-summary-arrow",
+                        summaryOpen ? "studio-summary-arrow-open" : "",
+                      )}
+                    >
+                      ⌃
+                    </span>
                   </button>
                 </div>
 
-                <div className="studio-size-grid">
-                  {(["S", "M", "L", "XL"] as const).map((size) => (
-                    <button
-                      key={size}
-                      type="button"
-                      onClick={() => setSelectedSize(size)}
-                      className={cn(
-                        "studio-size-button",
-                        selectedSize === size ? "studio-size-button-active" : "",
-                      )}
-                    >
-                      {size}
-                    </button>
-                  ))}
+                <div className="studio-action-row">
+                  <button
+                    type="button"
+                    onClick={handleAddToBag}
+                    disabled={!isStandardCheckout || isCreatingOrder}
+                    className="studio-add-button"
+                  >
+                    {isCreatingOrder ? "Creating..." : "Add To Bag"}
+                  </button>
+
+                  <button type="button" className="studio-wishlist-button">
+                    Add To Wishlist
+                  </button>
                 </div>
-              </div>
 
-                <div className="studio-summary-value">{selectionSummary}</div>
+                <div className="studio-right-divider" />
 
+                <div className="studio-product-info">
+                  <div className="studio-info-title">Product Info</div>
 
-              <div className="studio-action-row">
-                <button
-                  type="button"
-                  onClick={handleAddToBag}
-                  disabled={!isStandardCheckout || isCreatingOrder}
-                  className="studio-add-button"
-                >
-                  {isCreatingOrder ? "Creating..." : "Add To Bag"}
-                </button>
+                  <p>
+                    Constructed from 100% organic cotton, the Archive base is
+                    refined for everyday wear and premium artwork application.
+                  </p>
+                </div>
 
-                <button type="button" className="studio-wishlist-button">
-                  Add To Wishlist
-                </button>
-              </div>
+                <div className="studio-model-note">
+                  Model is 5ft 8&apos; and wears size XS.
+                  <span> SIZE GUIDE</span>
+                </div>
 
-              <div className="studio-right-divider" />
-
-              <div className="studio-product-info">
-                <div className="studio-info-title">Product Info</div>
-
-                <p>
-                  Constructed from 100% organic cotton, the Archive base is
-                  refined for everyday wear and premium artwork application.
-                </p>
-              </div>
-
-              <div className="studio-model-note">
-                Model is 5ft 8&apos; and wears size XS.
-                <span> SIZE GUIDE</span>
-              </div>
-
-              <div>              
                 <a
-                href={WHATSAPP_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="studio-live-assistance"
-              >
-                Live Assistance
-              </a>
+                  href={WHATSAPP_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="studio-live-assistance"
+                >
+                  Live Assistance
+                </a>
               </div>
-
             </section>
           </div>
         </div>
