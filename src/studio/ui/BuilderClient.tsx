@@ -39,11 +39,18 @@ type PlacementKey =
   | "CENTER_BACK"
   | "FULL_BACK";
 
+type UserAssetDTO = {
+  id: string;
+  url: string;
+  fileName: string;
+};
+
 type BuilderClientProps = {
   buildId: string;
   buildName: string;
   draft: DraftDTO;
   placementsCount: number;
+  initialUserAssets?: UserAssetDTO[];
 };
 
 type CreateOrderResponse = {
@@ -69,6 +76,7 @@ export default function BuilderClient({
   buildName,
   draft,
   placementsCount,
+  initialUserAssets = [],
 }: BuilderClientProps) {
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -82,6 +90,8 @@ export default function BuilderClient({
   });
 
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
+  const [activePlacement, setActivePlacement] = useState<PlacementKey>("CENTER_FRONT");
+  const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
   const [uploadName, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [showCustomPopup, setShowCustomPopup] = useState(false);
@@ -213,15 +223,32 @@ export default function BuilderClient({
   }
 
   async function handleUpload(file: File) {
+    const localUrl = URL.createObjectURL(file);
     setUploadName(file.name);
-    setArtworkUrl(URL.createObjectURL(file));
+    setArtworkUrl(localUrl);
+
+    const tempId = `temp-${Date.now()}`;
+    const newLocalAsset: UserAssetDTO = { id: tempId, url: localUrl, fileName: file.name };
+    setUserAssets((prev) => [newLocalAsset, ...prev]);
 
     const fd = new FormData();
     fd.set("fileName", file.name);
     fd.set("mimeType", file.type || "application/octet-stream");
     fd.set("sizeBytes", String(file.size || 0));
 
-    startTransition(() => actionCreateAsset(buildId, fd));
+    startTransition(() => {
+      actionCreateAsset(buildId, fd).then((res: any) => {
+        if (res && res.id) {
+          setUserAssets((prev) =>
+            prev.map((a) => (a.id === tempId ? { id: res.id, url: res.url || localUrl, fileName: file.name } : a))
+          );
+          save({
+            ...state,
+            primaryAssetId: res.id,
+          });
+        }
+      }).catch(() => {});
+    });
   }
 
   async function handleAddToBag() {
@@ -332,6 +359,22 @@ export default function BuilderClient({
     price?.mode === "standard" &&
     state.product !== "CUSTOM";
 
+  // إحداثيات مصممة خصيصاً لتتناسب مع صورة front-tshirt.png المفرغة اللي في المودال
+  const bespokeArtworkStyle = useMemo(() => {
+    if (!activePlacement) return {};
+    const styles: Record<PlacementKey, React.CSSProperties> = {
+      CENTER_FRONT: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
+      FULL_FRONT: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
+      LEFT_CHEST: { top: "32%", left: "62%", transform: "translateX(-50%)", width: "10%", height: "auto" }, 
+      RIGHT_CHEST: { top: "32%", left: "38%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+      CENTER_BACK: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
+      FULL_BACK: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
+      LEFT_SLEEVE: { top: "42%", left: "84%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+      RIGHT_SLEEVE: { top: "42%", left: "16%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+    };
+    return styles[activePlacement];
+  }, [activePlacement]);
+
   const customPopup =
     mounted && showCustomPopup
       ? createPortal(
@@ -392,18 +435,29 @@ export default function BuilderClient({
               </button>
 
               <div className="studio-bespoke-preview">
-                <div className="studio-bespoke-canvas">
-                  <img
-                    src="/images/front-tshirt.png"
-                    alt="T-shirt preview"
-                    className="studio-bespoke-shirt"
-                  />
+                <div className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {/* هنا حافظت لك على صورتك الأصلية بتاعت المودال بدون تغيير */}
+                 <img
+  src={activePlacement.includes("BACK") ? "/images/back-tshirt.png" : "/images/front-tshirt.png"}
+  alt="T-shirt preview"
+  className="studio-bespoke-shirt"
+  style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+/>
 
-                  <img
-                    src={artworkUrl ?? "/images/artwork-placeholder.png"}
-                    alt="Artwork preview"
-                    className="studio-bespoke-artwork"
-                  />
+                  {/* ده اللوجو اللي بينزل فوق صورتك بالإحداثيات المظبوطة */}
+                  {artworkUrl && (
+                    <img
+                      src={artworkUrl!}
+                      alt="Artwork preview"
+                      className="studio-bespoke-artwork"
+                      style={{ 
+                        position: "absolute", 
+                        zIndex: 40, 
+                        mixBlendMode: "multiply", 
+                        ...bespokeArtworkStyle 
+                      }}
+                    />
+                  )}
                 </div>
 
                 <div className="studio-bespoke-placement-area">
@@ -412,15 +466,20 @@ export default function BuilderClient({
                   <div className="studio-placement-grid">
                     {placementCards.map((placement) => {
                       const active = selectedPlacements.includes(placement.key);
+                      const isViewed = activePlacement === placement.key;
 
                       return (
                         <button
                           key={placement.key}
                           type="button"
-                          onClick={() => togglePlacement(placement.key)}
+                          onClick={() => {
+                            togglePlacement(placement.key);
+                            setActivePlacement(placement.key);
+                          }}
                           className={cn(
                             "studio-placement-card",
                             active ? "studio-placement-card-active" : "",
+                            isViewed ? "border-black border-2" : ""
                           )}
                           aria-label={placement.label}
                         >
@@ -451,11 +510,15 @@ export default function BuilderClient({
                         <div key={placement} className="studio-selected-artwork-card">
                           <button
                             type="button"
-                            onClick={() =>
+                            onClick={() => {
                               setSelectedPlacements((prev) =>
-                                prev.filter((item) => item !== placement),
-                              )
-                            }
+                                prev.filter((item) => item !== placement)
+                              );
+                              if (activePlacement === placement) {
+                                const remaining = selectedPlacements.filter((item) => item !== placement);
+                                if (remaining.length > 0) setActivePlacement(remaining[0]);
+                              }
+                            }}
                             className="studio-selected-artwork-remove"
                             aria-label={`Remove ${placement}`}
                           >
@@ -495,20 +558,40 @@ export default function BuilderClient({
                   <div className="studio-bespoke-label">Your Uploads</div>
 
                   <div className="studio-upload-grid">
-                    {[0, 1, 2, 3].map((index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="studio-upload-slot"
-                      >
-                        {index === 0 && uploadName ? (
-                          <span className="studio-upload-name">{uploadName}</span>
-                        ) : (
+                    {Array.from({ length: Math.max(4, userAssets.length) }).map((_, index) => {
+                      const asset = userAssets[index];
+                      if (asset) {
+                        const isCurrentActive = state.primaryAssetId === asset.id || artworkUrl === asset.url;
+                        return (
+                          <button
+                            key={asset.id}
+                            type="button"
+                            onClick={() => {
+                              setArtworkUrl(asset.url);
+                              setUploadName(asset.fileName);
+                              save({ ...state, primaryAssetId: asset.id });
+                            }}
+                            className={cn(
+                              "studio-upload-slot",
+                              isCurrentActive ? "border-black border-[1.5px]" : ""
+                            )}
+                            style={{ padding: 0, overflow: "hidden" }}
+                          >
+                            <img src={asset.url} alt={asset.fileName} className="w-full h-full object-cover" />
+                          </button>
+                        );
+                      }
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="studio-upload-slot"
+                        >
                           <span className="studio-upload-placeholder">▧</span>
-                        )}
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -617,7 +700,7 @@ export default function BuilderClient({
 
                     <button
                       type="button"
-                      onClick={openCustomRequestPopup}
+                      onClick={() => setShowBespokeModal(true)}
                       className={cn(
                         "studio-product-button",
                         state.product === "CUSTOM"
@@ -784,7 +867,7 @@ export default function BuilderClient({
                 <button
                   type="button"
                   className="studio-build-button"
-                  onClick={() => setShowCustomPopup(true)}
+                  onClick={() => setShowBespokeModal(true)}
                 >
                   Build Your T-Shirt
                 </button>
@@ -803,10 +886,12 @@ export default function BuilderClient({
               </div>
             </section>
 
+            {/* هنا بنباصي الـ activePlacement للبريفيو عشان يلف معاه */}
             <TryOn3DPreview
               product={state.product}
               color={state.color}
               artworkUrl={artworkUrl}
+              activePlacement={activePlacement}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
