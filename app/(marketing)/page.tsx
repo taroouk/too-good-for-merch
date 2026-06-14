@@ -8,29 +8,56 @@ const HERO_VIDEO_DESKTOP = "/videos/hero.mp4";
 const HERO_VIDEO_MOBILE = "/videos/hero-mobile.mp4";
 
 function HeroFigma() {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [videoSrc, setVideoSrc] = useState(HERO_VIDEO_DESKTOP);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mq = window.matchMedia("(max-width: 980px)");
+    const syncVideoSource = () => {
+      setVideoSrc(mq.matches ? HERO_VIDEO_MOBILE : HERO_VIDEO_DESKTOP);
+    };
+
+    syncVideoSource();
+
+    if (mq.addEventListener) mq.addEventListener("change", syncVideoSource);
+    else mq.addListener(syncVideoSource);
+
+    return () => {
+      if (mq.removeEventListener) mq.removeEventListener("change", syncVideoSource);
+      else mq.removeListener(syncVideoSource);
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    video.muted = true;
+    video.defaultMuted = true;
+    video.load();
+    void video.play().catch(() => {});
+  }, [videoSrc]);
+
   return (
     <section className="section hero" id="hero">
       <div className="videoArea">
         <video
+          key={videoSrc}
+          ref={videoRef}
           className="heroVideo"
+          src={videoSrc}
           autoPlay
           loop
           muted
           playsInline
           preload="auto"
           aria-label="Too Good For Merch hero video"
-        >
-          <source
-            src={HERO_VIDEO_MOBILE}
-            type="video/mp4"
-            media="(max-width: 980px)"
-          />
-          <source
-            src={HERO_VIDEO_DESKTOP}
-            type="video/mp4"
-            media="(min-width: 981px)"
-          />
-        </video>
+          onCanPlay={(event) => {
+            void event.currentTarget.play().catch(() => {});
+          }}
+        />
       </div>
     </section>
   );
