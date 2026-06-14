@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
+import SignOutButton from "src/components/SignOutButton";
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -86,9 +87,17 @@ export default function StudioNavbar({
                 </Link>
               </>
             ) : (
-              <span className="studio-breadcrumb-current">
-                My Account
-              </span>
+              <>
+                <span className="studio-breadcrumb-current">
+                  My Account
+                </span>
+
+                <span className="studio-breadcrumb-separator">/</span>
+
+                <SignOutButton
+                  className="studio-navbar-tab studio-navbar-tab-idle studio-breadcrumb-button"
+                />
+              </>
             )}
           </nav>
         </div>

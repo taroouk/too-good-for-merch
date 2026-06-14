@@ -342,6 +342,27 @@ h6,
   white-space: nowrap;
 }
 
+.studio-breadcrumb-button {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+
+.studio-breadcrumb-button:focus-visible {
+  color: #000000;
+  outline: none;
+}
+
+.studio-breadcrumb-button:focus-visible::after {
+  transform: scaleX(1);
+}
+
 .studio-navbar-tabs {
   display: flex;
   align-items: center;

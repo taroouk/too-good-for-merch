@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import "../globals.css";
 import "./marketing.css";
 import Link from "next/link";
+import { useSession } from "next-auth/react";
+import SignOutButton from "src/components/SignOutButton";
 
 export default function MarketingLayout({
   children,
@@ -12,6 +14,7 @@ export default function MarketingLayout({
 }) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const { data: session } = useSession();
 
   useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 40);
@@ -58,8 +61,11 @@ export default function MarketingLayout({
         </Link>
 
         <nav className="marketingNav marketingNavRight" aria-label="Account links">
-          {/* ✅ ACCOUNT -> /login */}
-          <Link href="/login">ACCOUNT</Link>
+          {session ? (
+            <SignOutButton className="marketingNavButton">SIGN OUT</SignOutButton>
+          ) : (
+            <Link href="/login">ACCOUNT</Link>
+          )}
           <Link href="/#wishlist">WISHLIST</Link>
           <Link href="/#bag">BAG (0)</Link>
         </nav>
@@ -83,10 +89,18 @@ export default function MarketingLayout({
           <div className="mobileMenuDivider" />
 
           <div className="mobileMenuGroup">
-            {/* ✅ ACCOUNT -> /login */}
-            <Link href="/login" onClick={closeMenu}>
-              ACCOUNT
-            </Link>
+            {session ? (
+              <SignOutButton
+                className="mobileMenuButton"
+                onClick={closeMenu}
+              >
+                SIGN OUT
+              </SignOutButton>
+            ) : (
+              <Link href="/login" onClick={closeMenu}>
+                ACCOUNT
+              </Link>
+            )}
             <Link href="/#wishlist" onClick={closeMenu}>
               WISHLIST
             </Link>
