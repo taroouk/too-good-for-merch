@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { signIn, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import type {
   BuildDraft,
   FabricType,
@@ -10,7 +12,10 @@ import type {
 } from "@prisma/client";
 
 import { actionUpdateDraft } from "src/actions/build-actions";
-import { actionCreateAsset } from "src/actions/asset-actions";
+import {
+  actionAttachExistingAsset,
+  actionCreateAssetForBuilder,
+} from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
@@ -39,11 +44,19 @@ type PlacementKey =
   | "CENTER_BACK"
   | "FULL_BACK";
 
+type UserAssetDTO = {
+  id: string;
+  buildId?: string | null;
+  url: string;
+  fileName: string;
+};
+
 type BuilderClientProps = {
   buildId: string;
   buildName: string;
   draft: DraftDTO;
   placementsCount: number;
+  initialUserAssets?: UserAssetDTO[];
 };
 
 type CreateOrderResponse = {
@@ -54,6 +67,9 @@ type CreateOrderResponse = {
 };
 
 type SizeOption = "S" | "M" | "L" | "XL";
+type AuthMode = "login" | "signup";
+
+const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -66,10 +82,13 @@ function clampQty(qty: number) {
 
 export default function BuilderClient({
   buildId,
-  buildName,
+  buildName: _buildName,
   draft,
   placementsCount,
+  initialUserAssets = [],
 }: BuilderClientProps) {
+  const router = useRouter();
+  const { status } = useSession();
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -82,10 +101,19 @@ export default function BuilderClient({
   });
 
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
+  const [activePlacement, setActivePlacement] = useState<PlacementKey>("CENTER_FRONT");
+  const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
   const [uploadName, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<AuthMode>("login");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authPending, setAuthPending] = useState(false);
   const [showCustomPopup, setShowCustomPopup] = useState(false);
   const [showBespokeModal, setShowBespokeModal] = useState(false);
+  const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<SizeOption>("M");
   const [fabricOpen, setFabricOpen] = useState(false);
   const [summaryOpen, setSummaryOpen] = useState(false);
@@ -133,9 +161,27 @@ export default function BuilderClient({
 
   const currentColorLabel = state.color === "BLACK" ? "Black" : "White";
 
+  const activeArtworkAsset = useMemo(() => {
+    return (
+      userAssets.find(
+        (asset) => asset.id === state.primaryAssetId || asset.url === artworkUrl,
+      ) ?? null
+    );
+  }, [artworkUrl, state.primaryAssetId, userAssets]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (artworkUrl || !state.primaryAssetId) return;
+
+    const asset = userAssets.find((item) => item.id === state.primaryAssetId);
+    if (asset?.url) {
+      setArtworkUrl(asset.url);
+      setUploadName(asset.fileName);
+    }
+  }, [artworkUrl, state.primaryAssetId, userAssets]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -198,6 +244,14 @@ export default function BuilderClient({
     };
   }, [qty, state.fabric, state.product]);
 
+  useEffect(() => {
+    if (status !== "authenticated" || !showAuthModal) return;
+
+    setShowAuthModal(false);
+    setAuthPassword("");
+    setShowBespokeModal(true);
+  }, [showAuthModal, status]);
+
   function save(next: DraftDTO) {
     setState(next);
 
@@ -213,15 +267,89 @@ export default function BuilderClient({
   }
 
   async function handleUpload(file: File) {
+    const localUrl = URL.createObjectURL(file);
     setUploadName(file.name);
-    setArtworkUrl(URL.createObjectURL(file));
+    setArtworkUrl(localUrl);
+
+    const tempId = `temp-${Date.now()}`;
+    const newLocalAsset: UserAssetDTO = {
+      id: tempId,
+      buildId,
+      url: localUrl,
+      fileName: file.name,
+    };
+    setUserAssets((prev) => [newLocalAsset, ...prev]);
 
     const fd = new FormData();
     fd.set("fileName", file.name);
     fd.set("mimeType", file.type || "application/octet-stream");
     fd.set("sizeBytes", String(file.size || 0));
 
-    startTransition(() => actionCreateAsset(buildId, fd));
+    startTransition(() => {
+      actionCreateAssetForBuilder(buildId, fd).then((res: any) => {
+        if (res && res.id) {
+          setUserAssets((prev) =>
+            prev.map((a) =>
+              a.id === tempId
+                ? {
+                    id: res.id,
+                    buildId: res.buildId ?? buildId,
+                    url: res.url || localUrl,
+                    fileName: res.fileName ?? file.name,
+                  }
+                : a,
+            )
+          );
+          save({
+            ...state,
+            primaryAssetId: res.id,
+          });
+        }
+      }).catch(() => {});
+    });
+  }
+
+  async function selectAsset(asset: UserAssetDTO) {
+    setArtworkUrl(asset.url);
+    setUploadName(asset.fileName);
+
+    if (!asset.buildId || asset.buildId === buildId) {
+      save({ ...state, primaryAssetId: asset.id });
+      return;
+    }
+
+    setAttachingAssetId(asset.id);
+
+    try {
+      const attached = await actionAttachExistingAsset(buildId, asset.id);
+      if (!attached?.id || !attached.url) return;
+
+      const nextAsset: UserAssetDTO = {
+        id: attached.id,
+        buildId: attached.buildId,
+        url: attached.url,
+        fileName: attached.fileName,
+      };
+
+      setUserAssets((prev) =>
+        prev.some((item) => item.id === nextAsset.id)
+          ? prev.map((item) => (item.id === nextAsset.id ? nextAsset : item))
+          : [nextAsset, ...prev],
+      );
+      setArtworkUrl(nextAsset.url);
+      setUploadName(nextAsset.fileName);
+      save({ ...state, primaryAssetId: nextAsset.id });
+    } catch {
+      alert("Could not load this artwork.");
+    } finally {
+      setAttachingAssetId(null);
+    }
+  }
+
+  function removeSelectedArtwork() {
+    setArtworkUrl(null);
+    setUploadName("");
+    save({ ...state, primaryAssetId: null });
   }
 
   async function handleAddToBag() {
@@ -266,6 +394,75 @@ export default function BuilderClient({
     setShowCustomPopup(true);
   }
 
+  function requestAuth(mode: AuthMode = "login") {
+    setAuthMode(mode);
+    setAuthError(null);
+    setShowAuthModal(true);
+  }
+
+  function openBespokeBuilder() {
+    if (status === "authenticated") {
+      setShowBespokeModal(true);
+      return;
+    }
+
+    requestAuth("login");
+  }
+
+  function switchAuthMode(mode: AuthMode) {
+    setAuthMode(mode);
+    setAuthError(null);
+  }
+
+  async function handleAuthSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const email = authEmail.trim().toLowerCase();
+    const password = authPassword;
+
+    if (!email || !password) {
+      setAuthError("Enter your email and password.");
+      return;
+    }
+
+    setAuthPending(true);
+    setAuthError(null);
+
+    try {
+      if (authMode === "signup") {
+        const registerResponse = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+
+        if (!registerResponse.ok) {
+          const data = await registerResponse.json().catch(() => null);
+          throw new Error(data?.error ?? "Registration failed.");
+        }
+      }
+
+      const result = await signIn("credentials", {
+        redirect: false,
+        email,
+        password,
+        callbackUrl: window.location.pathname,
+      });
+
+      if (!result) throw new Error("Unknown error.");
+      if (result.error) throw new Error("Invalid email or password.");
+
+      setShowAuthModal(false);
+      setAuthPassword("");
+      setShowBespokeModal(true);
+      router.refresh();
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Something went wrong.");
+    } finally {
+      setAuthPending(false);
+    }
+  }
+
   function continueCustomRequest() {
     save({
       ...state,
@@ -274,7 +471,7 @@ export default function BuilderClient({
     });
 
     setShowCustomPopup(false);
-    setShowBespokeModal(true);
+    openBespokeBuilder();
   }
 
   function togglePlacement(key: PlacementKey) {
@@ -311,26 +508,140 @@ export default function BuilderClient({
     currentFabric.gsm.replace(" Cotton", ""),
   ].join(" / ");
 
-  const summaryItems = [
-    {
-      label: "Product",
-      value:
-        state.product === "CUSTOM"
-          ? "Bespoke"
-          : state.product === "OVERSIZED"
-            ? "Oversized"
-            : "Fitted",
-    },
-    { label: "Colour", value: currentColorLabel },
-    { label: "Fabric", value: currentFabric.gsm },
-    { label: "Size", value: selectedSize },
-    { label: "Quantity", value: String(qty) },
-  ];
 
   const isStandardCheckout =
     Boolean(state.product && state.color && state.fabric) &&
     price?.mode === "standard" &&
     state.product !== "CUSTOM";
+
+  // إحداثيات مصممة خصيصاً لتتناسب مع صورة front-tshirt.png المفرغة اللي في المودال
+  const bespokeArtworkStyle = useMemo(() => {
+    if (!activePlacement) return {};
+    const styles: Record<PlacementKey, React.CSSProperties> = {
+      CENTER_FRONT: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
+      FULL_FRONT: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
+      LEFT_CHEST: { top: "32%", left: "62%", transform: "translateX(-50%)", width: "10%", height: "auto" }, 
+      RIGHT_CHEST: { top: "32%", left: "38%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+      CENTER_BACK: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
+      FULL_BACK: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
+      LEFT_SLEEVE: { top: "42%", left: "84%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+      RIGHT_SLEEVE: { top: "42%", left: "16%", transform: "translateX(-50%)", width: "10%", height: "auto" },
+    };
+    return styles[activePlacement];
+  }, [activePlacement]);
+
+  const authPopup =
+    mounted && showAuthModal
+      ? createPortal(
+          <div className="studio-modal-overlay">
+            <div className="studio-auth-modal studio-modal-panel">
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="studio-modal-close"
+                aria-label="Close login or signup"
+              >
+                ×
+              </button>
+
+              <div className="studio-modal-kicker">TGFM Account</div>
+              <h2 className="studio-auth-title">Login Or Sign Up</h2>
+              <p className="studio-auth-copy">
+                Continue to save your artwork and build your T-shirt.
+              </p>
+
+              <div className="studio-auth-tabs" role="tablist" aria-label="Account mode">
+                <button
+                  type="button"
+                  onClick={() => switchAuthMode("login")}
+                  className={cn(
+                    "studio-auth-tab",
+                    authMode === "login" ? "studio-auth-tab-active" : "",
+                  )}
+                  aria-pressed={authMode === "login"}
+                >
+                  Login
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => switchAuthMode("signup")}
+                  className={cn(
+                    "studio-auth-tab",
+                    authMode === "signup" ? "studio-auth-tab-active" : "",
+                  )}
+                  aria-pressed={authMode === "signup"}
+                >
+                  Sign Up
+                </button>
+              </div>
+
+              <form className="studio-auth-form" onSubmit={handleAuthSubmit}>
+                <label className="studio-auth-field">
+                  <span className="studio-auth-label">Email</span>
+                  <input
+                    className="studio-auth-input"
+                    type="email"
+                    value={authEmail}
+                    onChange={(event) => setAuthEmail(event.target.value)}
+                    autoComplete="email"
+                    placeholder="you@email.com"
+                    required
+                  />
+                </label>
+
+                <label className="studio-auth-field">
+                  <span className="studio-auth-label">Password</span>
+                  <input
+                    className="studio-auth-input"
+                    type="password"
+                    value={authPassword}
+                    onChange={(event) => setAuthPassword(event.target.value)}
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                    minLength={authMode === "signup" ? 8 : undefined}
+                    placeholder={authMode === "signup" ? "min 8 chars" : "password"}
+                    required
+                  />
+                </label>
+
+                {authMode === "signup" ? (
+                  <div className="studio-auth-hint">
+                    Password must be at least 8 characters.
+                  </div>
+                ) : null}
+
+                {authError ? <div className="studio-auth-error">{authError}</div> : null}
+
+                <button
+                  type="submit"
+                  className="studio-auth-submit"
+                  disabled={authPending || status === "loading"}
+                >
+                  {authPending
+                    ? authMode === "signup"
+                      ? "Creating..."
+                      : "Logging in..."
+                    : authMode === "signup"
+                      ? "Create Account"
+                      : "Login"}
+                </button>
+              </form>
+
+              <div className="studio-auth-footer">
+                {authMode === "login" ? "New here?" : "Already have an account?"}{" "}
+                <button
+                  type="button"
+                  onClick={() => switchAuthMode(authMode === "login" ? "signup" : "login")}
+                  className="studio-auth-inline-button"
+                >
+                  {authMode === "login" ? "Create account" : "Login"}
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
 
   const customPopup =
     mounted && showCustomPopup
@@ -392,18 +703,29 @@ export default function BuilderClient({
               </button>
 
               <div className="studio-bespoke-preview">
-                <div className="studio-bespoke-canvas">
-                  <img
-                    src="/images/front-tshirt.png"
-                    alt="T-shirt preview"
-                    className="studio-bespoke-shirt"
-                  />
+                <div className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+                  {/* هنا حافظت لك على صورتك الأصلية بتاعت المودال بدون تغيير */}
+                 <img
+  src={activePlacement.includes("BACK") ? "/images/back-tshirt.png" : "/images/front-tshirt.png"}
+  alt="T-shirt preview"
+  className="studio-bespoke-shirt"
+  style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+/>
 
-                  <img
-                    src={artworkUrl ?? "/images/artwork-placeholder.png"}
-                    alt="Artwork preview"
-                    className="studio-bespoke-artwork"
-                  />
+                  {/* ده اللوجو اللي بينزل فوق صورتك بالإحداثيات المظبوطة */}
+                  {artworkUrl && (
+                    <img
+                      src={artworkUrl!}
+                      alt="Artwork preview"
+                      className="studio-bespoke-artwork"
+                      style={{ 
+                        position: "absolute", 
+                        zIndex: 40, 
+                        mixBlendMode: "multiply", 
+                        ...bespokeArtworkStyle 
+                      }}
+                    />
+                  )}
                 </div>
 
                 <div className="studio-bespoke-placement-area">
@@ -412,15 +734,20 @@ export default function BuilderClient({
                   <div className="studio-placement-grid">
                     {placementCards.map((placement) => {
                       const active = selectedPlacements.includes(placement.key);
+                      const isViewed = activePlacement === placement.key;
 
                       return (
                         <button
                           key={placement.key}
                           type="button"
-                          onClick={() => togglePlacement(placement.key)}
+                          onClick={() => {
+                            togglePlacement(placement.key);
+                            setActivePlacement(placement.key);
+                          }}
                           className={cn(
                             "studio-placement-card",
                             active ? "studio-placement-card-active" : "",
+                            isViewed ? "border-black border-2" : ""
                           )}
                           aria-label={placement.label}
                         >
@@ -442,46 +769,38 @@ export default function BuilderClient({
                   <h2 className="studio-bespoke-title">Build Your T-Shirt</h2>
                 </div>
 
-                {selectedPlacements.length > 0 ? (
-                  <div className="studio-selected-artwork-area">
-                    <div className="studio-bespoke-label">Selected Artwork</div>
+                <div className="studio-selected-artwork-area">
+                  <div className="studio-bespoke-label">Selected Artwork</div>
 
-                    <div className="studio-selected-artwork-grid">
-                      {selectedPlacements.map((placement) => (
-                        <div key={placement} className="studio-selected-artwork-card">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setSelectedPlacements((prev) =>
-                                prev.filter((item) => item !== placement),
-                              )
-                            }
-                            className="studio-selected-artwork-remove"
-                            aria-label={`Remove ${placement}`}
-                          >
-                            ×
-                          </button>
-
-                          <img
-                            src={artworkUrl ?? "/images/artwork-placeholder.png"}
-                            alt={placement}
-                            className="studio-selected-artwork-image"
-                          />
-                        </div>
-                      ))}
-
-                      {selectedPlacements.length < 4 ? (
+                  <div className="studio-selected-artwork-grid">
+                    {activeArtworkAsset ? (
+                      <div className="studio-selected-artwork-card">
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="studio-selected-artwork-add"
+                          onClick={removeSelectedArtwork}
+                          className="studio-selected-artwork-remove"
+                          aria-label="Remove selected artwork"
                         >
-                          + Add
+                          ×
                         </button>
-                      ) : null}
-                    </div>
+
+                        <img
+                          src={activeArtworkAsset.url}
+                          alt={activeArtworkAsset.fileName}
+                          className="studio-selected-artwork-image"
+                        />
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="studio-selected-artwork-add"
+                    >
+                      + Add
+                    </button>
                   </div>
-                ) : null}
+                </div>
 
                 <button
                   type="button"
@@ -495,20 +814,41 @@ export default function BuilderClient({
                   <div className="studio-bespoke-label">Your Uploads</div>
 
                   <div className="studio-upload-grid">
-                    {[0, 1, 2, 3].map((index) => (
-                      <button
-                        key={index}
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="studio-upload-slot"
-                      >
-                        {index === 0 && uploadName ? (
-                          <span className="studio-upload-name">{uploadName}</span>
-                        ) : (
+                    {Array.from({ length: Math.max(4, userAssets.length) }).map((_, index) => {
+                      const asset = userAssets[index];
+                      if (asset) {
+                        const isCurrentActive = state.primaryAssetId === asset.id || artworkUrl === asset.url;
+                        return (
+                          <button
+                            key={asset.id}
+                            type="button"
+                            onClick={() => void selectAsset(asset)}
+                            className={cn(
+                              "studio-upload-slot",
+                              isCurrentActive ? "border-black border-[1.5px]" : ""
+                            )}
+                            style={{ padding: 0, overflow: "hidden" }}
+                            disabled={attachingAssetId === asset.id}
+                          >
+                            <img
+                              src={asset.url}
+                              alt={asset.fileName}
+                              className="studio-upload-image"
+                            />
+                          </button>
+                        );
+                      }
+                      return (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="studio-upload-slot"
+                        >
                           <span className="studio-upload-placeholder">▧</span>
-                        )}
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -534,6 +874,7 @@ export default function BuilderClient({
 
   return (
     <>
+      {authPopup}
       {customPopup}
       {bespokeModal}
 
@@ -555,13 +896,8 @@ export default function BuilderClient({
           <div className="studio-builder-grid">
             <section className="studio-left-panel" aria-label="Product controls">
               <div className="studio-panel-header">
-                <div className="studio-overline">Luxury Merch Builder</div>
-                <h1 className="studio-title">Studio</h1>
-                <p className="studio-panel-subtitle">
-                  Configure your base garment, fabric, colour, and artwork flow
-                  with a premium live preview.
-                </p>
-              </div>
+                <h1 className="studio-title">THE&nbsp;STUDIO</h1>   
+                </div>
 
               <div className="studio-left-stack">
                 <div className="studio-control-group">
@@ -684,7 +1020,12 @@ export default function BuilderClient({
                       onClick={openCustomRequestPopup}
                       className="studio-colour-dot studio-colour-dot-custom"
                     >
-                      +
+                      <img
+                        src={CUSTOM_COLOUR_ICON}
+                        alt=""
+                        aria-hidden="true"
+                        className="studio-colour-custom-icon"
+                      />
                     </button>
                   </div>
                 </div>
@@ -784,7 +1125,7 @@ export default function BuilderClient({
                 <button
                   type="button"
                   className="studio-build-button"
-                  onClick={() => setShowCustomPopup(true)}
+                  onClick={openBespokeBuilder}
                 >
                   Build Your T-Shirt
                 </button>
@@ -803,31 +1144,29 @@ export default function BuilderClient({
               </div>
             </section>
 
+            {/* هنا بنباصي الـ activePlacement للبريفيو عشان يلف معاه */}
             <TryOn3DPreview
               product={state.product}
               color={state.color}
               artworkUrl={artworkUrl}
+              activePlacement={activePlacement}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
               <div className="studio-right-sticky">
                 <div className="studio-right-top">
-                  <div>
-                    <div className="studio-right-kicker">{buildName}</div>
+                  <div className="studio-price-stack">
                     <div className="studio-price">{priceText}</div>
-                  </div>
-
-                  <div className="studio-shipping-note">
-                    Incl. VAT. Ships in 3-5 business days.
+                    <div className="studio-shipping-note">
+                      Incl. VAT. Ships in 3-5 business days.
+                    </div>
                   </div>
                 </div>
 
                 <div className="studio-right-divider" />
 
                 <div className="studio-field-block studio-quantity-block">
-                  <div>
-                    <div className="studio-right-label">Quantity</div>
-                  </div>
+                  <div className="studio-right-label">Quantity</div>
 
                   <div className="studio-quantity">
                     <button
@@ -871,9 +1210,6 @@ export default function BuilderClient({
                   <div className="studio-size-header">
                     <div>
                       <div className="studio-right-label">Size</div>
-                      <div className="studio-control-caption">
-                        Selected: {selectedSize}
-                      </div>
                     </div>
 
                     <button type="button" className="studio-size-guide-link">
@@ -899,43 +1235,8 @@ export default function BuilderClient({
                 </div>
 
                 <div className="studio-summary-card studio-summary-card-sticky">
-                  {summaryOpen ? (
-                    <dl className="studio-summary-dropdown" aria-label="Selection details">
-                      {summaryItems.map((item) => (
-                        <div key={item.label}>
-                          <dt>{item.label}</dt>
-                          <dd>{item.value}</dd>
-                        </div>
-                      ))}
-
-                      <div>
-                        <dt>Total</dt>
-                        <dd>
-                          {price?.mode === "standard"
-                            ? `$${price.total.toFixed(2)}`
-                            : "Quote"}
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : null}
-
-                  <button
-                    type="button"
-                    onClick={() => setSummaryOpen((value) => !value)}
-                    className="studio-summary-trigger"
-                    aria-expanded={summaryOpen}
-                    aria-label="Toggle selection summary"
-                  >
-                    <span className="studio-summary-value">{selectionSummary}</span>
-                    <span
-                      className={cn(
-                        "studio-summary-arrow",
-                        summaryOpen ? "studio-summary-arrow-open" : "",
-                      )}
-                    >
-                      ⌃
-                    </span>
-                  </button>
+                  <div className="studio-summary-label">Selection Summary</div>
+                  <div className="studio-summary-value">{selectionSummary}</div>
                 </div>
 
                 <div className="studio-action-row">

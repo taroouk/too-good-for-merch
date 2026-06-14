@@ -2,179 +2,45 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import "./marketing.css";
 
+const HERO_VIDEO_DESKTOP = "/videos/hero.mp4";
+const HERO_VIDEO_MOBILE = "/videos/hero-mobile.mp4";
+
+function HeroFigma() {
+  return (
+    <section className="section hero" id="hero">
+      <div className="videoArea">
+        <video
+          className="heroVideo"
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="auto"
+          aria-label="Too Good For Merch hero video"
+        >
+          <source
+            src={HERO_VIDEO_MOBILE}
+            type="video/mp4"
+            media="(max-width: 980px)"
+          />
+          <source
+            src={HERO_VIDEO_DESKTOP}
+            type="video/mp4"
+            media="(min-width: 981px)"
+          />
+        </video>
+      </div>
+    </section>
+  );
+}
 const WHATSAPP_PHONE = "201118399923";
 const WHATSAPP_MESSAGE =
   "Hi TGFM, I’d love a quote!\nWhat info do you need from me?";
 
 const WHATSAPP_URL =
   `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
-
-const HERO_VIDEO = "/videos/hero.mp4";
-const WORDS = [
-  "FOR ARTISTS.",
-  "EVENTS.",
-  "BRANDS.",
-  "THAT TAKE MERCH",
-  "SERIOUSLY.",
-];
-
-function HeroFigma() {
-  const [words, setWords] = useState<string[]>([]);
-  const [lineIndex, setLineIndex] = useState(0);
-
-  useEffect(() => {
-    setWords([]);
-  
-    let index = 0;
-    let charIndex = 0;
-  
-    const buffer: string[] = [];
-  
-    const typing = setInterval(() => {
-      const word = WORDS[index];
-      if (!word) return;
-  
-      const typed = word.slice(0, charIndex + 1);
-      buffer[index] = typed;
-  
-      setWords([...buffer]);
-  
-      charIndex++;
-  
-      if (charIndex === word.length) {
-        index++;
-        charIndex = 0;
-      }
-  
-      // FINISH → restart clean
-      if (index === WORDS.length) {
-        clearInterval(typing);
-  
-        setTimeout(() => {
-          setWords([]);
-          setTimeout(() => {
-            // restart loop
-            setLineIndex((p) => (p + 1) % 9999);
-          }, 100);
-        }, 1100);
-      }
-    }, 90);
-  
-    return () => clearInterval(typing);
-  }, [lineIndex]);
-
-  return (
-    <section className="hero heroFigma">
-
-<div className="heroStage">
-
-  {/* WRAPPER */}
-  <div className="heroInner">
-
-    {/* VIDEO */}
-    <div className="videoArea">
-      <video className="heroVideo" autoPlay muted loop playsInline>
-        <source src={HERO_VIDEO} type="video/mp4" />
-      </video>
-    </div>
-
-    {/* TEXT (same width as video) */}
-    <div className="heroText">
-      {words.map((w, i) => (
-        <p key={i} className="wordLine">
-          {w}
-        </p>
-      ))}
-    </div>
-
-  </div>
-
-</div>
-
-      <style jsx>{`
-        .hero {
-          height: 100vh;
-          overflow: hidden;
-          background:black;
-         
-        }
-        .heroInner {
-          width: 100%;
-          max-width: 900px;   /* نفس “container” واحد للفيديو + النص */
-          margin: 55 auto;     /* يخليهم في النص */
-          display: flex;
-          flex-direction: column;
-          align-items: flex-start;}
-
-        /* ❗ IMPORTANT: NOT CENTERED ANYMORE */
-        .heroFigmaStage {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: flex-start; /* 👈 FIX: stop vertical shifting */
-          padding-top: 70px;
-        }
-
-        /* VIDEO STAYS FIXED */
-        .videoArea {
-          width: 100%;
-          display: flex;
-          justify-content: center;
-        }
-
-        .heroVideo {
-          width: 100%;
-          max-height: 65vh; /* 👈 smaller + stable */
-          object-fit: contain;
-          padding-top: 10px;
-        }
-
-        /* TEXT BELOW VIDEO */
-        .heroText {
-          width: fit-content;
-          margin-top: 55px;
-          text-align: center;
-          display: flex;
-          flex-direction: column;
-          gap: 0px;
-          color:white;
-        }
-
-        .wordLine {
-          margin: 0;
-          font-size: 20px;
-          font-weight: 800;
-          line-height: 1.3;
-          text-align: left;
-        }
-
-        /* MOBILE */
-        @media (max-width: 768px) {
-          .heroFigmaStage {
-            padding-top: 100px;
-            align-items: flex-start;
-          }
-
-          .heroVideo {
-            max-height: 35vh;
-          }
-
-          .heroText {
-            text-align: left;
-            padding: 20px 20px;
-            gap: 10px;
-          }
-
-          .wordLine {
-            font-size: 30px;
-          }
-        }
-      `}</style>
-    </section>
-  );
-}
 
 type BoutiqueItem = {
   title: string;
