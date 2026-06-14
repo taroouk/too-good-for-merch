@@ -85,14 +85,25 @@ a{ color: inherit; }
 .marketingLogo img{ height: 24px; display: block; }
 
 .marketingHeader a,
-.marketingHeader a:visited{
+.marketingHeader a:visited,
+.marketingNavButton{
   color: #000 !important;
   text-decoration: none !important;
   opacity: .9;
   transition: opacity .2s ease;
 }
+.marketingNavButton{
+  border: 0;
+  background: transparent;
+  font: inherit;
+  letter-spacing: inherit;
+  padding: 0;
+  text-transform: inherit;
+}
 .marketingHeader a:hover,
-.marketingHeader a:focus-visible{
+.marketingHeader a:focus-visible,
+.marketingNavButton:hover,
+.marketingNavButton:focus-visible{
   opacity: .6;
   outline: none;
 }
@@ -197,7 +208,8 @@ a{ color: inherit; }
   background: rgba(0,0,0,.12);
 }
 
-.mobileMenu a{
+.mobileMenu a,
+.mobileMenuButton{
   text-decoration: none !important;
   color: #000 !important;
   font-size: 16px;
@@ -206,7 +218,18 @@ a{ color: inherit; }
   padding: 10px 0;
   opacity: .92;
 }
-.mobileMenu a:hover{ opacity: .6; }
+.mobileMenuButton{
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+}
+.mobileMenu a:hover,
+.mobileMenuButton:hover,
+.mobileMenuButton:focus-visible{
+  opacity: .6;
+  outline: none;
+}
 
 
 
@@ -618,11 +641,10 @@ a{ color: inherit; }
   }
 }
 .hero {
-  --heroPeek: clamp(20px, 3.2svh, 42px);
   position: relative;
   width: 100%;
-  height: calc(100svh - var(--headerH) - var(--heroPeek));
-  height: calc(100dvh - var(--headerH) - var(--heroPeek));
+  height: calc(100svh - var(--headerH));
+  height: calc(100dvh - var(--headerH));
   min-height: 560px;
   padding: 0;
   overflow: hidden;
@@ -634,6 +656,7 @@ a{ color: inherit; }
   inset: 0;
   width: 100%;
   height: 100%;
+  background: #000;
 }
 
 .heroVideo {
@@ -641,12 +664,11 @@ a{ color: inherit; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center;
+  object-position: 50% 53%;
 }
 
 @media (max-width: 980px) {
   .hero {
-    --heroPeek: clamp(18px, 3svh, 30px);
     min-height: 0;
   }
 
@@ -657,7 +679,7 @@ a{ color: inherit; }
 
 @media (max-width: 520px) {
   .hero {
-    height: calc(100svh - var(--headerH) - 18px);
-    height: calc(100dvh - var(--headerH) - 18px);
+    height: calc(100svh - var(--headerH));
+    height: calc(100dvh - var(--headerH));
   }
 }
