@@ -1,154 +1,230 @@
-"use client";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { OrderStatus, PaymentStatus } from "@prisma/client";
+import { prisma } from "src/lib/prisma";
+import { buildStandardOrderEmail } from "src/lib/emails/order-emails";
 
-import { useState } from "react";
+type MockPaymentPageProps = {
+  searchParams: Promise<{
+    orderId?: string;
+    result?: "success" | "failure";
+  }>;
+};
 
-const PRODUCT_TYPES = ["FITTED T-SHIRT", "OVERSIZED T-SHIRT", "BESPOKE"];
-const COLORS = ["WHITE", "BLACK", "GRAY"];
-const FABRICS = ["170 GSM Cotton", "200 GSM Premium", "300 GSM Heavy"];
+const PRODUCT_LABELS: Record<string, string> = {
+  FITTED: "Fitted tee",
+  OVERSIZED: "Oversized tee",
+  CUSTOM: "Bespoke tee",
+};
 
-export default function StudioPage() {
-  const [product, setProduct] = useState(PRODUCT_TYPES[0]);
-  const [color, setColor] = useState(COLORS[0]);
-  const [fabric, setFabric] = useState(FABRICS[0]);
-  const [quantity, setQuantity] = useState(1);
+function money(cents: number, currency: string): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+  }).format(cents / 100);
+}
+
+function formatDate(date: Date): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  }).format(date);
+}
+
+function selectedSize(value: unknown): string {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return "M";
+  const size = (value as { size?: unknown }).size;
+  return typeof size === "string" ? size : "M";
+}
+
+function CardIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.75" y="5" width="18.5" height="14" rx="2.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M3 9.25h18" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.5 15h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export default async function MockPaymentPage({ searchParams }: MockPaymentPageProps) {
+  const params = await searchParams;
+
+  if (!params.orderId) redirect("/studio/projects");
+
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { items: true },
+  });
+
+  if (!order) redirect("/studio/projects");
+
+  if (params.result === "success") {
+    const updatedOrder = await prisma.order.update({
+      where: { id: order.id },
+      data: {
+        status: OrderStatus.PAID,
+        paymentStatus: PaymentStatus.PAID,
+        paymobTransactionId: `mock_tx_${Date.now()}`,
+      },
+      include: { items: true },
+    });
+
+    const confirmationEmail = buildStandardOrderEmail({
+      firstName: updatedOrder.customerName?.split(" ")[0] ?? "there",
+      orderNumber: updatedOrder.orderNumber,
+      placedOn: formatDate(updatedOrder.createdAt),
+      items: updatedOrder.items.map((item) => ({
+        name: PRODUCT_LABELS[item.product] ?? "Custom T-Shirt",
+        quantity: item.quantity,
+        details: `${item.product}, Colour: ${item.color}`,
+        priceText: money(item.unitPriceCents, updatedOrder.currency),
+      })),
+      subtotalText: money(updatedOrder.subtotalCents, updatedOrder.currency),
+      shippingText: "TBC",
+      totalText: money(updatedOrder.totalCents, updatedOrder.currency),
+      shippingTo: {
+        fullName: updatedOrder.customerName ?? "Customer Name",
+        addressLine1: "Address to be confirmed",
+        city: "City to be confirmed",
+        country: "Country to be confirmed",
+      },
+    });
+
+    console.log("STANDARD ORDER CONFIRMATION EMAIL:");
+    console.log(confirmationEmail);
+    redirect(`/orders/${order.id}/success`);
+  }
+
+  if (params.result === "failure") {
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { paymentStatus: PaymentStatus.FAILED },
+    });
+    redirect(`/orders/${order.id}/failed`);
+  }
+
+  const item = order.items[0];
+  const total = money(order.totalCents, order.currency);
 
   return (
-    <div className="grid grid-cols-12 h-screen bg-gray-100">
+    <main className="payment-page">
+      <header className="payment-header">
+        <Link href="/" className="payment-brand" aria-label="Too Good For Merch home">
+          <img src="/logo.svg" alt="Too Good For Merch" />
+        </Link>
+        <div className="payment-secure"><span>⌾</span> Secure payment</div>
+      </header>
 
-      {/* LEFT PANEL */}
-      <div className="col-span-3 bg-white border-r p-5 space-y-6 overflow-auto">
-        <h1 className="text-xl font-bold">Customize</h1>
-
-        {/* PRODUCT TYPE */}
-        <div>
-          <h2 className="text-sm font-semibold mb-2">Product Type</h2>
-          <div className="space-y-2">
-            {PRODUCT_TYPES.map((p) => (
-              <button
-                key={p}
-                onClick={() => setProduct(p)}
-                className={`w-full p-3 rounded-xl border text-sm transition ${
-                  product === p
-                    ? "bg-black text-white"
-                    : "hover:border-black"
-                }`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+      <div className="payment-shell">
+        <div className="payment-title">
+          <p>Final step</p>
+          <h1>Choose how you’d like to pay.</h1>
+          <span>Your order is reserved while you complete payment.</span>
         </div>
 
-        {/* COLOR */}
-        <div>
-          <h2 className="text-sm font-semibold mb-2">Color</h2>
-          <div className="flex gap-2">
-            {COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => setColor(c)}
-                className={`flex-1 p-2 rounded-xl border text-xs ${
-                  color === c ? "bg-black text-white" : ""
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* FABRIC */}
-        <div>
-          <h2 className="text-sm font-semibold mb-2">Fabric</h2>
-          <select
-            value={fabric}
-            onChange={(e) => setFabric(e.target.value)}
-            className="w-full border rounded-xl p-2"
-          >
-            {FABRICS.map((f) => (
-              <option key={f}>{f}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* QUANTITY */}
-        <div>
-          <h2 className="text-sm font-semibold mb-2">Quantity</h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setQuantity((q) => Math.max(1, q - 1))}
-              className="px-3 py-1 border rounded-lg"
-            >
-              -
-            </button>
-            <span className="flex-1 text-center">{quantity}</span>
-            <button
-              onClick={() => setQuantity((q) => q + 1)}
-              className="px-3 py-1 border rounded-lg"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* CENTER PREVIEW */}
-      <div className="col-span-6 flex items-center justify-center">
-        <div className="bg-white shadow-xl rounded-3xl p-10">
-          
-          <div className="text-center mb-6">
-            <h2 className="font-bold text-lg">Live Preview</h2>
-            <p className="text-sm text-gray-500">
-              {product} • {color} • {fabric}
-            </p>
-          </div>
-
-          {/* T-SHIRT MOCK */}
-          <div className="relative flex justify-center">
-            <div
-              className={`w-[260px] h-[320px] rounded-2xl flex items-center justify-center text-gray-400 border-2 ${
-                color === "BLACK"
-                  ? "bg-black text-white"
-                  : color === "GRAY"
-                  ? "bg-gray-300"
-                  : "bg-white"
-              }`}
-            >
-              T-SHIRT PREVIEW
+        <div className="payment-layout">
+          <section className="payment-method-card">
+            <div className="payment-test-banner">
+              <span>Test mode</span>
+              This screen safely simulates Paymob during development. No card details are required.
             </div>
-          </div>
+
+            <div className="payment-section-title">
+              <span>01</span>
+              <div>
+                <h2>Payment method</h2>
+                <p>Choose your preferred secure payment option.</p>
+              </div>
+            </div>
+
+            <div className="payment-method-selected">
+              <div className="payment-method-icon"><CardIcon /></div>
+              <div>
+                <strong>Card or mobile wallet</strong>
+                <p>Visa, Mastercard, Meeza and supported wallets</p>
+              </div>
+              <span className="payment-radio" />
+            </div>
+
+            <div className="payment-provider-box">
+              <div>
+                <span>PAYMENT POWERED BY</span>
+                <strong>paymob</strong>
+              </div>
+              <div className="payment-networks" aria-label="Supported card networks">
+                <b>VISA</b><b>mastercard.</b><b>MEEZA</b>
+              </div>
+            </div>
+
+            <Link
+              href={`/payment/mock?orderId=${order.id}&result=success`}
+              className="payment-confirm"
+            >
+              <span>Confirm secure payment</span>
+              <span>{total} <b>→</b></span>
+            </Link>
+
+            <div className="payment-security-note">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M7 10V7a5 5 0 0 1 10 0v3M6 10h12a2 2 0 0 1 2 2v7H4v-7a2 2 0 0 1 2-2Z" stroke="currentColor" strokeWidth="1.5" />
+              </svg>
+              <p><strong>Your payment is protected.</strong> Payment information is encrypted and handled securely by Paymob.</p>
+            </div>
+
+            <Link
+              href={`/payment/mock?orderId=${order.id}&result=failure`}
+              className="payment-decline-test"
+            >
+              Simulate a declined payment
+            </Link>
+          </section>
+
+          <aside className="payment-summary-card">
+            <div className="payment-summary-head">
+              <div>
+                <p>Order summary</p>
+                <h2>{order.orderNumber}</h2>
+              </div>
+              <span>1 item</span>
+            </div>
+
+            {item ? (
+              <div className="payment-product">
+                <span>Product type</span>
+                <strong>{PRODUCT_LABELS[item.product] ?? item.product}</strong>
+                <dl>
+                  <div><dt>Colour</dt><dd>{item.color.toLowerCase()}</dd></div>
+                  <div><dt>Size</dt><dd>{selectedSize(item.preview)}</dd></div>
+                  <div><dt>Quantity</dt><dd>{item.quantity}</dd></div>
+                </dl>
+              </div>
+            ) : null}
+
+            <div className="payment-customer">
+              <p>Paying as</p>
+              <strong>{order.customerName ?? "TGFM customer"}</strong>
+              <span>{order.customerEmail ?? order.customerPhone ?? "Contact details saved"}</span>
+            </div>
+
+            <div className="payment-total-row">
+              <span>Total due</span>
+              <strong>{total}</strong>
+            </div>
+
+            <Link href={`/orders/${order.id}/checkout`} className="payment-back-link">
+              ← Back to checkout details
+            </Link>
+          </aside>
         </div>
       </div>
 
-      {/* RIGHT PANEL */}
-      <div className="col-span-3 bg-white border-l p-5 space-y-6">
-        <h1 className="text-xl font-bold">Checkout</h1>
-
-        {/* PRICE BOX */}
-        <div className="bg-gray-100 rounded-2xl p-5 text-center">
-          <p className="text-sm text-gray-500">Total Price</p>
-          <h2 className="text-2xl font-bold">
-            ${(8.02 * quantity).toFixed(2)}
-          </h2>
-        </div>
-
-        {/* SUMMARY */}
-        <div className="space-y-2 text-sm">
-          <p>Product: {product}</p>
-          <p>Color: {color}</p>
-          <p>Fabric: {fabric}</p>
-          <p>Qty: {quantity}</p>
-        </div>
-
-        {/* BUTTON */}
-        <button className="w-full bg-black text-white py-3 rounded-xl hover:bg-gray-800 transition">
-          Create Order
-        </button>
-
-        <button className="w-full border py-3 rounded-xl hover:border-black transition">
-          Add to Wishlist
-        </button>
-      </div>
-    </div>
+      <footer className="payment-footer">
+        <span>© {new Date().getFullYear()} Too Good For Merch</span>
+        <a href="mailto:hello@toogoodformerch.com">Need payment help?</a>
+      </footer>
+    </main>
   );
 }
