@@ -353,8 +353,15 @@ export default function BuilderClient({
   }
 
 async function handleAddToBag() {
-  if (!price || price.mode !== "standard") return;
-  if (!state.product || !state.fabric || !state.color) return;
+  if (!price || price.mode !== "standard") {
+    alert("Pricing not ready");
+    return;
+  }
+
+  if (!state.product || !state.fabric || !state.color) {
+    alert("Please complete selection");
+    return;
+  }
 
   setIsCreatingOrder(true);
 
@@ -384,11 +391,11 @@ async function handleAddToBag() {
 
     const orderData = await orderRes.json();
 
-    if (!orderRes.ok) {
-      throw new Error(orderData.error ?? "Failed to create order");
+    if (!orderRes.ok || !orderData?.orderId) {
+      throw new Error(orderData?.error || "Order creation failed");
     }
 
-    // 2️⃣ Call Paymob
+    // 2️⃣ Create Paymob Payment
     const paymobRes = await fetch("/api/payments/paymob/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -399,14 +406,16 @@ async function handleAddToBag() {
 
     const paymobData = await paymobRes.json();
 
-    if (!paymobRes.ok) {
-      throw new Error(paymobData.error ?? "Payment failed");
+    if (!paymobRes.ok || !paymobData?.paymentUrl) {
+      console.error("Paymob Error:", paymobData);
+      throw new Error("Payment initialization failed");
     }
 
-    // 3️⃣ Redirect to Paymob (IMPORTANT)
-    window.location.href = paymobData.paymentUrl;
+    // 3️⃣ SAFE REDIRECT (NO checkout EVER)
+    window.location.replace(paymobData.paymentUrl);
 
   } catch (error) {
+    console.error(error);
     alert(error instanceof Error ? error.message : "Something went wrong");
   } finally {
     setIsCreatingOrder(false);
