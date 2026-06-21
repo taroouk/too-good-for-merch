@@ -4,63 +4,59 @@ export default async function Failed({ params }: any) {
   const { orderId } = await params;
 
   return (
-    <main className="min-h-screen bg-[#f6f5f3] relative">
+    <main className="min-h-screen bg-[#0b0b0f] flex items-center justify-center px-4">
 
-      <div className="absolute top-[-120px] right-[-120px] w-[300px] h-[300px] bg-red-200 blur-3xl opacity-30" />
+      <div className="w-full max-w-xl">
 
-      <div className="max-w-2xl mx-auto px-6 py-16">
-
-        <div className="bg-white rounded-[32px] shadow-[0_30px_120px_rgba(0,0,0,0.12)] p-10">
-
-          {/* BADGE */}
-          <div className="flex justify-center">
-            <div className="bg-red-100 text-red-700 px-4 py-2 rounded-full text-xs font-semibold">
-              PAYMENT FAILED
-            </div>
-          </div>
+        <div className="bg-white rounded-[28px] shadow-2xl p-8">
 
           {/* ICON */}
-          <div className="mt-6 flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-red-100 text-red-600 flex items-center justify-center text-3xl">
+          <div className="flex justify-center">
+            <div className="w-16 h-16 rounded-full bg-red-500 flex items-center justify-center text-white text-2xl">
               ✕
             </div>
           </div>
 
           {/* TITLE */}
-          <h1 className="text-center text-4xl font-bold mt-6">
-            Payment Failed
+          <h1 className="text-center text-3xl font-bold mt-5">
+            Payment failed
           </h1>
 
-          <p className="text-center text-black/60 mt-3">
-            Something went wrong while processing your payment.
+          <p className="text-center text-black/60 mt-2">
+            We couldn’t process your payment.
           </p>
 
-          {/* ERROR BOX */}
-          <div className="mt-8 bg-red-50 border border-red-100 rounded-2xl p-5 text-sm text-red-700">
-            <p className="font-semibold mb-2">Try this:</p>
-            <p>• Check your card details</p>
-            <p>• Make sure balance is available</p>
-            <p>• Try another payment method</p>
+          {/* STRIPE STYLE ERROR BOX */}
+          <div className="mt-6 bg-red-50 border border-red-100 rounded-xl p-4 text-sm text-red-700">
+            <p className="font-semibold mb-2">What happened?</p>
+            <p>• Bank declined transaction</p>
+            <p>• Card details incorrect</p>
+            <p>• Insufficient funds</p>
           </div>
 
           {/* ACTIONS */}
-          <div className="mt-10 space-y-3">
+          <div className="mt-6 space-y-3">
 
             <Link
               href={`/orders/${orderId}`}
-              className="h-12 flex items-center justify-center bg-black text-white rounded-xl"
+              className="h-11 flex items-center justify-center rounded-xl bg-black text-white"
             >
-              Try Again
+              Try again
             </Link>
 
             <Link
               href="/studio"
-              className="h-12 flex items-center justify-center border rounded-xl"
+              className="h-11 flex items-center justify-center rounded-xl border"
             >
-              Back to Studio
+              Back to studio
             </Link>
 
           </div>
+
+          {/* HELP */}
+          <p className="text-center text-xs text-black/40 mt-6">
+            Need help? support@toogoodformerch.com
+          </p>
 
         </div>
       </div>

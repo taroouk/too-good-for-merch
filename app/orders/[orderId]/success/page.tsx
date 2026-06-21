@@ -19,86 +19,90 @@ export default async function Success({ params }: any) {
   const item = order.items[0];
 
   return (
-    <main className="min-h-screen bg-[#f6f5f3] relative overflow-hidden">
+    <main className="min-h-screen bg-[#0b0b0f] flex items-center justify-center px-4 relative overflow-hidden">
 
-      {/* background blobs */}
-      <div className="absolute top-[-100px] left-[-100px] w-[300px] h-[300px] bg-green-200 blur-3xl opacity-40" />
-      <div className="absolute bottom-[-100px] right-[-100px] w-[300px] h-[300px] bg-amber-200 blur-3xl opacity-30" />
+      {/* animated glow */}
+      <div className="absolute w-[500px] h-[500px] bg-green-500/20 blur-[120px] rounded-full animate-pulse" />
 
-      <div className="relative max-w-3xl mx-auto px-6 py-16">
+      <div className="w-full max-w-xl">
 
-        {/* MAIN CARD */}
-        <div className="bg-white rounded-[32px] shadow-[0_30px_120px_rgba(0,0,0,0.12)] p-10">
+        {/* CARD */}
+        <div className="bg-white/95 backdrop-blur-xl rounded-[28px] shadow-2xl p-8">
 
-          {/* STATUS BADGE */}
+          {/* SUCCESS DOT */}
           <div className="flex justify-center">
-            <div className="bg-green-100 text-green-700 px-4 py-2 rounded-full text-xs font-semibold">
-              PAYMENT SUCCESSFUL
-            </div>
-          </div>
-
-          {/* ICON */}
-          <div className="mt-6 flex justify-center">
-            <div className="w-20 h-20 rounded-full bg-black text-white flex items-center justify-center text-3xl">
+            <div className="w-16 h-16 rounded-full bg-green-500 flex items-center justify-center text-white text-2xl">
               ✓
             </div>
           </div>
 
           {/* TITLE */}
-          <h1 className="text-center text-4xl font-bold mt-6">
-            Your Order is Confirmed
+          <h1 className="text-center text-3xl font-bold mt-5">
+            Payment successful
           </h1>
 
-          <p className="text-center text-black/60 mt-3">
-            We’ve received your payment and started preparing your order.
+          <p className="text-center text-black/60 mt-2">
+            Your order is confirmed and is being prepared.
           </p>
 
-          {/* ORDER STRIP */}
-          <div className="mt-10 grid grid-cols-2 gap-6 bg-[#faf8f6] p-6 rounded-2xl">
+          {/* STRIPE-LIKE SUMMARY */}
+          <div className="mt-6 rounded-xl bg-gray-50 p-4 space-y-3 text-sm">
 
-            <div>
-              <p className="text-xs text-black/50">Order ID</p>
-              <p className="font-semibold">{order.orderNumber}</p>
-            </div>
+            <Row label="Order" value={order.orderNumber} />
+            <Row label="Total" value={money(order.totalCents)} highlight />
 
-            <div className="text-right">
-              <p className="text-xs text-black/50">Total</p>
-              <p className="font-bold text-green-700 text-xl">
-                {money(order.totalCents)}
-              </p>
-            </div>
-
+            {item && (
+              <>
+                <Row label="Product" value={item.product} />
+                <Row label="Fabric" value={item.fabric} />
+                <Row label="Color" value={item.color} />
+                <Row label="Qty" value={item.quantity} />
+              </>
+            )}
           </div>
 
-          {/* ITEM CARD */}
-          {item && (
-            <div className="mt-6 border rounded-2xl p-5 space-y-2 text-sm">
-              <p><span className="text-black/50">Product:</span> {item.product}</p>
-              <p><span className="text-black/50">Fabric:</span> {item.fabric}</p>
-              <p><span className="text-black/50">Color:</span> {item.color}</p>
-              <p><span className="text-black/50">Qty:</span> {item.quantity}</p>
+          {/* PROGRESS BAR */}
+          <div className="mt-6">
+            <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-full w-[40%] bg-green-500 animate-pulse" />
             </div>
-          )}
+            <p className="text-xs text-center mt-2 text-black/50">
+              Production started
+            </p>
+          </div>
 
           {/* CTA */}
-          <div className="mt-10 flex gap-3">
+          <div className="mt-6 grid grid-cols-2 gap-3">
+
             <Link
               href={`/studio/projects/${order.buildId}/builder`}
-              className="flex-1 bg-black text-white h-12 rounded-xl flex items-center justify-center"
+              className="h-11 flex items-center justify-center rounded-xl bg-black text-white"
             >
-              Back to Builder
+              Back
             </Link>
 
             <Link
               href="/orders"
-              className="flex-1 border h-12 rounded-xl flex items-center justify-center"
+              className="h-11 flex items-center justify-center rounded-xl border"
             >
-              Track Order
+              Track
             </Link>
+
           </div>
 
         </div>
       </div>
     </main>
+  );
+}
+
+function Row({ label, value, highlight }: any) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-black/50">{label}</span>
+      <span className={`font-medium ${highlight ? "text-green-600" : ""}`}>
+        {value}
+      </span>
+    </div>
   );
 }
