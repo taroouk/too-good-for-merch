@@ -1,4 +1,3 @@
-// tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 const config: Config = {
@@ -7,7 +6,14 @@ const config: Config = {
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
-    extend: {},
+    extend: {
+      colors: {
+        studio: {
+          bg: "#f5f5f3",
+          ink: "#111111",
+        },
+      },
+    },
   },
   plugins: [],
 };

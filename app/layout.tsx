@@ -12,8 +12,16 @@ const inter = Inter({
 
 const league = localFont({
   src: [
-    { path: "../src/assets/fonts/LeagueSpartan-SemiBold.ttf", weight: "600", style: "normal" },
-    { path: "../src/assets/fonts/LeagueSpartan-Bold.ttf", weight: "700", style: "normal" },
+    {
+      path: "../src/assets/fonts/LeagueSpartan-SemiBold.ttf",
+      weight: "600",
+      style: "normal",
+    },
+    {
+      path: "../src/assets/fonts/LeagueSpartan-Bold.ttf",
+      weight: "700",
+      style: "normal",
+    },
   ],
   variable: "--font-league",
   display: "swap",
@@ -29,7 +37,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body
         suppressHydrationWarning
-        className={`${inter.variable} ${league.variable}`}
+        className={`
+          ${inter.variable}
+          ${league.variable}
+          bg-[#f5f5f3]
+          text-black
+          antialiased
+        `}
       >
         <Providers>{children}</Providers>
       </body>

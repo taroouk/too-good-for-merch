@@ -27,13 +27,19 @@
 
 html,
 body {
-  min-height: 100vh;
-  height: auto !important;
+  background: #f5f5f3 !important;
+  color: #111;
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
+  padding: 0;
+  min-height: 100%;
+  overflow-x: hidden;
+}
+
+/* 🔥 FIX NEXT ROOT LAYOUT CRASH */
+#root,
+#__next {
+  min-height: 100%;
+  background: #f5f5f3;
 }
 
 body{
@@ -392,7 +398,14 @@ h6,
 }
 
 /* ================= TGFM STUDIO BUILDER ================= */
-
+/* 🔥 FIX: Prevent dark / missing background in studio */
+.studio-builder-shell,
+.studio-builder-frame,
+.studio-left-panel,
+.studio-right-panel,
+.studio-preview-panel {
+  background: #f5f5f3 !important;
+}
 .studio-builder-shell {
   width: 100%;
   height: calc(100vh - 74px);
