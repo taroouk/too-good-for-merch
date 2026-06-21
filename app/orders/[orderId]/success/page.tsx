@@ -22,101 +22,119 @@ export default async function OrderSuccessPage({ params }: SuccessPageProps) {
     },
   });
 
-  if (!order) {
-    notFound();
-  }
+  if (!order) notFound();
 
   const item = order.items[0];
 
   return (
-    <main className="min-h-screen bg-[#faf8f6] px-4 py-10 text-black">
-      <div className="mx-auto max-w-2xl rounded-[32px] bg-white p-6 shadow-[0_20px_70px_rgba(0,0,0,0.08)] sm:p-8">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-black text-2xl text-white">
+    <main className="min-h-screen bg-gradient-to-b from-[#faf8f6] to-[#f3f1ee] px-4 py-12 text-black">
+      
+      {/* CENTER CARD */}
+      <div className="mx-auto max-w-2xl rounded-3xl bg-white p-8 shadow-[0_25px_80px_rgba(0,0,0,0.10)]">
+
+        {/* ICON */}
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-black text-white text-2xl shadow-lg">
           ✓
         </div>
 
-        <div className="mt-5 text-center">
-          <p className="text-sm font-medium text-[#a56a2a]">
-            Order confirmed
+        {/* HEADER */}
+        <div className="mt-6 text-center">
+          <p className="text-sm font-medium text-amber-700 tracking-wide">
+            Order Confirmed
           </p>
 
-          <h1 className="mt-2 text-3xl font-semibold">
+          <h1 className="mt-2 text-4xl font-bold tracking-tight">
             Payment Successful
           </h1>
 
-          <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-black/60">
-            Thanks for your order. We’ve received your payment and your order is
-            now confirmed.
+          <p className="mx-auto mt-3 max-w-md text-sm text-black/60 leading-6">
+            Your order has been received and is now being processed.
+            We’ll start production shortly.
           </p>
         </div>
 
-        <div className="mt-8 rounded-2xl border border-black/10 bg-[#faf8f6] p-5">
-          <div className="flex items-start justify-between gap-4 border-b border-black/10 pb-4">
+        {/* ORDER CARD */}
+        <div className="mt-8 rounded-2xl border border-black/10 bg-[#faf8f6] p-6 space-y-5">
+
+          {/* TOP INFO */}
+          <div className="flex items-center justify-between border-b border-black/10 pb-4">
+            
             <div>
               <p className="text-xs uppercase tracking-wide text-black/50">
-                Order number
+                Order Number
               </p>
-              <p className="mt-1 font-semibold">{order.orderNumber}</p>
+              <p className="mt-1 font-semibold text-lg">
+                {order.orderNumber}
+              </p>
             </div>
 
             <div className="text-right">
               <p className="text-xs uppercase tracking-wide text-black/50">
                 Total
               </p>
-              <p className="mt-1 text-xl font-semibold text-[#a56a2a]">
+              <p className="mt-1 text-2xl font-bold text-amber-700">
                 {money(order.totalCents)}
               </p>
             </div>
+
           </div>
 
-          {item ? (
-            <div className="mt-4 grid gap-3 text-sm">
-              <div className="flex justify-between gap-4">
+          {/* ITEMS */}
+          {item && (
+            <div className="grid gap-3 text-sm">
+
+              <div className="flex justify-between">
                 <span className="text-black/50">Product</span>
                 <span className="font-medium">{item.product}</span>
               </div>
 
-              <div className="flex justify-between gap-4">
+              <div className="flex justify-between">
                 <span className="text-black/50">Fabric</span>
                 <span className="font-medium">{item.fabric}</span>
               </div>
 
-              <div className="flex justify-between gap-4">
-                <span className="text-black/50">Colour</span>
+              <div className="flex justify-between">
+                <span className="text-black/50">Color</span>
                 <span className="font-medium">{item.color}</span>
               </div>
 
-              <div className="flex justify-between gap-4">
+              <div className="flex justify-between">
                 <span className="text-black/50">Quantity</span>
                 <span className="font-medium">{item.quantity}</span>
               </div>
+
             </div>
-          ) : null}
+          )}
         </div>
 
-        <div className="mt-6 rounded-2xl border border-[#a56a2a]/20 bg-[#fff8f1] p-5">
-          <p className="text-sm font-semibold text-black">
-            Estimated lead time
+        {/* LEAD TIME */}
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-6">
+          <p className="text-sm font-semibold">
+            Estimated Production Time
           </p>
 
-          <p className="mt-2 text-sm leading-6 text-black/60">
-            Estimated production time is 3–5 business days. Because every order
-            is custom made, we’ll be in touch to confirm the exact production
-            timeline and walk you through any next steps.
+          <p className="mt-2 text-sm text-black/60 leading-6">
+            Your order will be produced within <b>3–5 business days</b>.
+            Since each item is custom-made, we may contact you for confirmation
+            before production starts.
           </p>
         </div>
 
+        {/* CTA */}
         <div className="mt-8 flex justify-center">
-            <Link
-                  href={`/studio/projects/${order.buildId}/builder`}
-                  className="inline-flex h-12 items-center justify-center rounded-xl border border-black px-6 text-sm font-semibold text-black hover:bg-black hover:text-white">
-                     Back to Builder
-            </Link>
+          <Link
+            href={`/studio/projects/${order.buildId}/builder`}
+            className="inline-flex h-12 items-center justify-center rounded-xl bg-black px-6 text-sm font-semibold text-white hover:bg-gray-900 transition"
+          >
+            Back to Builder
+          </Link>
         </div>
 
-        <p className="mt-6 text-center text-xs leading-5 text-black/50">
-          Questions? Contact us at hello@toogoodformerch.com
+        {/* FOOTER */}
+        <p className="mt-6 text-center text-xs text-black/40">
+          Need help? Contact support@toogoodformerch.com
         </p>
+
       </div>
     </main>
   );
