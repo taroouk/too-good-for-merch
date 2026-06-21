@@ -353,44 +353,51 @@ export default function BuilderClient({
   }
 
   async function handleAddToBag() {
-    if (!price || price.mode !== "standard") return;
-    if (!state.product || !state.fabric || !state.color) return;
+  if (!price || price.mode !== "standard") return;
+  if (!state.product || !state.fabric || !state.color) return;
 
-    setIsCreatingOrder(true);
+  setIsCreatingOrder(true);
 
-    try {
-      const res = await fetch("/api/orders/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          buildId,
-          product: state.product,
-          fabric: state.fabric,
-          color: state.color,
-          quantity: qty,
-          unitPrice: price.unit,
-          total: price.total,
-          currency: price.currency,
-          size: selectedSize,
-          placements: selectedPlacements.length > 0 ? selectedPlacements : ["CENTER_FRONT"],
-          assetId: state.primaryAssetId,
-          notes: state.customNotes,
-        }),
-      });
+  try {
+    const res = await fetch("/api/orders/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buildId,
+        product: state.product,
+        fabric: state.fabric,
+        color: state.color,
+        quantity: qty,
+        unitPrice: price.unit,
+        total: price.total,
+        currency: price.currency,
+        size: selectedSize,
+        placements:
+          selectedPlacements.length > 0
+            ? selectedPlacements
+            : ["CENTER_FRONT"],
+        assetId: state.primaryAssetId,
+        notes: state.customNotes,
+      }),
+    });
 
-      const data = (await res.json()) as CreateOrderResponse;
+    const data = (await res.json()) as CreateOrderResponse;
 
-      if (!res.ok) {
-        throw new Error(data.error ?? "Failed to create order.");
-      }
-
-      window.location.href = `/orders/${data.orderId}/checkout`;
-    } catch (error) {
-      alert(error instanceof Error ? error.message : "Something went wrong.");
-    } finally {
-      setIsCreatingOrder(false);
+    if (!res.ok) {
+      throw new Error(data.error ?? "Failed to create order.");
     }
+
+    // ✅ FIXED ROUTE (NO CHECKOUT PAGE)
+    startTransition(() => {
+      router.push(`/orders/${data.orderId}/success`);
+    });
+  } catch (error) {
+    // Show a simple error message; keep UX minimal here
+    alert(error instanceof Error ? error.message : "Failed to create order.");
+  } finally {
+    setIsCreatingOrder(false);
   }
+}
 
   function openCustomRequestPopup() {
     setShowCustomPopup(true);
