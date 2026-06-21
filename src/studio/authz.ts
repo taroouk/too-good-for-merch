@@ -1,10 +1,20 @@
 // file: src/studio/authz.ts
 import { redirect } from "next/navigation";
 import { auth } from "src/auth";
+import { prisma } from "src/lib/prisma";
 
 export async function getUserId(): Promise<string | null> {
   const session = await auth();
-  return (session?.user as any)?.id ?? null;
+  const sessionUserId = session?.user?.id;
+
+  if (!sessionUserId) return null;
+
+  const user = await prisma.user.findUnique({
+    where: { id: sessionUserId },
+    select: { id: true },
+  });
+
+  return user?.id ?? null;
 }
 
 // Use ONLY at checkout

@@ -75,7 +75,7 @@ export async function POST(request: Request): Promise<void> {
   const secretKey = process.env.PAYMOB_SECRET_KEY;
   const publicKey = process.env.PAYMOB_PUBLIC_KEY;
   const integrationId = Number(process.env.PAYMOB_INTEGRATION_ID ?? "0");
-  const currency = process.env.PAYMOB_CURRENCY ?? "EGP";
+  const currency = process.env.PAYMOB_CURRENCY ?? order.currency;
 
   if (!secretKey || !publicKey || !integrationId) {
     throw new Error("Missing Paymob credentials.");

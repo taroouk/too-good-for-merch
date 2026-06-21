@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { OrderStatus, PaymentStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 
@@ -95,6 +95,10 @@ export default async function OrderPage({ params }: OrderPageProps) {
 
   if (!order) {
     notFound();
+  }
+
+  if (order.paymentStatus === PaymentStatus.UNPAID) {
+    redirect(`/orders/${order.id}/checkout`);
   }
 
   const item = order.items[0];

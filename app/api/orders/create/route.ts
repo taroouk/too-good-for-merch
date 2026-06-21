@@ -36,6 +36,8 @@ type CreateOrderRequestBody = {
   quantity: number;
   unitPrice: number;
   total: number;
+  currency?: "USD" | "EGP";
+  size?: "S" | "M" | "L" | "XL";
   placements: PlacementValue[];
   assetId?: string | null;
   notes?: string | null;
@@ -104,7 +106,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     }
 
     const userId = await getUserId();
-
     await assertBuildAccess(userId, body.buildId);
 
     const build = await prisma.build.findUnique({
@@ -149,9 +150,12 @@ export async function POST(request: Request): Promise<NextResponse> {
     const order = await prisma.order.create({
       data: {
         orderNumber: createOrderNumber(),
+
+        // use a valid enum value for initial status
         status: OrderStatus.NEW,
+
         paymentStatus: PaymentStatus.UNPAID,
-        currency: "EGP",
+        currency: body.currency === "EGP" ? "EGP" : "USD",
         subtotalCents: totalCents,
         totalCents,
         userId: userId ?? build.userId ?? null,
@@ -166,7 +170,12 @@ export async function POST(request: Request): Promise<NextResponse> {
             unitPriceCents,
             totalCents,
             placements: body.placements,
-            preview: {},
+            preview: {
+              size: ["S", "M", "L", "XL"].includes(body.size ?? "")
+                ? body.size
+                : "M",
+              notes: body.notes ?? null,
+            },
           },
         },
       },

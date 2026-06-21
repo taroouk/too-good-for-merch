@@ -370,6 +370,8 @@ export default function BuilderClient({
           quantity: qty,
           unitPrice: price.unit,
           total: price.total,
+          currency: price.currency,
+          size: selectedSize,
           placements: selectedPlacements.length > 0 ? selectedPlacements : ["CENTER_FRONT"],
           assetId: state.primaryAssetId,
           notes: state.customNotes,
@@ -382,7 +384,7 @@ export default function BuilderClient({
         throw new Error(data.error ?? "Failed to create order.");
       }
 
-      window.location.href = `/orders/${data.orderId}`;
+      window.location.href = `/orders/${data.orderId}/checkout`;
     } catch (error) {
       alert(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
