@@ -352,14 +352,15 @@ export default function BuilderClient({
     save({ ...state, primaryAssetId: null });
   }
 
-  async function handleAddToBag() {
+async function handleAddToBag() {
   if (!price || price.mode !== "standard") return;
   if (!state.product || !state.fabric || !state.color) return;
 
   setIsCreatingOrder(true);
 
   try {
-    const res = await fetch("/api/orders/create", {
+    // 1️⃣ Create Order
+    const orderRes = await fetch("/api/orders/create", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -381,19 +382,32 @@ export default function BuilderClient({
       }),
     });
 
-    const data = (await res.json()) as CreateOrderResponse;
+    const orderData = await orderRes.json();
 
-    if (!res.ok) {
-      throw new Error(data.error ?? "Failed to create order.");
+    if (!orderRes.ok) {
+      throw new Error(orderData.error ?? "Failed to create order");
     }
 
-    // ✅ FIXED ROUTE (NO CHECKOUT PAGE)
-    startTransition(() => {
-      router.push(`/orders/${data.orderId}/success`);
+    // 2️⃣ Call Paymob
+    const paymobRes = await fetch("/api/payments/paymob/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId: orderData.orderId,
+      }),
     });
+
+    const paymobData = await paymobRes.json();
+
+    if (!paymobRes.ok) {
+      throw new Error(paymobData.error ?? "Payment failed");
+    }
+
+    // 3️⃣ Redirect to Paymob (IMPORTANT)
+    window.location.href = paymobData.paymentUrl;
+
   } catch (error) {
-    // Show a simple error message; keep UX minimal here
-    alert(error instanceof Error ? error.message : "Failed to create order.");
+    alert(error instanceof Error ? error.message : "Something went wrong");
   } finally {
     setIsCreatingOrder(false);
   }
