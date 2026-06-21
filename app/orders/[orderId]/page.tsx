@@ -1,3 +1,7 @@
 export default function OrdersPage() {
-  return <div>Orders Page</div>;
+  return (
+    <main style={{ padding: 40 }}>
+      <h1>Orders Page</h1>
+    </main>
+  );
 }
