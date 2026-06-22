@@ -20,7 +20,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
         <section className="mt-5 rounded-[30px] bg-white p-6 shadow-[0_20px_80px_rgba(0,0,0,.08)] sm:p-9">
           <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">{order.orderNumber}</p>
           <h1 className="mt-2 text-3xl font-semibold">Payment status</h1>
-          <PaymentStatusClient orderId={order.id} initialStatus={order.paymentStatus} retryEnabled={order.paymentStatus !== "PAID" && order.paymentStatus !== "REFUNDED"} />
+          <PaymentStatusClient orderId={order.id} initialStatus={order.paymentStatus} retryEnabled={order.paymentStatus !== "PAID"} />
           <div className="mt-7 border-t border-black/10 pt-6">
             {order.items.map((item) => (
               <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
