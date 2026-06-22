@@ -1,206 +1,83 @@
 import Link from "next/link";
-import { OrderStatus, PaymentStatus } from "@prisma/client";
+import { PaymentStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
+import RevenueChart from "src/components/admin/RevenueChart";
 
-function money(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+type Range = "daily" | "weekly" | "monthly";
+
+function money(cents: number, currency = "USD") {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
 }
 
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+function chartBuckets(range: Range) {
+  const now = new Date();
+  const count = range === "daily" ? 14 : 12;
+  return Array.from({ length: count }, (_, reverseIndex) => {
+    const index = count - reverseIndex - 1;
+    const start = new Date(now);
+    if (range === "daily") start.setUTCDate(start.getUTCDate() - index);
+    if (range === "weekly") start.setUTCDate(start.getUTCDate() - index * 7);
+    if (range === "monthly") start.setUTCMonth(start.getUTCMonth() - index, 1);
+    start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(start);
+    if (range === "daily") end.setUTCDate(end.getUTCDate() + 1);
+    if (range === "weekly") end.setUTCDate(end.getUTCDate() + 7);
+    if (range === "monthly") end.setUTCMonth(end.getUTCMonth() + 1);
+    const label = range === "monthly"
+      ? start.toLocaleDateString("en", { month: "short", timeZone: "UTC" })
+      : start.toLocaleDateString("en", { day: "numeric", month: "short", timeZone: "UTC" });
+    return { start, end, label, value: 0 };
+  });
 }
 
-function statusLabel(status: OrderStatus): string {
-  return status.replaceAll("_", " ");
-}
-
-function statusBadgeClass(status: OrderStatus): string {
-  if (status === OrderStatus.PAID) return "bg-green-100 text-green-700";
-  if (status === OrderStatus.IN_PRODUCTION) return "bg-blue-100 text-blue-700";
-  if (status === OrderStatus.COMPLETED) return "bg-black text-white";
-  if (status === OrderStatus.CANCELLED) return "bg-red-100 text-red-700";
-
-  return "bg-[#fff8f1] text-[#a56a2a]";
-}
-
-export default async function AdminDashboardPage() {
-  const [
-    recentOrders,
-    totalOrders,
-    paidOrders,
-    newOrders,
-    inProductionOrders,
-    completedOrders,
-    cancelledOrders,
-    paidRevenue,
-  ] = await Promise.all([
-    prisma.order.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 6,
-      include: {
-        items: true,
-      },
-    }),
-
+export default async function AdminDashboardPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+  const query = await searchParams;
+  const range: Range = ["daily", "weekly", "monthly"].includes(query.range ?? "") ? query.range as Range : "daily";
+  const buckets = chartBuckets(range);
+  const [recentOrders, totalOrders, paidOrders, pendingOrders, failedOrders, revenue, paidForChart] = await Promise.all([
+    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 7, include: { items: true } }),
     prisma.order.count(),
-
-    prisma.order.count({
-      where: { paymentStatus: PaymentStatus.PAID },
-    }),
-
-    prisma.order.count({
-      where: { status: OrderStatus.NEW },
-    }),
-
-    prisma.order.count({
-      where: { status: OrderStatus.IN_PRODUCTION },
-    }),
-
-    prisma.order.count({
-      where: { status: OrderStatus.COMPLETED },
-    }),
-
-    prisma.order.count({
-      where: { status: OrderStatus.CANCELLED },
-    }),
-
-    prisma.order.aggregate({
-      where: {
-        paymentStatus: PaymentStatus.PAID,
-      },
-      _sum: {
-        totalCents: true,
-      },
-    }),
+    prisma.order.count({ where: { paymentStatus: PaymentStatus.PAID } }),
+    prisma.order.count({ where: { paymentStatus: { in: [PaymentStatus.UNPAID, PaymentStatus.PENDING] } } }),
+    prisma.order.count({ where: { paymentStatus: PaymentStatus.FAILED } }),
+    prisma.order.aggregate({ where: { paymentStatus: PaymentStatus.PAID }, _sum: { totalCents: true } }),
+    prisma.order.findMany({ where: { paymentStatus: PaymentStatus.PAID, paidAt: { gte: buckets[0].start } }, select: { paidAt: true, createdAt: true, totalCents: true, currency: true } }),
   ]);
+  for (const order of paidForChart) {
+    const date = order.paidAt ?? order.createdAt;
+    const bucket = buckets.find((item) => date >= item.start && date < item.end);
+    if (bucket) bucket.value += order.totalCents;
+  }
+  const currency = recentOrders[0]?.currency ?? process.env.STORE_CURRENCY ?? "USD";
+  const cards = [
+    ["Total sales", money(revenue._sum.totalCents ?? 0, currency), "Confirmed revenue", "bg-[#111827] text-white"],
+    ["Total orders", String(totalOrders), "All time", "bg-white"],
+    ["Paid orders", String(paidOrders), "Webhook confirmed", "bg-white"],
+    ["Pending", String(pendingOrders), "Awaiting payment", "bg-amber-50"],
+    ["Failed", String(failedOrders), "Needs attention", "bg-red-50"],
+  ];
 
   return (
-    <main className="px-4 py-10">
+    <main className="p-4 sm:p-7 xl:p-9">
       <div className="mx-auto max-w-7xl">
-        <section className="mb-8 rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-          <p className="text-sm font-medium text-[#a56a2a]">
-            Admin Dashboard
-          </p>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+          <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-black/35">Commerce overview</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Good morning.</h1><p className="mt-2 text-sm text-black/45">Here’s what is happening with your store.</p></div>
+          <Link href="/admin/orders" className="inline-flex h-11 items-center justify-center rounded-xl bg-[#111827] px-5 text-sm font-semibold text-white">Manage orders</Link>
+        </div>
 
-          <div className="mt-2 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-            <div>
-              <h1 className="text-3xl font-semibold">Dashboard Overview</h1>
-
-              <p className="mt-2 max-w-xl text-sm leading-6 text-black/60">
-                Manage orders, payment state, production workflow, artwork, and
-                internal admin notes.
-              </p>
-            </div>
-
-            <Link
-              href="/admin/orders"
-              className="inline-flex h-12 items-center justify-center rounded-xl bg-black px-6 text-sm font-semibold text-white hover:opacity-90"
-            >
-              View all orders
-            </Link>
-          </div>
+        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          {cards.map(([label, value, hint, style]) => <div key={label} className={`rounded-2xl border border-black/5 p-5 shadow-sm ${style}`}><p className="text-sm opacity-55">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-3 text-xs opacity-40">{hint}</p></div>)}
         </section>
 
-        <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-            <p className="text-sm text-black/50">Total orders</p>
-            <p className="mt-2 text-3xl font-semibold">{totalOrders}</p>
+        <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_.8fr]">
+          <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-lg font-semibold">Revenue</h2><p className="mt-1 text-xs text-black/40">Paid orders only</p></div><div className="flex rounded-xl bg-black/5 p-1">{(["daily", "weekly", "monthly"] as const).map((value) => <Link key={value} href={`/admin?range=${value}`} className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize ${range === value ? "bg-white shadow-sm" : "text-black/45"}`}>{value}</Link>)}</div></div>
+            <div className="mt-6"><RevenueChart data={buckets.map(({ label, value }) => ({ label, value }))} currency={currency} /></div>
           </div>
-
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-            <p className="text-sm text-black/50">Paid orders</p>
-            <p className="mt-2 text-3xl font-semibold">{paidOrders}</p>
+          <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Recent orders</h2><Link href="/admin/orders" className="text-xs font-semibold text-black/45">View all →</Link></div>
+            <div className="mt-4 divide-y divide-black/5">{recentOrders.map((order) => <Link key={order.id} href={`/admin/orders/${order.id}`} className="flex items-center justify-between gap-4 py-4"><div className="min-w-0"><p className="truncate text-sm font-semibold">{order.orderNumber}</p><p className="mt-1 text-xs text-black/35">{order.customerName ?? "Customer"} · {order.items.length} item{order.items.length === 1 ? "" : "s"}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.totalCents, order.currency)}</p><p className="mt-1 text-[10px] font-semibold text-black/35">{order.paymentStatus}</p></div></Link>)}</div>
           </div>
-
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-            <p className="text-sm text-black/50">Paid revenue</p>
-            <p className="mt-2 text-3xl font-semibold">
-              {money(paidRevenue._sum.totalCents ?? 0)}
-            </p>
-          </div>
-
-          <div className="rounded-[24px] bg-white p-5 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-            <p className="text-sm text-black/50">Currency</p>
-            <p className="mt-2 text-3xl font-semibold">USD</p>
-          </div>
-        </section>
-
-        <section className="mb-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="rounded-[24px] border border-[#a56a2a]/20 bg-[#fff8f1] p-5">
-            <p className="text-sm text-black/50">New</p>
-            <p className="mt-2 text-3xl font-semibold">{newOrders}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-blue-200 bg-blue-50 p-5">
-            <p className="text-sm text-black/50">In production</p>
-            <p className="mt-2 text-3xl font-semibold">
-              {inProductionOrders}
-            </p>
-          </div>
-
-          <div className="rounded-[24px] border border-black/10 bg-white p-5">
-            <p className="text-sm text-black/50">Completed</p>
-            <p className="mt-2 text-3xl font-semibold">{completedOrders}</p>
-          </div>
-
-          <div className="rounded-[24px] border border-red-200 bg-red-50 p-5">
-            <p className="text-sm text-black/50">Cancelled</p>
-            <p className="mt-2 text-3xl font-semibold">{cancelledOrders}</p>
-          </div>
-        </section>
-
-        <section className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-          <div className="mb-5 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Recent orders</h2>
-
-            <Link
-              href="/admin/orders"
-              className="text-sm font-semibold text-[#a56a2a] hover:underline"
-            >
-              View all
-            </Link>
-          </div>
-
-          {recentOrders.length > 0 ? (
-            <div className="space-y-3">
-              {recentOrders.map((order) => (
-                <Link
-                  key={order.id}
-                  href={`/admin/orders/${order.id}`}
-                  className="flex flex-col justify-between gap-4 rounded-2xl border border-black/10 p-4 hover:bg-[#faf8f6] sm:flex-row sm:items-center"
-                >
-                  <div>
-                    <p className="font-semibold">{order.orderNumber}</p>
-
-                    <p className="mt-1 text-sm text-black/50">
-                      {formatDate(order.createdAt)} · {order.items.length} item
-                      {order.items.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold uppercase ${statusBadgeClass(
-                        order.status,
-                      )}`}
-                    >
-                      {statusLabel(order.status)}
-                    </span>
-
-                    <p className="font-semibold text-[#a56a2a]">
-                      {money(order.totalCents)}
-                    </p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-black/50">No orders yet.</p>
-          )}
         </section>
       </div>
     </main>

@@ -1,217 +1,59 @@
 import Link from "next/link";
-import { OrderStatus, PaymentStatus } from "@prisma/client";
+import { PaymentStatus, Prisma } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 
-function money(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+function money(cents: number, currency: string) {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
 }
 
-function formatDate(date: Date): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  }).format(date);
+function badge(status: PaymentStatus) {
+  if (status === "PAID") return "bg-emerald-50 text-emerald-700";
+  if (status === "FAILED") return "bg-red-50 text-red-700";
+  if (status === "REFUNDED") return "bg-blue-50 text-blue-700";
+  return "bg-amber-50 text-amber-700";
 }
 
-function statusLabel(status: OrderStatus): string {
-  return status.replaceAll("_", " ");
-}
-
-function statusBadgeClass(status: OrderStatus): string {
-  if (status === OrderStatus.PAID) {
-    return "bg-green-100 text-green-700 border-green-200";
-  }
-
-  if (status === OrderStatus.IN_PRODUCTION) {
-    return "bg-blue-100 text-blue-700 border-blue-200";
-  }
-
-  if (status === OrderStatus.COMPLETED) {
-    return "bg-black text-white border-black";
-  }
-
-  if (status === OrderStatus.CANCELLED) {
-    return "bg-red-100 text-red-700 border-red-200";
-  }
-
-  return "bg-[#fff8f1] text-[#a56a2a] border-[#a56a2a]/20";
-}
-
-function paymentBadgeClass(status: PaymentStatus): string {
-  if (status === PaymentStatus.PAID) {
-    return "bg-green-100 text-green-700 border-green-200";
-  }
-
-  if (status === PaymentStatus.PENDING) {
-    return "bg-yellow-100 text-yellow-700 border-yellow-200";
-  }
-
-  if (status === PaymentStatus.FAILED) {
-    return "bg-red-100 text-red-700 border-red-200";
-  }
-
-  return "bg-gray-100 text-gray-700 border-gray-200";
-}
-
-export default async function AdminOrdersPage() {
-  const orders = await prisma.order.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-    include: {
-      items: true,
-      notes: true,
-      user: {
-        select: {
-          email: true,
-        },
-      },
-    },
-  });
-
-  const totalRevenueCents = orders.reduce((sum, order) => {
-    if (order.paymentStatus !== PaymentStatus.PAID) {
-      return sum;
-    }
-
-    return sum + order.totalCents;
-  }, 0);
+export default async function AdminOrdersPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
+  const query = await searchParams;
+  const q = (query.q ?? "").trim().slice(0, 120);
+  const filter = (query.status ?? "all").toLowerCase();
+  const statusWhere: Prisma.EnumPaymentStatusFilter | undefined = filter === "pending"
+    ? { in: [PaymentStatus.UNPAID, PaymentStatus.PENDING] }
+    : ["paid", "failed", "refunded"].includes(filter)
+      ? { equals: filter.toUpperCase() as PaymentStatus }
+      : undefined;
+  const where: Prisma.OrderWhereInput = {
+    ...(statusWhere ? { paymentStatus: statusWhere } : {}),
+    ...(q ? { OR: [
+      { orderNumber: { contains: q, mode: "insensitive" } },
+      { customerName: { contains: q, mode: "insensitive" } },
+      { customerPhone: { contains: q, mode: "insensitive" } },
+    ] } : {}),
+  };
+  const orders = await prisma.order.findMany({ where, orderBy: { createdAt: "desc" }, take: 250, include: { items: true, notes: { select: { id: true } } } });
+  const filters = ["all", "pending", "paid", "failed", "refunded"];
 
   return (
-    <main className="px-4 py-10">
+    <main className="p-4 sm:p-7 xl:p-9">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-8 rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-          <p className="text-sm font-medium text-[#a56a2a]">
-            Admin Dashboard
-          </p>
+        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end"><div><p className="text-xs font-semibold uppercase tracking-[.18em] text-black/35">Operations</p><h1 className="mt-2 text-3xl font-semibold tracking-tight">Orders</h1><p className="mt-2 text-sm text-black/45">Search, filter, review, and export customer orders.</p></div><a href={`/api/admin/orders/export?status=${encodeURIComponent(filter)}&q=${encodeURIComponent(q)}`} className="inline-flex h-11 items-center justify-center rounded-xl border border-black/10 bg-white px-5 text-sm font-semibold shadow-sm">Export CSV ↓</a></div>
 
-          <div className="mt-2 flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-            <div>
-              <h1 className="text-3xl font-semibold">Orders</h1>
-              <p className="mt-2 max-w-xl text-sm leading-6 text-black/60">
-                Manage customer orders, payment status, production workflow,
-                artwork, and internal admin notes.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-              <div className="rounded-2xl border border-black/10 p-4">
-                <p className="text-black/50">Orders</p>
-                <p className="mt-1 text-xl font-semibold">{orders.length}</p>
-              </div>
-
-              <div className="rounded-2xl border border-black/10 p-4">
-                <p className="text-black/50">Paid revenue</p>
-                <p className="mt-1 text-xl font-semibold">
-                  {money(totalRevenueCents)}
-                </p>
-              </div>
-
-              <div className="rounded-2xl border border-black/10 p-4">
-                <p className="text-black/50">Currency</p>
-                <p className="mt-1 text-xl font-semibold">USD</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <section className="overflow-hidden rounded-[32px] bg-white shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
-          <div className="border-b border-black/10 px-6 py-5">
-            <h2 className="text-lg font-semibold">All orders</h2>
+        <section className="mt-7 rounded-2xl border border-black/5 bg-white shadow-sm">
+          <div className="border-b border-black/5 p-4 sm:p-5">
+            <form className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex max-w-xl flex-1 gap-2"><input name="q" defaultValue={q} placeholder="Search order, customer, or phone…" className="h-11 min-w-0 flex-1 rounded-xl border border-black/10 bg-[#f8f8f8] px-4 text-sm outline-none focus:border-black"/><input type="hidden" name="status" value={filter}/><button className="h-11 rounded-xl bg-[#111827] px-5 text-sm font-semibold text-white">Search</button></div>
+              <div className="flex gap-2 overflow-x-auto">{filters.map((item) => <Link key={item} href={`/admin/orders?status=${item}${q ? `&q=${encodeURIComponent(q)}` : ""}`} className={`whitespace-nowrap rounded-lg px-3 py-2 text-xs font-semibold capitalize ${filter === item ? "bg-[#111827] text-white" : "bg-black/5 text-black/50"}`}>{item}</Link>)}</div>
+            </form>
           </div>
 
-          {orders.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[900px] text-left text-sm">
-                <thead className="bg-[#faf8f6] text-xs uppercase tracking-wide text-black/50">
-                  <tr>
-                    <th className="px-6 py-4">Order</th>
-                    <th className="px-6 py-4">Customer</th>
-                    <th className="px-6 py-4">Date</th>
-                    <th className="px-6 py-4">Items</th>
-                    <th className="px-6 py-4">Payment</th>
-                    <th className="px-6 py-4">Status</th>
-                    <th className="px-6 py-4 text-right">Total</th>
-                    <th className="px-6 py-4 text-right">Action</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-black/10">
-                  {orders.map((order) => (
-                    <tr key={order.id} className="hover:bg-[#faf8f6]">
-                      <td className="px-6 py-5">
-                        <p className="font-semibold">{order.orderNumber}</p>
-                        <p className="mt-1 text-xs text-black/40">
-                          {order.notes.length} admin note
-                          {order.notes.length === 1 ? "" : "s"}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <p className="font-medium">
-                          {order.customerName ?? "No name"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-black/50">
-                          {order.customerEmail ??
-                            order.user?.email ??
-                            "No email"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-black/50">
-                          {order.customerPhone ?? "No phone"}
-                        </p>
-                      </td>
-
-                      <td className="px-6 py-5 text-black/60">
-                        {formatDate(order.createdAt)}
-                      </td>
-
-                      <td className="px-6 py-5">{order.items.length}</td>
-
-                      <td className="px-6 py-5">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${paymentBadgeClass(
-                            order.paymentStatus,
-                          )}`}
-                        >
-                          {order.paymentStatus}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-5">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${statusBadgeClass(
-                            order.status,
-                          )}`}
-                        >
-                          {statusLabel(order.status)}
-                        </span>
-                      </td>
-
-                      <td className="px-6 py-5 text-right font-semibold text-[#a56a2a]">
-                        {money(order.totalCents)}
-                      </td>
-
-                      <td className="px-6 py-5 text-right">
-                        <Link
-                          href={`/admin/orders/${order.id}`}
-                          className="inline-flex h-10 items-center justify-center rounded-xl bg-black px-4 text-xs font-semibold text-white hover:opacity-90"
-                        >
-                          View
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="px-6 py-16 text-center">
-              <p className="text-sm text-black/50">No orders found yet.</p>
-            </div>
-          )}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead className="bg-[#f8f8f8] text-[11px] uppercase tracking-wider text-black/35"><tr><th className="px-5 py-4">Order</th><th className="px-5 py-4">Customer</th><th className="px-5 py-4">Date</th><th className="px-5 py-4">Payment</th><th className="px-5 py-4">Fulfillment</th><th className="px-5 py-4 text-right">Total</th><th className="px-5 py-4"></th></tr></thead>
+              <tbody className="divide-y divide-black/5">{orders.map((order) => <tr key={order.id} className="transition hover:bg-black/[.018]"><td className="px-5 py-4"><p className="font-semibold">{order.orderNumber}</p><p className="mt-1 text-xs text-black/35">{order.items.length} item{order.items.length === 1 ? "" : "s"} · {order.notes.length} note{order.notes.length === 1 ? "" : "s"}</p></td><td className="px-5 py-4"><p className="font-medium">{order.customerName ?? "No name"}</p><p className="mt-1 text-xs text-black/40">{order.customerPhone ?? order.customerEmail ?? "—"}</p></td><td className="px-5 py-4 text-black/55">{order.createdAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</td><td className="px-5 py-4"><span className={`rounded-full px-3 py-1.5 text-[10px] font-bold ${badge(order.paymentStatus)}`}>{order.paymentStatus}</span></td><td className="px-5 py-4 text-xs font-semibold text-black/50">{order.status.replaceAll("_", " ")}</td><td className="px-5 py-4 text-right font-semibold">{money(order.totalCents, order.currency)}</td><td className="px-5 py-4 text-right"><Link href={`/admin/orders/${order.id}`} className="rounded-lg border border-black/10 px-3 py-2 text-xs font-semibold">View →</Link></td></tr>)}</tbody>
+            </table>
+          </div>
+          {!orders.length ? <div className="p-16 text-center text-sm text-black/40">No orders match your filters.</div> : null}
+          {orders.length ? <div className="border-t border-black/5 px-5 py-4 text-xs text-black/35">Showing {orders.length} order{orders.length === 1 ? "" : "s"}</div> : null}
         </section>
       </div>
     </main>

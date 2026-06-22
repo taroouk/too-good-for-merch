@@ -6,23 +6,25 @@ import {
   addAdminNoteAction,
   updateOrderStatusAction,
 } from "src/actions/admin-order-actions";
+import AdminToast from "src/components/admin/AdminToast";
 
 type AdminOrderDetailsPageProps = {
   params: Promise<{
     id: string;
   }>;
+  searchParams: Promise<{ notice?: string }>;
 };
 
 const allowedStatusFlow: Record<OrderStatus, OrderStatus[]> = {
-  NEW: [OrderStatus.PAID, OrderStatus.CANCELLED],
+  NEW: [OrderStatus.CANCELLED],
   PAID: [OrderStatus.IN_PRODUCTION, OrderStatus.CANCELLED],
   IN_PRODUCTION: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
   COMPLETED: [],
-  CANCELLED: [],
+  CANCELLED: [OrderStatus.NEW],
 };
 
-function money(cents: number): string {
-  return `$${(cents / 100).toFixed(2)}`;
+function money(cents: number, currency: string): string {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
 }
 
 function formatDateTime(date: Date): string {
@@ -91,8 +93,10 @@ function placementsText(placements: unknown): string {
 
 export default async function AdminOrderDetailsPage({
   params,
+  searchParams,
 }: AdminOrderDetailsPageProps) {
   const { id } = await params;
+  const query = await searchParams;
 
   const order = await prisma.order.findUnique({
     where: { id },
@@ -121,6 +125,11 @@ export default async function AdminOrderDetailsPage({
           },
         },
       },
+      auditLogs: {
+        orderBy: { createdAt: "desc" },
+        take: 50,
+        include: { admin: { select: { email: true } } },
+      },
     },
   });
 
@@ -132,6 +141,7 @@ export default async function AdminOrderDetailsPage({
 
   return (
     <main className="px-4 py-10">
+      <AdminToast message={query.notice} />
       <div className="mx-auto max-w-7xl">
         <div className="mb-6">
           <Link
@@ -217,7 +227,7 @@ export default async function AdminOrderDetailsPage({
                             </div>
 
                             <p className="text-xl font-semibold text-[#a56a2a]">
-                              {money(item.totalCents)}
+                              {money(item.totalCents, order.currency)}
                             </p>
                           </div>
 
@@ -236,7 +246,7 @@ export default async function AdminOrderDetailsPage({
                                 Unit price
                               </p>
                               <p className="mt-1 font-semibold">
-                                {money(item.unitPriceCents)}
+                                {money(item.unitPriceCents, order.currency)}
                               </p>
                             </div>
 
@@ -334,6 +344,19 @@ export default async function AdminOrderDetailsPage({
                 )}
               </div>
             </div>
+
+            <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
+              <h2 className="text-lg font-semibold">Change history</h2>
+              <div className="mt-5 space-y-3">
+                {order.auditLogs.map((log) => (
+                  <div key={log.id} className="flex flex-col justify-between gap-2 rounded-2xl border border-black/10 p-4 text-sm sm:flex-row sm:items-center">
+                    <div><p className="font-semibold">{log.action.replaceAll("_", " ")}</p><p className="mt-1 text-xs text-black/45">{log.previousValue && log.newValue ? `${log.previousValue} → ${log.newValue}` : "Recorded admin action"}</p></div>
+                    <p className="text-xs text-black/40">{log.admin?.email ?? "Admin"} · {formatDateTime(log.createdAt)}</p>
+                  </div>
+                ))}
+                {!order.auditLogs.length ? <p className="text-sm text-black/45">No manual changes recorded.</p> : null}
+              </div>
+            </div>
           </section>
 
           <aside className="space-y-6">
@@ -377,7 +400,7 @@ export default async function AdminOrderDetailsPage({
                 <div className="flex justify-between">
                   <span className="text-black/50">Subtotal</span>
                   <span className="font-medium">
-                    {money(order.subtotalCents)}
+                    {money(order.subtotalCents, order.currency)}
                   </span>
                 </div>
 
@@ -390,12 +413,12 @@ export default async function AdminOrderDetailsPage({
                   <div className="flex justify-between">
                     <span className="font-semibold">Total</span>
                     <span className="text-xl font-semibold text-[#a56a2a]">
-                      {money(order.totalCents)}
+                      {money(order.totalCents, order.currency)}
                     </span>
                   </div>
                 </div>
 
-                <div className="pt-2 text-xs text-black/40">Currency: USD</div>
+                <div className="pt-2 text-xs text-black/40">Currency: {order.currency}</div>
               </div>
             </div>
 
@@ -403,8 +426,8 @@ export default async function AdminOrderDetailsPage({
               <h2 className="text-lg font-semibold">Change order status</h2>
 
               <p className="mt-2 text-sm leading-6 text-black/60">
-                Allowed workflow: NEW → PAID → IN_PRODUCTION → COMPLETED.
-                Cancel is available before completion.
+                Paymob’s verified webhook is the only path from NEW to PAID.
+                Admins can manage fulfillment or cancel an order.
               </p>
 
               {nextStatuses.length > 0 ? (

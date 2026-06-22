@@ -1,0 +1,3 @@
+-- Historical checkout-foundation placeholder.
+-- The directory existed without a migration file; keeping a no-op migration
+-- preserves migration ordering and allows `prisma migrate deploy` to proceed.

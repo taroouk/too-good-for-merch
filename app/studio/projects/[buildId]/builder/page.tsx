@@ -74,6 +74,7 @@ export default async function BuilderPage({
       draft={build.draft}
       placementsCount={placementsCount}
       initialUserAssets={initialUserAssets}
+      walletEnabled={Boolean(process.env.PAYMOB_WALLET_INTEGRATION_ID?.trim())}
     />
   );
 }

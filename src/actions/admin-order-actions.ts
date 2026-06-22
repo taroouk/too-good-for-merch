@@ -2,97 +2,44 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { OrderStatus, Role } from "@prisma/client";
-import { auth } from "src/auth";
+import { OrderStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
+import { requireAdmin } from "src/lib/admin/auth";
 
 const allowedStatusFlow: Record<OrderStatus, OrderStatus[]> = {
-  NEW: [OrderStatus.PAID, OrderStatus.CANCELLED],
+  NEW: [OrderStatus.CANCELLED],
   PAID: [OrderStatus.IN_PRODUCTION, OrderStatus.CANCELLED],
   IN_PRODUCTION: [OrderStatus.COMPLETED, OrderStatus.CANCELLED],
   COMPLETED: [],
-  CANCELLED: [],
+  CANCELLED: [OrderStatus.NEW],
 };
 
-async function requireAdmin() {
-  const session = await auth();
-
-  if (!session?.user?.id || session.user.role !== Role.ADMIN) {
-    redirect("/login");
-  }
-
-  return session.user;
-}
-
 export async function updateOrderStatusAction(formData: FormData) {
-  await requireAdmin();
-
-  const id = formData.get("id");
-  const nextStatus = formData.get("status");
-
-  if (typeof id !== "string" || typeof nextStatus !== "string") {
-    throw new Error("Invalid order status request.");
-  }
-
-  if (!Object.values(OrderStatus).includes(nextStatus as OrderStatus)) {
-    throw new Error("Invalid order status.");
-  }
-
-  const order = await prisma.order.findUnique({
-    where: { id },
-    select: {
-      status: true,
-    },
-  });
-
-  if (!order) {
-    throw new Error("Order not found.");
-  }
-
-  const typedNextStatus = nextStatus as OrderStatus;
-  const allowedNextStatuses = allowedStatusFlow[order.status];
-
-  if (!allowedNextStatuses.includes(typedNextStatus)) {
-    throw new Error("This order status transition is not allowed.");
-  }
-
-  await prisma.order.update({
-    where: { id },
-    data: {
-      status: typedNextStatus,
-    },
-  });
-
+  const admin = await requireAdmin();
+  const id = String(formData.get("id") ?? "");
+  const nextStatus = String(formData.get("status") ?? "") as OrderStatus;
+  if (!id || !Object.values(OrderStatus).includes(nextStatus)) throw new Error("Invalid order status request.");
+  const order = await prisma.order.findUnique({ where: { id }, select: { status: true } });
+  if (!order) throw new Error("Order not found.");
+  if (!allowedStatusFlow[order.status].includes(nextStatus)) throw new Error("This order status transition is not allowed.");
+  await prisma.$transaction([
+    prisma.order.update({ where: { id }, data: { status: nextStatus } }),
+    prisma.adminAuditLog.create({ data: { orderId: id, adminId: admin.id, action: "ORDER_STATUS_CHANGED", previousValue: order.status, newValue: nextStatus } }),
+  ]);
   revalidatePath("/admin");
   revalidatePath("/admin/orders");
-  revalidatePath(`/admin/orders/${id}`);
+  redirect(`/admin/orders/${id}?notice=${encodeURIComponent(`Order moved to ${nextStatus.replaceAll("_", " ")}.`)}`);
 }
 
 export async function addAdminNoteAction(formData: FormData) {
   const admin = await requireAdmin();
-
-  const id = formData.get("id");
-  const body = formData.get("body");
-
-  if (typeof id !== "string" || typeof body !== "string") {
-    throw new Error("Invalid admin note request.");
-  }
-
-  const trimmedBody = body.trim();
-
-  if (!trimmedBody) {
-    throw new Error("Admin note cannot be empty.");
-  }
-
-  await prisma.adminNote.create({
-    data: {
-      orderId: id,
-      authorId: admin.id,
-      body: trimmedBody,
-    },
-  });
-
-  revalidatePath("/admin");
-  revalidatePath("/admin/orders");
+  const id = String(formData.get("id") ?? "");
+  const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
+  if (!id || !body) throw new Error("Admin note cannot be empty.");
+  await prisma.$transaction([
+    prisma.adminNote.create({ data: { orderId: id, authorId: admin.id, body } }),
+    prisma.adminAuditLog.create({ data: { orderId: id, adminId: admin.id, action: "ADMIN_NOTE_ADDED" } }),
+  ]);
   revalidatePath(`/admin/orders/${id}`);
+  redirect(`/admin/orders/${id}?notice=${encodeURIComponent("Internal note added.")}`);
 }

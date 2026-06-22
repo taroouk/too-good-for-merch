@@ -57,6 +57,7 @@ type BuilderClientProps = {
   draft: DraftDTO;
   placementsCount: number;
   initialUserAssets?: UserAssetDTO[];
+  walletEnabled?: boolean;
 };
 
 type CreateOrderResponse = {
@@ -86,9 +87,10 @@ export default function BuilderClient({
   draft,
   placementsCount,
   initialUserAssets = [],
+  walletEnabled = false,
 }: BuilderClientProps) {
   const router = useRouter();
-  const { status } = useSession();
+  const { data: session, status } = useSession();
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -120,6 +122,14 @@ export default function BuilderClient({
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
+  const [showCheckout, setShowCheckout] = useState(false);
+  const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(false);
+  const [customerName, setCustomerName] = useState("");
+  const [customerEmail, setCustomerEmail] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<"CARD" | "WALLET">("CARD");
+  const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  const [checkoutOrderId, setCheckoutOrderId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fabricMenuRef = useRef<HTMLDivElement | null>(null);
@@ -249,8 +259,18 @@ export default function BuilderClient({
 
     setShowAuthModal(false);
     setAuthPassword("");
-    setShowBespokeModal(true);
-  }, [showAuthModal, status]);
+    if (checkoutAfterAuth) {
+      setCheckoutAfterAuth(false);
+      setCustomerEmail(session?.user?.email ?? authEmail);
+      setShowCheckout(true);
+    } else {
+      setShowBespokeModal(true);
+    }
+  }, [authEmail, checkoutAfterAuth, session?.user?.email, showAuthModal, status]);
+
+  useEffect(() => {
+    setCheckoutOrderId(null);
+  }, [qty, state.color, state.fabric, state.product]);
 
   function save(next: DraftDTO) {
     setState(next);
@@ -352,7 +372,7 @@ export default function BuilderClient({
     save({ ...state, primaryAssetId: null });
   }
 
-async function handleAddToBag() {
+function openCheckout() {
   if (!price || price.mode !== "standard") {
     alert("Pricing not ready");
     return;
@@ -363,60 +383,50 @@ async function handleAddToBag() {
     return;
   }
 
+  if (status !== "authenticated") {
+    setCheckoutAfterAuth(true);
+    requestAuth("login");
+    return;
+  }
+
+  setCustomerEmail((current) => current || session?.user?.email || "");
+  setCheckoutError(null);
+  setShowCheckout(true);
+}
+
+async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
+  event.preventDefault();
+  if (!price || price.mode !== "standard" || !state.product || !state.fabric || !state.color) return;
+
   setIsCreatingOrder(true);
+  setCheckoutError(null);
 
   try {
-    // 1️⃣ Create Order
-    const orderRes = await fetch("/api/orders/create", {
+    const paymobRes = await fetch("/api/payments/paymob/create-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        buildId,
-        product: state.product,
-        fabric: state.fabric,
-        color: state.color,
-        quantity: qty,
-        unitPrice: price.unit,
-        total: price.total,
-        currency: price.currency,
+        ...(checkoutOrderId
+          ? { orderId: checkoutOrderId }
+          : { buildId, customer: { name: customerName, email: customerEmail, phone: customerPhone } }),
+        method: paymentMethod,
         size: selectedSize,
         placements:
           selectedPlacements.length > 0
             ? selectedPlacements
             : ["CENTER_FRONT"],
-        assetId: state.primaryAssetId,
-        notes: state.customNotes,
       }),
     });
-
-    const orderData = await orderRes.json();
-
-    if (!orderRes.ok || !orderData?.orderId) {
-      throw new Error(orderData?.error || "Order creation failed");
-    }
-
-    // 2️⃣ Create Paymob Payment
-    const paymobRes = await fetch("/api/payments/paymob/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId: orderData.orderId,
-      }),
-    });
-
     const paymobData = await paymobRes.json();
 
     if (!paymobRes.ok || !paymobData?.paymentUrl) {
-      console.error("Paymob Error:", paymobData);
-      throw new Error("Payment initialization failed");
+      if (typeof paymobData?.orderId === "string") setCheckoutOrderId(paymobData.orderId);
+      throw new Error(paymobData?.error || "Payment initialization failed");
     }
-
-    // 3️⃣ SAFE REDIRECT (NO checkout EVER)
     window.location.replace(paymobData.paymentUrl);
-
   } catch (error) {
     console.error(error);
-    alert(error instanceof Error ? error.message : "Something went wrong");
+    setCheckoutError(error instanceof Error ? error.message : "Something went wrong");
   } finally {
     setIsCreatingOrder(false);
   }
@@ -569,7 +579,7 @@ async function handleAddToBag() {
             <div className="studio-auth-modal studio-modal-panel">
               <button
                 type="button"
-                onClick={() => setShowAuthModal(false)}
+                onClick={() => { setShowAuthModal(false); setCheckoutAfterAuth(false); }}
                 className="studio-modal-close"
                 aria-label="Close login or signup"
               >
@@ -669,6 +679,98 @@ async function handleAddToBag() {
                   {authMode === "login" ? "Create account" : "Login"}
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body,
+        )
+      : null;
+
+  const checkoutPopup =
+    mounted && showCheckout
+      ? createPortal(
+          <div className="studio-modal-overlay">
+            <div className="relative w-[min(92vw,540px)] rounded-[28px] bg-white p-6 text-black shadow-2xl sm:p-8">
+              <button
+                type="button"
+                onClick={() => !isCreatingOrder && setShowCheckout(false)}
+                className="absolute right-5 top-4 text-3xl leading-none text-black/40 hover:text-black"
+                aria-label="Close checkout"
+              >
+                ×
+              </button>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-black/45">Secure checkout</p>
+              <h2 className="mt-2 text-3xl font-semibold">Complete your order</h2>
+              <p className="mt-2 text-sm leading-6 text-black/55">
+                Your final total is calculated on our server. Card details are entered securely on Paymob.
+              </p>
+
+              <form onSubmit={handleCheckoutSubmit} className="mt-6 space-y-4">
+                <label className="block text-sm font-medium">
+                  Full name
+                  <input
+                    value={customerName}
+                    onChange={(event) => setCustomerName(event.target.value)}
+                    autoComplete="name"
+                    required
+                    minLength={2}
+                    className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
+                  />
+                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="block text-sm font-medium">
+                    Email
+                    <input
+                      value={customerEmail}
+                      onChange={(event) => setCustomerEmail(event.target.value)}
+                      type="email"
+                      autoComplete="email"
+                      required
+                      className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
+                    />
+                  </label>
+                  <label className="block text-sm font-medium">
+                    Phone
+                    <input
+                      value={customerPhone}
+                      onChange={(event) => setCustomerPhone(event.target.value)}
+                      type="tel"
+                      autoComplete="tel"
+                      placeholder="+20 10 0000 0000"
+                      required
+                      className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
+                    />
+                  </label>
+                </div>
+
+                <fieldset>
+                  <legend className="text-sm font-medium">Payment method</legend>
+                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                    <label className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-4", paymentMethod === "CARD" ? "border-black bg-black text-white" : "border-black/15")}>
+                      <input type="radio" name="paymentMethod" value="CARD" checked={paymentMethod === "CARD"} onChange={() => setPaymentMethod("CARD")} />
+                      <span className="font-semibold">Credit / debit card</span>
+                    </label>
+                    {walletEnabled ? (
+                      <label className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-4", paymentMethod === "WALLET" ? "border-black bg-black text-white" : "border-black/15")}>
+                        <input type="radio" name="paymentMethod" value="WALLET" checked={paymentMethod === "WALLET"} onChange={() => setPaymentMethod("WALLET")} />
+                        <span className="font-semibold">Mobile wallet</span>
+                      </label>
+                    ) : null}
+                  </div>
+                </fieldset>
+
+                <div className="flex items-center justify-between rounded-xl bg-[#f5f3ef] p-4">
+                  <span className="text-sm text-black/55">Estimated total</span>
+                  <strong className="text-lg">{price?.mode === "standard" ? `${price.currency} ${price.total.toFixed(2)}` : "—"}</strong>
+                </div>
+                {checkoutError ? <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{checkoutError}</div> : null}
+                <button
+                  type="submit"
+                  disabled={isCreatingOrder}
+                  className="h-13 w-full rounded-xl bg-black px-5 py-3.5 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isCreatingOrder ? "Connecting to Paymob…" : "Continue to secure payment"}
+                </button>
+              </form>
             </div>
           </div>,
           document.body,
@@ -907,6 +1009,7 @@ async function handleAddToBag() {
   return (
     <>
       {authPopup}
+      {checkoutPopup}
       {customPopup}
       {bespokeModal}
 
@@ -1274,11 +1377,11 @@ async function handleAddToBag() {
                 <div className="studio-action-row">
                   <button
                     type="button"
-                    onClick={handleAddToBag}
+                    onClick={openCheckout}
                     disabled={!isStandardCheckout || isCreatingOrder}
                     className="studio-add-button"
                   >
-                    {isCreatingOrder ? "Creating..." : "Add To Bag"}
+                    {isCreatingOrder ? "Creating..." : "Checkout"}
                   </button>
 
                   <button type="button" className="studio-wishlist-button">

@@ -1,8 +1,10 @@
 import localFont from "next/font/local";
-import { Inter } from "next/font/google";
 
-export const inter = Inter({
-  subsets: ["latin"],
+// The application intentionally uses the system sans-serif stack for body copy.
+// Keeping this local alias avoids a build-time dependency on Google Fonts.
+export const inter = localFont({
+  src: "../assets/fonts/LeagueSpartan-SemiBold.ttf",
+  weight: "600",
   variable: "--font-inter",
   display: "swap",
 });

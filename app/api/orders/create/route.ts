@@ -1,35 +1,21 @@
 import { NextResponse } from "next/server";
-import { prisma } from "src/lib/prisma";
-import { OrderStatus, PaymentStatus } from "@prisma/client";
+import { auth } from "src/auth";
+import { CheckoutError, createCheckoutOrder } from "src/lib/orders/checkout";
 
 export async function POST(req: Request) {
-  const body = await req.json();
-
-  const order = await prisma.order.create({
-    data: {
-      orderNumber: `TGFM-${Date.now()}`,
-      status: OrderStatus.NEW,
-      paymentStatus: PaymentStatus.UNPAID,
-      currency: body.currency,
-      subtotalCents: Math.round(body.total * 100),
-      totalCents: Math.round(body.total * 100),
-      buildId: body.buildId,
-      items: {
-        create: {
-          product: body.product,
-          fabric: body.fabric,
-          color: body.color,
-          quantity: body.quantity,
-          unitPriceCents: Math.round(body.unitPrice * 100),
-          totalCents: Math.round(body.total * 100),
-          placements: body.placements,
-          assetId: body.assetId ?? null,
-        },
-      },
-    },
-  });
-
-  return NextResponse.json({
-    orderId: order.id,
-  });
+  const session = await auth();
+  if (!session?.user?.id) return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
+  const body = await req.json().catch(() => null);
+  try {
+    const order = await createCheckoutOrder(session.user.id, {
+      buildId: body?.buildId,
+      customer: body?.customer,
+      placements: body?.placements,
+      size: body?.size,
+    });
+    return NextResponse.json({ orderId: order.id, orderNumber: order.orderNumber, totalCents: order.totalCents });
+  } catch (error) {
+    const status = error instanceof CheckoutError ? error.status : 500;
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to create order." }, { status });
+  }
 }

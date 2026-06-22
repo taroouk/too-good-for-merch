@@ -1,14 +1,7 @@
 import "./globals.css";
 import localFont from "next/font/local";
-import { Inter } from "next/font/google";
 import Providers from "src/components/Providers";
 import { ReactNode } from "react";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-});
 
 const league = localFont({
   src: [
@@ -38,7 +31,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body
         suppressHydrationWarning
         className={`
-          ${inter.variable}
           ${league.variable}
           bg-[#f5f5f3]
           text-black

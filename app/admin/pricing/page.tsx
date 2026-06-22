@@ -3,18 +3,25 @@ import {
     deletePricingRuleAction,
   } from "src/actions/admin-pricing-actions";
   import { prisma } from "src/lib/prisma";
-  
-  export default async function AdminPricingPage() {
-    const pricingRules = await prisma.pricingRule.findMany({
-      orderBy: [
-        { product: "asc" },
-        { fabric: "asc" },
-        { minQty: "asc" },
-      ],
-    });
+  import AdminToast from "src/components/admin/AdminToast";
+
+  export default async function AdminPricingPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
+    const query = await searchParams;
+    const [pricingRules, settings] = await Promise.all([
+      prisma.pricingRule.findMany({
+        orderBy: [
+          { product: "asc" },
+          { fabric: "asc" },
+          { minQty: "asc" },
+        ],
+      }),
+      prisma.storeSetting.findUnique({ where: { id: "store" } }),
+    ]);
+    const currency = settings?.currency ?? process.env.STORE_CURRENCY ?? "USD";
   
     return (
       <main className="px-4 py-10">
+        <AdminToast message={query.notice} />
         <div className="mx-auto max-w-7xl">
           <div className="mb-8 rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
             <p className="text-sm font-medium text-[#a56a2a]">
@@ -93,7 +100,7 @@ import {
                 </div>
   
                 <div>
-                  <label className="text-sm font-medium">Unit Price USD</label>
+                  <label className="text-sm font-medium">Unit Price {currency}</label>
                   <input
                     name="unitPrice"
                     type="number"
@@ -150,7 +157,7 @@ import {
                           <td className="px-6 py-5">{rule.maxQty}</td>
   
                           <td className="px-6 py-5 font-semibold text-[#a56a2a]">
-                            ${rule.unitPrice.toFixed(2)}
+                            {currency} {rule.unitPrice.toFixed(2)}
                           </td>
   
                           <td className="px-6 py-5 text-right">

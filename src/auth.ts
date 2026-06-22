@@ -31,7 +31,7 @@ export const authOptions: NextAuthOptions = {
           where: { email },
         });
 
-        if (!user?.passwordHash) {
+        if (!user?.passwordHash || user.blockedAt) {
           return null;
         }
 

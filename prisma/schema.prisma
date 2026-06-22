@@ -8,18 +8,20 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(cuid())
-  email        String?     @unique
-  createdAt    DateTime    @default(now())
-  phone        String?     @unique
-  updatedAt    DateTime    @updatedAt
+  id           String          @id @default(cuid())
+  email        String?         @unique
+  createdAt    DateTime        @default(now())
+  phone        String?         @unique
+  updatedAt    DateTime        @updatedAt
   passwordHash String?
-  role         Role        @default(USER)
+  role         Role            @default(USER)
+  blockedAt    DateTime?
   accounts     Account[]
   adminNotes   AdminNote[]
   builds       Build[]
   orders       Order[]
   sessions     Session[]
+  auditLogs    AdminAuditLog[]
 }
 
 model Build {
@@ -97,28 +99,35 @@ model DesignPlacement {
 }
 
 model Order {
-  id                  String        @id @default(cuid())
-  createdAt           DateTime      @default(now())
-  updatedAt           DateTime      @updatedAt
-  userId              String?
-  buildId             String?
-  currency            String        @default("EGP")
-  customerEmail       String?
-  customerName        String?
-  customerPhone       String?
-  orderNumber         String        @unique
-  paymentStatus       PaymentStatus @default(UNPAID)
-  paymentUrl          String?
-  paymobIntentionId   String?
-  paymobOrderId       String?
-  paymobTransactionId String?
-  subtotalCents       Int
-  totalCents          Int
-  status              OrderStatus   @default(NEW)
-  notes               AdminNote[]
-  build               Build?        @relation(fields: [buildId], references: [id])
-  user                User?         @relation(fields: [userId], references: [id])
-  items               OrderItem[]
+  id                   String           @id @default(cuid())
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+  userId               String?
+  buildId              String?
+  currency             String           @default("EGP")
+  customerEmail        String?
+  customerName         String?
+  customerPhone        String?
+  orderNumber          String           @unique
+  paymentStatus        PaymentStatus    @default(UNPAID)
+  paymentMethod        PaymentMethod?
+  paymentUrl           String?
+  paymobIntentionId    String?
+  paymobOrderId        String?
+  paymobTransactionId  String?
+  paymentFailureReason String?
+  paidAt               DateTime?
+  refundedAt           DateTime?
+  subtotalCents        Int
+  totalCents           Int
+  status               OrderStatus      @default(NEW)
+  notes                AdminNote[]
+  build                Build?           @relation(fields: [buildId], references: [id])
+  user                 User?            @relation(fields: [userId], references: [id])
+  items                OrderItem[]
+  paymentAttempts      PaymentAttempt[]
+  webhookEvents        WebhookEvent[]
+  auditLogs            AdminAuditLog[]
 
   @@index([userId])
   @@index([status])
@@ -237,16 +246,95 @@ enum PaymentStatus {
   PENDING
   PAID
   FAILED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CARD
+  WALLET
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  PENDING
+  SUCCEEDED
+  FAILED
+}
+
+model PaymentAttempt {
+  id            String               @id @default(cuid())
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  orderId       String
+  provider      String               @default("PAYMOB")
+  method        PaymentMethod
+  status        PaymentAttemptStatus @default(CREATED)
+  amountCents   Int
+  currency      String
+  externalId    String?
+  paymentUrl    String?
+  failureReason String?
+  metadata      Json?
+  order         Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  eventKey       String    @unique
+  eventType      String
+  transactionId  String?
+  validSignature Boolean
+  processed      Boolean   @default(false)
+  processedAt    DateTime?
+  errorMessage   String?
+  payload        Json
+  orderId        String?
+  order          Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([transactionId])
+  @@index([createdAt])
+}
+
+model AdminAuditLog {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  adminId       String?
+  orderId       String?
+  action        String
+  previousValue String?
+  newValue      String?
+  metadata      Json?
+  admin         User?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model StoreSetting {
+  id            String   @id @default("store")
+  storeName     String   @default("Too Good For Merch")
+  currency      String   @default("USD")
+  taxRateBps    Int      @default(0)
+  shippingCents Int      @default(0)
+  updatedAt     DateTime @updatedAt
 }
 
 model PricingRule {
-  id        String   @id @default(cuid())
+  id String @id @default(cuid())
 
-  product   String
-  fabric    String
+  product String
+  fabric  String
 
-  minQty    Int
-  maxQty    Int
+  minQty Int
+  maxQty Int
 
   unitPrice Float
 
