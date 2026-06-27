@@ -13,7 +13,7 @@
     "start": "next start"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   },
   "dependencies": {
     "@next-auth/prisma-adapter": "^1.0.7",
