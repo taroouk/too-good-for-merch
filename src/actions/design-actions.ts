@@ -2,6 +2,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { PlacementType } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
@@ -39,7 +40,7 @@ export async function actionCreateDesign(buildId: string, formData: FormData) {
     select: { id: true },
   });
 
-  redirect(`/studio/projects/${buildId}/designs?design=${design.id}`);
+  redirect(`/studio/projects/${buildId}/builder?design=${design.id}`);
 }
 
 export async function actionSetPlacementAsset(buildId: string, formData: FormData) {
@@ -60,7 +61,7 @@ export async function actionSetPlacementAsset(buildId: string, formData: FormDat
 
   if (!assetId) {
     await prisma.designPlacement.deleteMany({
-      where: { designId, placement: placement as any },
+      where: { designId, placement: placement as PlacementType },
     });
     return;
   }
@@ -75,11 +76,11 @@ export async function actionSetPlacementAsset(buildId: string, formData: FormDat
     where: {
       designId_placement: {
         designId,
-        placement: placement as any,
+        placement: placement as PlacementType,
       },
     },
     update: { assetId },
-    create: { designId, placement: placement as any, assetId },
+    create: { designId, placement: placement as PlacementType, assetId },
   });
 }
 
@@ -92,6 +93,6 @@ export async function actionRemovePlacement(buildId: string, formData: FormData)
   if (!designId || !placement) return;
 
   await prisma.designPlacement.deleteMany({
-    where: { designId, placement: placement as any },
+    where: { designId, placement: placement as PlacementType, design: { buildId } },
   });
 }

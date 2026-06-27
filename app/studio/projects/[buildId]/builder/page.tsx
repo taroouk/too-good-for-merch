@@ -1,6 +1,7 @@
 // file: app/studio/projects/[buildId]/builder/page.tsx
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
+import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
 
 export default async function BuilderPage({
@@ -10,6 +11,7 @@ export default async function BuilderPage({
 }) {
   const { buildId } = await params;
   const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },

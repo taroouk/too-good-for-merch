@@ -11,6 +11,11 @@ import type {
 import { actionUpdateDraft } from "src/actions/build-actions";
 import { actionCreateAsset } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
+import {
+  placementsFromCustomNotes,
+  upsertPlacementsInNotes,
+  type PlacementKey,
+} from "src/pricing/placements";
 
 type PriceResult =
   | { mode: "standard"; unit: number; total: number; currency: "USD" | "EGP" }
@@ -26,16 +31,6 @@ type DraftDTO = Pick<
   BuildDraft,
   "product" | "color" | "fabric" | "quantity" | "customNotes" | "primaryAssetId"
 >;
-
-type PlacementKey =
-  | "LEFT_CHEST"
-  | "RIGHT_CHEST"
-  | "RIGHT_SLEEVE"
-  | "LEFT_SLEEVE"
-  | "CENTER_FRONT"
-  | "FULL_FRONT"
-  | "CENTER_BACK"
-  | "FULL_BACK";
 
 type BuilderClientProps = {
   buildId: string;
@@ -74,14 +69,16 @@ function upsertHexInNotes(notes: string | null | undefined, hex: string) {
 
 function getTryOnImage(product: ProductType | null, color: GarmentColor | null) {
   if (product === "OVERSIZED") {
-    return "/assets/tryon/oversized-white.png";
+    return color === "BLACK"
+      ? "/assets/tryon/oversized-black.png"
+      : "/assets/tryon/oversized-white.PNG";
   }
 
   if (color === "BLACK") {
-    return "/assets/tryon/fitted-black.png";
+    return "/assets/tryon/fitted-black.PNG";
   }
 
-  return "/assets/tryon/fitted-white.png";
+  return "/assets/tryon/fitted-white.PNG";
 }
 
 function getArtworkStyle(placement: PlacementKey | undefined) {
@@ -214,7 +211,7 @@ export default function BuilderClient({
 
   const [state, setState] = useState<DraftDTO>(draft);
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(
-    []
+    () => placementsFromCustomNotes(draft.customNotes),
   );
 
   const [uploadName, setUploadName] = useState("");
@@ -228,6 +225,10 @@ export default function BuilderClient({
   const qty = useMemo(
     () => clampQty(Number(state.quantity ?? 1)),
     [state.quantity]
+  );
+  const pricingPlacements = useMemo<PlacementKey[]>(
+    () => (selectedPlacements.length ? selectedPlacements : ["CENTER_FRONT"]),
+    [selectedPlacements],
   );
 
   const customHex = extractHexFromNotes(state.customNotes) ?? "#111827";
@@ -258,6 +259,7 @@ export default function BuilderClient({
             product: state.product,
             fabric: state.fabric,
             quantity: qty,
+            placements: pricingPlacements,
           }),
         });
 
@@ -285,14 +287,14 @@ export default function BuilderClient({
     return () => {
       cancelled = true;
     };
-  }, [state.product, state.fabric, qty]);
+  }, [state.product, state.fabric, qty, pricingPlacements]);
 
   const priceText = loadingPrice
     ? "Calculating..."
     : !state.product || !state.fabric
       ? "Select product & fabric"
       : price?.mode === "standard"
-        ? `$${price.total.toFixed(2)}`
+        ? `${price.currency} ${price.total.toFixed(2)}`
         : price?.message ?? "—";
 
   function save(next: DraftDTO) {
@@ -314,6 +316,7 @@ export default function BuilderClient({
     setArtworkUrl(URL.createObjectURL(file));
 
     const fd = new FormData();
+    fd.set("file", file);
     fd.set("fileName", file.name);
     fd.set("mimeType", file.type || "application/octet-stream");
     fd.set("sizeBytes", String(file.size || 0));
@@ -694,7 +697,7 @@ export default function BuilderClient({
 
                           save({
                             ...state,
-                            customNotes: JSON.stringify({ placement: next }),
+                            customNotes: upsertPlacementsInNotes(state.customNotes, next),
                           });
                         }}
                         className={cn(

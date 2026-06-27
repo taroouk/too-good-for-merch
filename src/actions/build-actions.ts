@@ -4,7 +4,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
-import { assertBuildAccess } from "src/studio/permissions";
+import { assertBuildAccess, rememberGuestBuildId } from "src/studio/permissions";
 import { BuildStatus } from "@prisma/client";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
@@ -108,11 +108,18 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
       fabric: fabric ?? null,
       quantity: Number.isFinite(quantity) ? quantity : 1,
       customNotes: customNotes.length ? customNotes : null,
-      primaryAssetId: primaryAssetId.length ? primaryAssetId : null,
+      primaryAssetId: await validPrimaryAssetId(buildId, primaryAssetId),
     },
   });
 }
 
-function rememberGuestBuildId(id: string) {
-  throw new Error("Function not implemented.");
+async function validPrimaryAssetId(buildId: string, assetId: string) {
+  if (!assetId.length) return null;
+
+  const asset = await prisma.asset.findFirst({
+    where: { id: assetId, buildId },
+    select: { id: true },
+  });
+
+  return asset?.id ?? null;
 }

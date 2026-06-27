@@ -2,6 +2,7 @@
 
 import "../auth.css";
 import { signIn } from "next-auth/react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -90,14 +91,14 @@ export default function RegisterClient() {
                   {pending ? "Creating..." : "Create"}
                 </button>
 
-                <a className="link" href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
+                <Link className="link" href={`/login?callbackUrl=${encodeURIComponent(callbackUrl)}`}>
                   Back to login
-                </a>
+                </Link>
               </div>
 
-              <a className="link" href="/">
+              <Link className="link" href="/">
                 Back to home
-              </a>
+              </Link>
             </form>
           </div>
         </div>

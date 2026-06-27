@@ -2,6 +2,12 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { CONTACT_EMAIL, EMAIL_URL, INSTAGRAM_URL, TIKTOK_URL, WHATSAPP_URL } from "src/lib/contact";
+import {
+  BOUTIQUE_PORTFOLIO_ITEMS,
+  LARGE_PORTFOLIO_ITEMS,
+  type PortfolioItem,
+} from "src/lib/marketing-content";
 import "./marketing.css";
 
 const HERO_VIDEO_DESKTOP = "/videos/hero.mp4";
@@ -62,45 +68,6 @@ function HeroFigma() {
     </section>
   );
 }
-const WHATSAPP_PHONE = "201118399923";
-const WHATSAPP_MESSAGE =
-  "Hi TGFM, I’d love a quote!\nWhat info do you need from me?";
-
-const WHATSAPP_URL =
-  `https://wa.me/${WHATSAPP_PHONE}?text=` + encodeURIComponent(WHATSAPP_MESSAGE);
-
-type BoutiqueItem = {
-  title: string;
-  year: string;
-  bullets: string[];
-  imageSrc: string;
-  imageAlt: string;
-};
-
-const BOUTIQUE_ITEMS: BoutiqueItem[] = [
-  {
-    title: "MK wedding | PARIS",
-    year: "2024",
-    bullets: ["Boutique run", "+30 printed T-shirts"],
-    imageSrc: "/images/wedding1.png",
-    imageAlt: "Paris Wedding",
-  },
-  {
-    title: "KN WEDDING | GOUNA",
-    year: "2024",
-    bullets: ["Boutique run", "+50 printed T-shirts"],
-    imageSrc: "/images/wedding2.png",
-    imageAlt: "Gouna Wedding",
-  },
-  {
-    title: "FA WEDDING | CAIRO",
-    year: "2026",
-    bullets: ["Boutique run", "+100 printed T-shirts"],
-    imageSrc: "/images/wedding3.png",
-    imageAlt: "Cairo Wedding",
-  },
-];
-
 function BoutiqueSection() {
   const [activeIdx, setActiveIdx] = useState(0);
   const [visible, setVisible] = useState(false);
@@ -204,7 +171,7 @@ function BoutiqueSection() {
     };
   }, []);
 
-  const activeItem = BOUTIQUE_ITEMS[activeIdx];
+  const activeItem = BOUTIQUE_PORTFOLIO_ITEMS[activeIdx];
 
   return (
     <section ref={sectionRef} className="section borderTop boutiqueSection">
@@ -237,7 +204,7 @@ function BoutiqueSection() {
 
         <div className="boutiqueBleed">
           <div className="boutiqueRows" role="list" aria-label="Boutique projects">
-            {BOUTIQUE_ITEMS.map((item, i) => (
+            {BOUTIQUE_PORTFOLIO_ITEMS.map((item, i) => (
               <button
                 key={`${item.title}-${i}`}
                 type="button"
@@ -497,7 +464,7 @@ export default function HomePage() {
       <HeroFigma />
 
       <section className="enter">
-      <Link href="/api/create-and-open-project" className="enterInner">
+      <Link href="/studio" className="enterInner">
           <span className="enterWord">ENTER</span>
           <div className="enterPanel">
             <img src="/images/enter.jpg" alt="Enter Studio" />
@@ -522,44 +489,18 @@ export default function HomePage() {
 
         <div className="lpContainer">
           <div className="grid">
-            <article className="card">
+            {LARGE_PORTFOLIO_ITEMS.map((item: PortfolioItem) => (
+            <article className="card" key={item.title}>
               <div className="cardMedia">
-                <img src="/images/taylor.jpg" alt="Taylor Swift Merch" />
+                <img src={item.imageSrc} alt={item.imageAlt} />
               </div>
               <div>
-                <h2>TAYLOR SWIFT | ERAS TOUR MERCH</h2>
-                <p>2023 – 2024</p>
-                <p>
-                  <strong>+1M printed T-shirts & Hoodies</strong>
-                </p>
+                <h2>{item.title}</h2>
+                <p>{item.year}</p>
+                <p><strong>{item.bullets[1]}</strong></p>
               </div>
             </article>
-
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/artists.jpg" alt="Artists Merch" />
-              </div>
-              <div>
-                <h2>ARTISTS | LICENSED MERCH</h2>
-                <p>2023 – present</p>
-                <p>
-                  <strong>+100K printed T-shirts & Hoodies</strong>
-                </p>
-              </div>
-            </article>
-
-            <article className="card">
-              <div className="cardMedia">
-                <img src="/images/tv.jpg" alt="TV Merch" />
-              </div>
-              <div>
-                <h2>TV & MOVIES | LICENSED MERCH</h2>
-                <p>2023 – present</p>
-                <p>
-                  <strong>+100K printed T-shirts & Hoodies</strong>
-                </p>
-              </div>
-            </article>
+            ))}
           </div>
         </div>
       </section>
@@ -574,15 +515,15 @@ export default function HomePage() {
           </h2>
 
           <div className="contactLinks">
-            <a href="https://www.instagram.com/toogoodformerch">Instagram</a>
-            <a href="https://www.tiktok.com/@toogoodformerch">TikTok</a>
+            <a href={INSTAGRAM_URL}>Instagram</a>
+            <a href={TIKTOK_URL}>TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp</a>
             <a
-              href="mailto:hello@toogoodformerch.com"
+              href={EMAIL_URL}
               target="_blank"
               rel="noopener"
             >
-              Email
+              {CONTACT_EMAIL}
             </a>
           </div>
         </div>

@@ -1,15 +1,12 @@
 // src/db/draft.ts
 import { prisma } from "src/lib/prisma";
 
-const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
-export type ProductType = (typeof PRODUCT)[number];
+export type ProductType = "FITTED" | "OVERSIZED" | "CUSTOM";
 
-const COLOR = ["BLACK", "WHITE", "CUSTOM"] as const;
-export type GarmentColor = (typeof COLOR)[number];
+export type GarmentColor = "BLACK" | "WHITE" | "CUSTOM";
 
-const FABRIC = ["ESSENTIALS_170", "SIGNATURE_200", "HEAVYWEIGHT_300"] as const;
-export type FabricType = (typeof FABRIC)[number];
- 
+export type FabricType = "ESSENTIALS_170" | "SIGNATURE_200" | "HEAVYWEIGHT_300";
+
 export type DraftPatch = {
   product?: ProductType | null;
   color?: GarmentColor | null;
@@ -21,7 +18,7 @@ export type DraftPatch = {
 
 function clampQty(q: unknown): number | undefined {
   if (typeof q !== "number" || !Number.isFinite(q)) return undefined;
-  const v = Math.floor(q); 
+  const v = Math.floor(q);
   if (v < 1) return 1;
   if (v > 9999) return 9999;
   return v;

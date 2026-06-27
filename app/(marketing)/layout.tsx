@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import "../globals.css";
 import "./marketing.css";
 import Link from "next/link";
+import AuthAction from "src/components/AuthAction";
 
 export default function MarketingLayout({
   children,
@@ -49,8 +50,9 @@ export default function MarketingLayout({
         </button>
 
         <nav className="marketingNav marketingNavLeft" aria-label="Primary">
-          <Link href="/#hero">HOME</Link>
-          <Link href="/#our-work">OUR WORK</Link>
+          <Link href="/">HOME</Link>
+          <Link href="/#our-work">PORTFOLIO</Link>
+          <Link href="/contact">CONTACT</Link>
         </nav>
 
         <Link className="marketingLogo" href="/" aria-label="Too Good For Merch">
@@ -58,10 +60,8 @@ export default function MarketingLayout({
         </Link>
 
         <nav className="marketingNav marketingNavRight" aria-label="Account links">
-          {/* ✅ ACCOUNT -> /login */}
-          <Link href="/login">ACCOUNT</Link>
-          <Link href="/#wishlist">WISHLIST</Link>
-          <Link href="/#bag">BAG (0)</Link>
+          <Link href="/studio">ENTER STUDIO</Link>
+          <AuthAction className="authActionReset" />
         </nav>
       </header>
 
@@ -72,27 +72,24 @@ export default function MarketingLayout({
       >
         <div className="mobileMenuInner">
           <div className="mobileMenuGroup">
-            <Link href="/#hero" onClick={closeMenu}>
+            <Link href="/" onClick={closeMenu}>
               HOME
             </Link>
             <Link href="/#our-work" onClick={closeMenu}>
-              OUR WORK
+              PORTFOLIO
+            </Link>
+            <Link href="/contact" onClick={closeMenu}>
+              CONTACT
             </Link>
           </div>
 
           <div className="mobileMenuDivider" />
 
           <div className="mobileMenuGroup">
-            {/* ✅ ACCOUNT -> /login */}
-            <Link href="/login" onClick={closeMenu}>
-              ACCOUNT
+            <Link href="/studio" onClick={closeMenu}>
+              ENTER STUDIO
             </Link>
-            <Link href="/#wishlist" onClick={closeMenu}>
-              WISHLIST
-            </Link>
-            <Link href="/#bag" onClick={closeMenu}>
-              BAG (0)
-            </Link>
+            <AuthAction className="authActionReset" onAction={closeMenu} />
           </div>
         </div>
       </aside>

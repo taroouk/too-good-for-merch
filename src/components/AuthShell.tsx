@@ -1,6 +1,7 @@
 // src/components/AuthShell.tsx
 import Link from "next/link";
 import React from "react";
+import AuthAction from "src/components/AuthAction";
 
 export default function AuthShell({
   title,
@@ -20,9 +21,7 @@ export default function AuthShell({
           TOO GOOD FOR MERCH
         </Link>
         <div className="authRight">
-          <Link className="authLink" href="/login">
-            Login
-          </Link>
+          <AuthAction className="authLink authActionReset" />
           <Link className="authLink" href="/register">
             Register
           </Link>

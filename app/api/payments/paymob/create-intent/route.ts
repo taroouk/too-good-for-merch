@@ -1,14 +1,18 @@
-import { PaymentMethod, PaymentStatus, PaymentAttemptStatus, Prisma } from "@prisma/client";
+import { PaymentAttemptStatus, PaymentMethod, PaymentStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "src/auth";
+import { apiError, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { CheckoutError, createCheckoutOrder } from "src/lib/orders/checkout";
 import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
+import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 function errorResponse(error: unknown, orderId?: string) {
-  if (error instanceof CheckoutError) return NextResponse.json({ error: error.message, orderId }, { status: error.status });
+  if (error instanceof CheckoutError) {
+    return NextResponse.json({ error: error.message, orderId }, { status: error.status });
+  }
   if (error instanceof PaymobError) {
     console.error("PAYMOB_CREATE_ERROR", error.message, error.details);
     return NextResponse.json({ error: error.message, orderId }, { status: 502 });
@@ -17,22 +21,55 @@ function errorResponse(error: unknown, orderId?: string) {
   return NextResponse.json({ error: "Unable to start payment. Please try again.", orderId }, { status: 500 });
 }
 
+function customerInput(value: unknown) {
+  const customer = value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+  return {
+    name: String(customer.name ?? ""),
+    email: String(customer.email ?? ""),
+    phone: String(customer.phone ?? ""),
+  };
+}
+
 export async function POST(req: Request) {
   const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Sign in to continue." }, { status: 401 });
+  if (!session?.user?.id) {
+    return apiError("Sign in to continue.", 401);
+  }
 
-  const user = await prisma.user.findUnique({ where: { id: session.user.id }, select: { blockedAt: true } });
-  if (!user || user.blockedAt) return NextResponse.json({ error: "This account cannot place orders." }, { status: 403 });
+  const limit = rateLimit(req, `checkout:${session.user.id}`, 12, 10 * 60 * 1000);
+  if (!limit.ok) {
+    return apiError(
+      "Too many checkout attempts. Please try again later.",
+      429,
+      rateLimitHeaders(limit),
+    );
+  }
 
-  const body = await req.json().catch(() => null);
-  if (!body || typeof body !== "object") return NextResponse.json({ error: "Invalid checkout request." }, { status: 400 });
-  const method = body.method === "WALLET" ? PaymentMethod.WALLET : PaymentMethod.CARD;
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { blockedAt: true },
+  });
+  if (!user || user.blockedAt) {
+    return apiError("This account cannot place orders.", 403);
+  }
+
+  const body = await readJsonObject(req);
+  if (!body) {
+    return apiError("Invalid checkout request.", 400);
+  }
+
+  if (body.method !== PaymentMethod.CARD && body.method !== PaymentMethod.WALLET) {
+    return apiError("Invalid payment method.", 400);
+  }
+
+  const method = body.method;
   if (method === PaymentMethod.WALLET && !walletPaymentsEnabled()) {
-    return NextResponse.json({ error: "Wallet payments are not enabled." }, { status: 400 });
+    return apiError("Wallet payments are not enabled.", 400);
   }
 
   let order: Awaited<ReturnType<typeof createCheckoutOrder>> | null = null;
   let attemptId: string | null = null;
+
   try {
     if (typeof body.orderId === "string" && body.orderId) {
       order = await prisma.order.findFirst({
@@ -45,8 +82,8 @@ export async function POST(req: Request) {
       }
     } else {
       order = await createCheckoutOrder(session.user.id, {
-        buildId: body.buildId,
-        customer: body.customer,
+        buildId: typeof body.buildId === "string" ? body.buildId : "",
+        customer: customerInput(body.customer),
         placements: body.placements,
         size: body.size,
       });
@@ -63,7 +100,11 @@ export async function POST(req: Request) {
       orderBy: { createdAt: "desc" },
     });
     if (recentAttempt?.paymentUrl) {
-      return NextResponse.json({ orderId: order.id, orderNumber: order.orderNumber, paymentUrl: recentAttempt.paymentUrl });
+      return NextResponse.json({
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        paymentUrl: recentAttempt.paymentUrl,
+      });
     }
 
     const attempt = await prisma.paymentAttempt.create({
@@ -101,22 +142,26 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     if (attemptId) {
-      await prisma.paymentAttempt.update({
-        where: { id: attemptId },
-        data: {
-          status: PaymentAttemptStatus.FAILED,
-          failureReason: error instanceof Error ? error.message.slice(0, 500) : "Unknown payment error",
-        },
-      }).catch(() => undefined);
+      await prisma.paymentAttempt
+        .update({
+          where: { id: attemptId },
+          data: {
+            status: PaymentAttemptStatus.FAILED,
+            failureReason: error instanceof Error ? error.message.slice(0, 500) : "Unknown payment error",
+          },
+        })
+        .catch(() => undefined);
     }
     if (order && order.paymentStatus !== PaymentStatus.PAID) {
-      await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: PaymentStatus.FAILED,
-          paymentFailureReason: error instanceof Error ? error.message.slice(0, 500) : "Payment initialization failed",
-        },
-      }).catch(() => undefined);
+      await prisma.order
+        .update({
+          where: { id: order.id },
+          data: {
+            paymentStatus: PaymentStatus.FAILED,
+            paymentFailureReason: error instanceof Error ? error.message.slice(0, 500) : "Payment initialization failed",
+          },
+        })
+        .catch(() => undefined);
     }
     return errorResponse(error, order?.id);
   }

@@ -188,6 +188,98 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+model PaymentAttempt {
+  id            String               @id @default(cuid())
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  orderId       String
+  provider      String               @default("PAYMOB")
+  method        PaymentMethod
+  status        PaymentAttemptStatus @default(CREATED)
+  amountCents   Int
+  currency      String
+  externalId    String?
+  paymentUrl    String?
+  failureReason String?
+  metadata      Json?
+  order         Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model WebhookEvent {
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  eventKey       String    @unique
+  eventType      String
+  transactionId  String?
+  validSignature Boolean
+  processed      Boolean   @default(false)
+  processedAt    DateTime?
+  errorMessage   String?
+  payload        Json
+  orderId        String?
+  order          Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@index([transactionId])
+  @@index([createdAt])
+}
+
+model AdminAuditLog {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  adminId       String?
+  orderId       String?
+  action        String
+  previousValue String?
+  newValue      String?
+  metadata      Json?
+  admin         User?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+
+  @@index([adminId])
+  @@index([orderId])
+  @@index([createdAt])
+}
+
+model StoreSetting {
+  id            String   @id @default("store")
+  storeName     String   @default("Too Good For Merch")
+  currency      String   @default("USD")
+  taxRateBps    Int      @default(0)
+  shippingCents Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+model PricingRule {
+  id        String   @id @default(cuid())
+  product   String
+  fabric    String
+  minQty    Int
+  maxQty    Int
+  unitPrice Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([product])
+  @@index([fabric])
+  @@index([minQty])
+  @@index([maxQty])
+}
+
+model PlacementPricingRule {
+  id        String        @id @default(cuid())
+  placement PlacementType @unique
+  unitPrice Float
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([placement])
+}
+
 enum Role {
   ADMIN
   USER
@@ -259,90 +351,4 @@ enum PaymentAttemptStatus {
   PENDING
   SUCCEEDED
   FAILED
-}
-
-model PaymentAttempt {
-  id            String               @id @default(cuid())
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  orderId       String
-  provider      String               @default("PAYMOB")
-  method        PaymentMethod
-  status        PaymentAttemptStatus @default(CREATED)
-  amountCents   Int
-  currency      String
-  externalId    String?
-  paymentUrl    String?
-  failureReason String?
-  metadata      Json?
-  order         Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
-
-  @@index([orderId])
-  @@index([status])
-  @@index([createdAt])
-}
-
-model WebhookEvent {
-  id             String    @id @default(cuid())
-  createdAt      DateTime  @default(now())
-  eventKey       String    @unique
-  eventType      String
-  transactionId  String?
-  validSignature Boolean
-  processed      Boolean   @default(false)
-  processedAt    DateTime?
-  errorMessage   String?
-  payload        Json
-  orderId        String?
-  order          Order?    @relation(fields: [orderId], references: [id], onDelete: SetNull)
-
-  @@index([orderId])
-  @@index([transactionId])
-  @@index([createdAt])
-}
-
-model AdminAuditLog {
-  id            String   @id @default(cuid())
-  createdAt     DateTime @default(now())
-  adminId       String?
-  orderId       String?
-  action        String
-  previousValue String?
-  newValue      String?
-  metadata      Json?
-  admin         User?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
-  order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
-
-  @@index([adminId])
-  @@index([orderId])
-  @@index([createdAt])
-}
-
-model StoreSetting {
-  id            String   @id @default("store")
-  storeName     String   @default("Too Good For Merch")
-  currency      String   @default("USD")
-  taxRateBps    Int      @default(0)
-  shippingCents Int      @default(0)
-  updatedAt     DateTime @updatedAt
-}
-
-model PricingRule {
-  id String @id @default(cuid())
-
-  product String
-  fabric  String
-
-  minQty Int
-  maxQty Int
-
-  unitPrice Float
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([product])
-  @@index([fabric])
-  @@index([minQty])
-  @@index([maxQty])
 }

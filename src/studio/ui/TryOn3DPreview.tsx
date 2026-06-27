@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import type { CSSProperties } from "react";
 import type { GarmentColor, ProductType } from "@prisma/client";
 
 type PreviewSide = "front" | "back";
@@ -20,6 +21,12 @@ type TryOn3DPreviewProps = {
   color: GarmentColor | null;
   artworkUrl: string | null;
   activePlacement?: PlacementKey;
+  artworkTransform?: {
+    x: number;
+    y: number;
+    scale: number;
+  };
+  generatedMockupUrl?: string | null;
 };
 
 const PLACEMENT_SIDES: Record<PlacementKey, "front" | "back"> = {
@@ -54,7 +61,14 @@ function getPreviewLabel(product: ProductType | null, color: GarmentColor | null
   return `${productLabel} / ${colorLabel}`;
 }
 
-export default function TryOn3DPreview({ product, color, artworkUrl, activePlacement }: TryOn3DPreviewProps) {
+export default function TryOn3DPreview({
+  product,
+  color,
+  artworkUrl,
+  activePlacement,
+  artworkTransform,
+  generatedMockupUrl,
+}: TryOn3DPreviewProps) {
   const [previewSide, setPreviewSide] = useState<PreviewSide>("front");
 
   // ده بيخلي البريفيو الخارجي يلف تلقائي مع اختيارك من المودال
@@ -66,18 +80,27 @@ export default function TryOn3DPreview({ product, color, artworkUrl, activePlace
 
   const frontImage = useMemo(() => getFrontModelImage(product, color), [color, product]);
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
-  const modelImage = previewSide === "front" ? frontImage : backImage;
+  const generatedMockupSide = activePlacement ? PLACEMENT_SIDES[activePlacement] : "front";
+  const showingGeneratedMockup = Boolean(
+    generatedMockupUrl && previewSide === generatedMockupSide,
+  );
+  const modelImage = showingGeneratedMockup
+    ? generatedMockupUrl!
+    : previewSide === "front"
+      ? frontImage
+      : backImage;
 
   const shouldShowArtwork = useMemo(() => {
+    if (showingGeneratedMockup) return false;
     if (!artworkUrl || !activePlacement) return false;
     return previewSide === (PLACEMENT_SIDES[activePlacement] || "front");
-  }, [artworkUrl, activePlacement, previewSide]);
+  }, [artworkUrl, activePlacement, previewSide, showingGeneratedMockup]);
 
   // دي الإحداثيات المخصصة عشان اللوجو ينزل على صورة الموديل (البنت) بالظبط بدون أي ترحيل
   const artworkStyle = useMemo(() => {
     if (!activePlacement) return {};
     const isOversized = product === "OVERSIZED";
-    const styles: Record<"OVERSIZED" | "FITTED", Record<PlacementKey, React.CSSProperties>> = {
+    const styles: Record<"OVERSIZED" | "FITTED", Record<PlacementKey, CSSProperties>> = {
       OVERSIZED: {
         CENTER_FRONT: { top: "48%", left: "50%", transform: "translateX(-50%)", width: "22%", height: "auto" },
         FULL_FRONT: { top: "46%", left: "50%", transform: "translateX(-50%)", width: "26%", height: "auto" },
@@ -102,6 +125,12 @@ export default function TryOn3DPreview({ product, color, artworkUrl, activePlace
     const key = isOversized ? "OVERSIZED" : "FITTED";
     return styles[key][activePlacement];
   }, [product, activePlacement]);
+
+  const artworkTransformStyle = useMemo(() => {
+    const baseTransform = typeof artworkStyle.transform === "string" ? artworkStyle.transform : "";
+    const transform = artworkTransform ?? { x: 0, y: 0, scale: 1 };
+    return `${baseTransform} translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`.trim();
+  }, [artworkStyle, artworkTransform]);
 
   function cnDot(active: boolean) {
     return active
@@ -145,7 +174,8 @@ export default function TryOn3DPreview({ product, color, artworkUrl, activePlace
               zIndex: 30, 
               mixBlendMode: color === "WHITE" ? "multiply" : "normal",
               opacity: color === "WHITE" ? 0.95 : 1,
-              ...artworkStyle 
+              ...artworkStyle,
+              transform: artworkTransformStyle,
             }}
             draggable={false}
           />

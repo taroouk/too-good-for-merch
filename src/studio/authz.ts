@@ -11,10 +11,10 @@ export async function getUserId(): Promise<string | null> {
 
   const user = await prisma.user.findUnique({
     where: { id: sessionUserId },
-    select: { id: true },
+    select: { id: true, blockedAt: true },
   });
 
-  return user?.id ?? null;
+  return user && !user.blockedAt ? user.id : null;
 }
 
 // Use ONLY at checkout

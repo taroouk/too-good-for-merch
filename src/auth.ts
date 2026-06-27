@@ -3,6 +3,7 @@ import Credentials from "next-auth/providers/credentials";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { Role } from "@prisma/client";
 import { prisma } from "./lib/prisma";
+import { clientIpFromHeaders, rateLimitByKey } from "./lib/rate-limit";
 import argon2 from "argon2";
 import { getServerSession } from "next-auth";
 
@@ -19,11 +20,18 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
 
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         const email = credentials?.email?.toString().toLowerCase().trim();
         const password = credentials?.password?.toString();
+        const ip = clientIpFromHeaders(req?.headers);
+        const limit = rateLimitByKey(
+          "auth:login",
+          `${ip}:${email ?? "unknown"}`,
+          10,
+          10 * 60 * 1000,
+        );
 
-        if (!email || !password) {
+        if (!limit.ok || !email || !password) {
           return null;
         }
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
+import AuthAction from "src/components/AuthAction";
 
 function cn(...classes: (string | false | null | undefined)[]) {
   return classes.filter(Boolean).join(" ");
@@ -17,24 +17,10 @@ export default function StudioNavbar({
 }) {
   const pathname = usePathname();
 
-  const { data: session } = useSession();
-
-  const projectsHref = session
-    ? "/studio/projects"
-    : "/login";
-
   const tabs = [
     {
       name: "Builder",
       href: `/studio/projects/${projectId}/builder`,
-    },
-    {
-      name: "Assets",
-      href: `/studio/projects/${projectId}/assets`,
-    },
-    {
-      name: "Designs",
-      href: `/studio/projects/${projectId}/designs`,
     },
   ];
 
@@ -58,38 +44,9 @@ export default function StudioNavbar({
           </Link>
 
           <nav className="studio-breadcrumb" aria-label="Main navigation">
-            <Link
-              href={projectsHref}
-              className="studio-breadcrumb-link"
-            >
-              Projects
+            <Link href="/" className="studio-breadcrumb-link">
+              Home
             </Link>
-
-            <span className="studio-breadcrumb-separator">/</span>
-
-            {!session ? (
-              <>
-                <Link
-                  href="/login"
-                  className="studio-breadcrumb-current"
-                >
-                  Sign In
-                </Link>
-
-                <span className="studio-breadcrumb-separator">/</span>
-
-                <Link
-                  href="/register"
-                  className="studio-breadcrumb-current"
-                >
-                  Sign Up
-                </Link>
-              </>
-            ) : (
-              <span className="studio-breadcrumb-current">
-                My Account
-              </span>
-            )}
           </nav>
         </div>
 
@@ -115,6 +72,7 @@ export default function StudioNavbar({
               </Link>
             );
           })}
+          <AuthAction className="studio-navbar-tab studio-navbar-tab-idle authActionReset" />
         </nav>
       </div>
     </header>

@@ -1,6 +1,6 @@
 "use server";
 
-import { Prisma } from "@prisma/client";
+import { FabricType, Prisma, ProductType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "src/lib/admin/auth";
@@ -13,6 +13,8 @@ function readNumber(formData: FormData, key: string) {
   return value;
 }
 
+const PRICED_PRODUCTS: ProductType[] = [ProductType.FITTED, ProductType.OVERSIZED];
+
 export async function createPricingRuleAction(formData: FormData) {
   const admin = await requireAdmin();
   const product = readString(formData, "product");
@@ -20,7 +22,14 @@ export async function createPricingRuleAction(formData: FormData) {
   const minQty = Math.floor(readNumber(formData, "minQty"));
   const maxQty = Math.floor(readNumber(formData, "maxQty"));
   const unitPrice = readNumber(formData, "unitPrice");
-  if (!product || !fabric || minQty < 1 || maxQty < minQty || unitPrice <= 0) throw new Error("Invalid pricing rule.");
+  if (
+    !PRICED_PRODUCTS.includes(product as ProductType) ||
+    !Object.values(FabricType).includes(fabric as FabricType) ||
+    minQty < 1 ||
+    maxQty < minQty ||
+    maxQty > 500 ||
+    unitPrice <= 0
+  ) throw new Error("Invalid pricing rule.");
   await prisma.$transaction([
     prisma.pricingRule.create({ data: { product, fabric, minQty, maxQty, unitPrice } }),
     prisma.adminAuditLog.create({ data: { adminId: admin.id, action: "PRICING_RULE_CREATED", metadata: { product, fabric, minQty, maxQty, unitPrice } as Prisma.InputJsonValue } }),

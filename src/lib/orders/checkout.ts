@@ -1,12 +1,13 @@
 import { randomBytes } from "node:crypto";
-import { GarmentColor, PaymentStatus, Prisma, ProductType, FabricType } from "@prisma/client";
+import { FabricType, GarmentColor, PaymentStatus, Prisma, ProductType } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { computePrice } from "src/pricing/engine";
-
-const PLACEMENTS = new Set([
-  "LEFT_CHEST", "RIGHT_CHEST", "RIGHT_SLEEVE", "LEFT_SLEEVE",
-  "CENTER_FRONT", "FULL_FRONT", "CENTER_BACK", "FULL_BACK",
-]);
+import {
+  placementsFromCustomNotes,
+  placementsOrDefault,
+  normalizePlacements,
+} from "src/pricing/placements";
+import { canAccessBuild } from "src/studio/permissions";
 
 export class CheckoutError extends Error {
   constructor(message: string, public status = 400) {
@@ -45,12 +46,20 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     include: { draft: true },
   });
   if (!build?.draft) throw new CheckoutError("Build not found.", 404);
-  if (build.userId && build.userId !== userId) throw new CheckoutError("You cannot checkout this build.", 403);
+  if (!(await canAccessBuild(userId, build))) {
+    throw new CheckoutError("You cannot checkout this build.", 403);
+  }
 
-  const { product, fabric, color, quantity, primaryAssetId } = build.draft;
+  const { product, fabric, color, quantity, primaryAssetId, customNotes } = build.draft;
   if (!product || !fabric || !color) throw new CheckoutError("Complete the product selection before checkout.");
 
-  const quote = await computePrice({ product, fabric, quantity });
+  const requestedPlacements = normalizePlacements(input.placements);
+  const draftPlacements = placementsFromCustomNotes(customNotes);
+  const safePlacements = placementsOrDefault(
+    requestedPlacements.length ? requestedPlacements : draftPlacements,
+  );
+
+  const quote = await computePrice({ product, fabric, quantity, placements: safePlacements });
   if (quote.mode !== "standard") throw new CheckoutError(quote.message);
 
   if (primaryAssetId) {
@@ -58,10 +67,6 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     if (!asset) throw new CheckoutError("The selected artwork is invalid.");
   }
 
-  const placements = Array.isArray(input.placements)
-    ? [...new Set(input.placements.filter((value): value is string => typeof value === "string" && PLACEMENTS.has(value)))].slice(0, 8)
-    : [];
-  const safePlacements = placements.length ? placements : ["CENTER_FRONT"];
   const size = ["S", "M", "L", "XL"].includes(String(input.size)) ? String(input.size) : "M";
   const subtotalCents = Math.round(quote.total * 100);
   const settings = await prisma.storeSetting.findUnique({ where: { id: "store" } }).catch(() => null);
@@ -94,7 +99,15 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
             unitPriceCents: Math.round(quote.unit * 100),
             totalCents: subtotalCents,
             placements: safePlacements,
-            preview: { size, notes: cleanText(build.draft?.customNotes, 2000), taxCents, shippingCents } as Prisma.InputJsonValue,
+            preview: {
+              size,
+              notes: cleanText(build.draft?.customNotes, 2000),
+              taxCents,
+              shippingCents,
+              baseUnitCents: Math.round(quote.baseUnit * 100),
+              placementUnitCents: Math.round(quote.placementUnit * 100),
+              placementTotalCents: Math.round(quote.placementTotal * 100),
+            } as Prisma.InputJsonValue,
             assetId: primaryAssetId,
           },
         },

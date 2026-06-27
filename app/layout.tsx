@@ -1,5 +1,6 @@
 import "./globals.css";
 import localFont from "next/font/local";
+import GlobalAuthAction from "src/components/GlobalAuthAction";
 import Providers from "src/components/Providers";
 import { ReactNode } from "react";
 
@@ -37,7 +38,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           antialiased
         `}
       >
-        <Providers>{children}</Providers>
+        <Providers>
+          <GlobalAuthAction />
+          {children}
+        </Providers>
       </body>
     </html>
   );

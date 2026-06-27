@@ -1,12 +1,14 @@
 import { OrderStatus, PaymentAttemptStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
+import { apiError } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { paymentFailureReason, verifyPaymobHmac, webhookEventKey } from "src/lib/payments/paymob";
 
 export const runtime = "nodejs";
+const MAX_WEBHOOK_BYTES = 256 * 1024;
 
 function asObject(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
 }
 
 function safePayload(value: unknown): Prisma.InputJsonValue {
@@ -16,11 +18,15 @@ function safePayload(value: unknown): Prisma.InputJsonValue {
 
 export async function POST(req: Request) {
   const raw = await req.text();
+  if (Buffer.byteLength(raw, "utf8") > MAX_WEBHOOK_BYTES) {
+    return apiError("Webhook payload is too large.", 413);
+  }
+
   let body: Record<string, unknown>;
   try {
     body = JSON.parse(raw) as Record<string, unknown>;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON." }, { status: 400 });
+    return apiError("Invalid JSON.", 400);
   }
 
   const object = asObject(body.obj ?? body);
@@ -33,7 +39,7 @@ export async function POST(req: Request) {
 
   try {
     await prisma.webhookEvent.create({
-      data: { eventKey, eventType, transactionId, validSignature, payload: eventPayload as Prisma.InputJsonValue },
+      data: { eventKey, eventType, transactionId, validSignature, payload: eventPayload },
     });
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
@@ -43,12 +49,16 @@ export async function POST(req: Request) {
   }
 
   if (!validSignature) {
-    await prisma.webhookEvent.update({ where: { eventKey }, data: { errorMessage: "Invalid HMAC signature" } });
-    return NextResponse.json({ error: "Invalid signature." }, { status: 401 });
+    await prisma.webhookEvent.update({
+      where: { eventKey },
+      data: { errorMessage: "Invalid HMAC signature" },
+    });
+    return apiError("Invalid signature.", 401);
   }
 
   const remoteOrder = asObject(object.order);
-  const paymobOrderId = remoteOrder.id == null ? (typeof object.order === "number" ? String(object.order) : "") : String(remoteOrder.id);
+  const paymobOrderId =
+    remoteOrder.id == null ? (typeof object.order === "number" ? String(object.order) : "") : String(remoteOrder.id);
   const merchantOrderId = remoteOrder.merchant_order_id == null ? "" : String(remoteOrder.merchant_order_id);
   const order = await prisma.order.findFirst({
     where: {
@@ -60,8 +70,11 @@ export async function POST(req: Request) {
   });
 
   if (!order) {
-    await prisma.webhookEvent.update({ where: { eventKey }, data: { errorMessage: "Order not found", processedAt: new Date() } });
-    return NextResponse.json({ error: "Order not found." }, { status: 404 });
+    await prisma.webhookEvent.update({
+      where: { eventKey },
+      data: { errorMessage: "Order not found", processedAt: new Date() },
+    });
+    return apiError("Order not found.", 404);
   }
 
   const amountMatches = Number(object.amount_cents) === order.totalCents;
@@ -71,7 +84,7 @@ export async function POST(req: Request) {
       where: { eventKey },
       data: { orderId: order.id, errorMessage: "Payment amount or currency mismatch", processedAt: new Date() },
     });
-    return NextResponse.json({ error: "Payment data mismatch." }, { status: 422 });
+    return apiError("Payment data mismatch.", 422);
   }
 
   const succeeded = object.success === true && object.pending !== true && object.error_occured !== true;
@@ -114,7 +127,11 @@ export async function POST(req: Request) {
       await tx.paymentAttempt.update({
         where: { id: attempt.id },
         data: {
-          status: succeeded ? PaymentAttemptStatus.SUCCEEDED : failed ? PaymentAttemptStatus.FAILED : PaymentAttemptStatus.PENDING,
+          status: succeeded
+            ? PaymentAttemptStatus.SUCCEEDED
+            : failed
+              ? PaymentAttemptStatus.FAILED
+              : PaymentAttemptStatus.PENDING,
           failureReason: failed ? paymentFailureReason(object) : null,
           metadata: { transactionId, paymobOrderId } as Prisma.InputJsonValue,
         },

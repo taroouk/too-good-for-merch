@@ -1,7 +1,17 @@
 import { prisma } from "src/lib/prisma";
+import { placementsOrDefault, type PlacementKey } from "src/pricing/placements";
 
 export type PriceResult =
-  | { mode: "standard"; unit: number; total: number; currency: string }
+  | {
+      mode: "standard";
+      unit: number;
+      total: number;
+      currency: string;
+      baseUnit: number;
+      placementUnit: number;
+      placementTotal: number;
+      placements: PlacementKey[];
+    }
   | {
       mode: "custom" | "bulk";
       unit: null;
@@ -36,13 +46,16 @@ export async function computePrice({
   product,
   fabric,
   quantity,
+  placements,
 }: {
   product: string | null;
   fabric: string | null;
   quantity: number;
+  placements?: unknown;
 }): Promise<PriceResult> {
   const currency = storeCurrency();
   const qty = Math.max(1, Math.min(500, Math.floor(Number(quantity) || 1)));
+  const normalizedPlacements = placementsOrDefault(placements);
 
   if (product === "CUSTOM") {
     return { mode: "custom", unit: null, total: null, currency, message: "Custom garments require a tailored quote." };
@@ -60,16 +73,31 @@ export async function computePrice({
   }).catch(() => null);
 
   const rangeIndex = RANGES.findIndex(([min, max]) => qty >= min && qty <= max);
-  const unit = rule?.unitPrice ?? FALLBACK_PRICES[product]?.[fabric]?.[rangeIndex];
+  const baseUnit = rule?.unitPrice ?? FALLBACK_PRICES[product]?.[fabric]?.[rangeIndex];
 
-  if (!unit || !Number.isFinite(unit) || unit <= 0) {
+  if (!baseUnit || !Number.isFinite(baseUnit) || baseUnit <= 0) {
     return { mode: "custom", unit: null, total: null, currency, message: "No pricing found" };
   }
+
+  const placementRules = await prisma.placementPricingRule
+    .findMany({
+      where: { placement: { in: normalizedPlacements } },
+      select: { placement: true, unitPrice: true },
+    })
+    .catch(() => []);
+  const placementUnit = placementRules.reduce((total, rule) => {
+    return total + (Number.isFinite(rule.unitPrice) && rule.unitPrice > 0 ? rule.unitPrice : 0);
+  }, 0);
+  const unit = baseUnit + placementUnit;
 
   return {
     mode: "standard",
     unit: Number(unit.toFixed(2)),
     total: Number((unit * qty).toFixed(2)),
     currency,
+    baseUnit: Number(baseUnit.toFixed(2)),
+    placementUnit: Number(placementUnit.toFixed(2)),
+    placementTotal: Number((placementUnit * qty).toFixed(2)),
+    placements: normalizedPlacements,
   };
 }

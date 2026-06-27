@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -17,6 +18,11 @@ import {
   actionCreateAssetForBuilder,
 } from "src/actions/asset-actions";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
+import {
+  placementsFromCustomNotes,
+  upsertPlacementsInNotes,
+  type PlacementKey,
+} from "src/pricing/placements";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
 type PriceResult =
@@ -34,22 +40,14 @@ type DraftDTO = Pick<
   "product" | "color" | "fabric" | "quantity" | "customNotes" | "primaryAssetId"
 >;
 
-type PlacementKey =
-  | "LEFT_CHEST"
-  | "RIGHT_CHEST"
-  | "RIGHT_SLEEVE"
-  | "LEFT_SLEEVE"
-  | "CENTER_FRONT"
-  | "FULL_FRONT"
-  | "CENTER_BACK"
-  | "FULL_BACK";
-
 type UserAssetDTO = {
   id: string;
   buildId?: string | null;
   url: string;
   fileName: string;
 };
+
+type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
 
 type BuilderClientProps = {
   buildId: string;
@@ -60,17 +58,23 @@ type BuilderClientProps = {
   walletEnabled?: boolean;
 };
 
-type CreateOrderResponse = {
-  orderId: string;
-  orderNumber: string;
-  totalCents: number;
-  error?: string;
-};
-
 type SizeOption = "S" | "M" | "L" | "XL";
 type AuthMode = "login" | "signup";
+type ArtworkTransform = {
+  x: number;
+  y: number;
+  scale: number;
+};
 
 const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
+const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1 };
+const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
+const ALLOWED_ARTWORK_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+]);
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
@@ -81,9 +85,31 @@ function clampQty(qty: number) {
   return Math.max(1, Math.min(9999, Math.floor(qty)));
 }
 
+function clampArtworkScale(scale: number) {
+  if (!Number.isFinite(scale)) return 1;
+  return Math.max(0.4, Math.min(2.4, scale));
+}
+
+function getBespokeShirtImage(
+  product: ProductType | null,
+  color: GarmentColor | null,
+  placement: PlacementKey,
+) {
+  const isBack = placement.includes("BACK");
+  const isOversized = product === "OVERSIZED";
+  const isBlack = color === "BLACK";
+
+  if (isOversized) {
+    if (isBack) return isBlack ? "/images/Oversized Black Back.png" : "/images/Oversized White Back.png";
+    return isBlack ? "/images/Oversized Black.png" : "/images/Oversized White.png";
+  }
+
+  if (isBack) return isBlack ? "/images/TGFM Black Back.png" : "/images/TGFM White Back.png";
+  return isBlack ? "/images/TGFM Black.png" : "/images/TGFM White.png";
+}
+
 export default function BuilderClient({
   buildId,
-  buildName: _buildName,
   draft,
   placementsCount,
   initialUserAssets = [],
@@ -102,11 +128,19 @@ export default function BuilderClient({
     quantity: draft.quantity ?? 1,
   });
 
-  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>([]);
+  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(() =>
+    placementsFromCustomNotes(draft.customNotes),
+  );
   const [activePlacement, setActivePlacement] = useState<PlacementKey>("CENTER_FRONT");
   const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
-  const [uploadName, setUploadName] = useState("");
+  const [, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+  const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(
+    DEFAULT_ARTWORK_TRANSFORM,
+  );
+  const [generatedMockupUrl, setGeneratedMockupUrl] = useState<string | null>(null);
+  const [mockupPending, setMockupPending] = useState(false);
+  const [mockupError, setMockupError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>("login");
   const [authEmail, setAuthEmail] = useState("");
@@ -118,7 +152,6 @@ export default function BuilderClient({
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<SizeOption>("M");
   const [fabricOpen, setFabricOpen] = useState(false);
-  const [summaryOpen, setSummaryOpen] = useState(false);
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const [isCreatingOrder, setIsCreatingOrder] = useState(false);
@@ -133,8 +166,18 @@ export default function BuilderClient({
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fabricMenuRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    origin: ArtworkTransform;
+  } | null>(null);
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
+  const pricingPlacements = useMemo<PlacementKey[]>(
+    () => (selectedPlacements.length ? selectedPlacements : ["CENTER_FRONT"]),
+    [selectedPlacements],
+  );
 
   const fabricOptions = [
     {
@@ -194,6 +237,11 @@ export default function BuilderClient({
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
   useEffect(() => {
+    setGeneratedMockupUrl(null);
+    setMockupError(null);
+  }, [activePlacement, state.color, state.primaryAssetId, state.product]);
+
+  useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
       if (!fabricOpen) return;
       if (!fabricMenuRef.current?.contains(event.target as Node)) {
@@ -219,6 +267,7 @@ export default function BuilderClient({
             product: state.product,
             fabric: state.fabric,
             quantity: qty,
+            placements: pricingPlacements,
           }),
         });
 
@@ -252,7 +301,7 @@ export default function BuilderClient({
     return () => {
       cancelled = true;
     };
-  }, [qty, state.fabric, state.product]);
+  }, [pricingPlacements, qty, state.fabric, state.product]);
 
   useEffect(() => {
     if (status !== "authenticated" || !showAuthModal) return;
@@ -270,7 +319,7 @@ export default function BuilderClient({
 
   useEffect(() => {
     setCheckoutOrderId(null);
-  }, [qty, state.color, state.fabric, state.product]);
+  }, [pricingPlacements, qty, state.color, state.fabric, state.product]);
 
   function save(next: DraftDTO) {
     setState(next);
@@ -287,9 +336,21 @@ export default function BuilderClient({
   }
 
   async function handleUpload(file: File) {
+    if (!ALLOWED_ARTWORK_MIME_TYPES.has(file.type)) {
+      setMockupError("Artwork must be PNG, JPG, WEBP, or SVG.");
+      return;
+    }
+    if (file.size <= 0 || file.size > MAX_ARTWORK_BYTES) {
+      setMockupError("Artwork file must be smaller than 10MB.");
+      return;
+    }
+
     const localUrl = URL.createObjectURL(file);
     setUploadName(file.name);
     setArtworkUrl(localUrl);
+    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+    setGeneratedMockupUrl(null);
+    setMockupError(null);
 
     const tempId = `temp-${Date.now()}`;
     const newLocalAsset: UserAssetDTO = {
@@ -301,12 +362,13 @@ export default function BuilderClient({
     setUserAssets((prev) => [newLocalAsset, ...prev]);
 
     const fd = new FormData();
+    fd.set("file", file);
     fd.set("fileName", file.name);
     fd.set("mimeType", file.type || "application/octet-stream");
     fd.set("sizeBytes", String(file.size || 0));
 
     startTransition(() => {
-      actionCreateAssetForBuilder(buildId, fd).then((res: any) => {
+      actionCreateAssetForBuilder(buildId, fd).then((res: CreatedAssetDTO) => {
         if (res && res.id) {
           setUserAssets((prev) =>
             prev.map((a) =>
@@ -325,13 +387,22 @@ export default function BuilderClient({
             primaryAssetId: res.id,
           });
         }
-      }).catch(() => {});
+      }).catch((error) => {
+        setUserAssets((prev) => prev.filter((asset) => asset.id !== tempId));
+        setArtworkUrl((current) => (current === localUrl ? null : current));
+        setUploadName("");
+        setMockupError(error instanceof Error ? error.message : "Could not upload artwork.");
+        URL.revokeObjectURL(localUrl);
+      });
     });
   }
 
   async function selectAsset(asset: UserAssetDTO) {
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
+    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+    setGeneratedMockupUrl(null);
+    setMockupError(null);
 
     if (!asset.buildId || asset.buildId === buildId) {
       save({ ...state, primaryAssetId: asset.id });
@@ -369,30 +440,124 @@ export default function BuilderClient({
   function removeSelectedArtwork() {
     setArtworkUrl(null);
     setUploadName("");
+    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+    setGeneratedMockupUrl(null);
+    setMockupError(null);
     save({ ...state, primaryAssetId: null });
   }
 
-function openCheckout() {
-  if (!price || price.mode !== "standard") {
-    alert("Pricing not ready");
+  function updateArtworkTransform(next: ArtworkTransform) {
+    setArtworkTransform({
+      x: Math.round(next.x),
+      y: Math.round(next.y),
+      scale: clampArtworkScale(next.scale),
+    });
+    setGeneratedMockupUrl(null);
+    setMockupError(null);
+  }
+
+  function changeArtworkScale(scale: number) {
+    updateArtworkTransform({
+      ...artworkTransform,
+      scale,
+    });
+  }
+
+  function resetArtworkTransform() {
+    updateArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+  }
+
+  function handleArtworkPointerDown(event: ReactPointerEvent<HTMLImageElement>) {
+    if (!artworkUrl || generatedMockupUrl) return;
+    event.preventDefault();
+    dragStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      origin: artworkTransform,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleArtworkPointerMove(event: ReactPointerEvent<HTMLImageElement>) {
+    const dragState = dragStateRef.current;
+    if (!dragState || dragState.pointerId !== event.pointerId) return;
+
+    updateArtworkTransform({
+      ...dragState.origin,
+      x: dragState.origin.x + event.clientX - dragState.startX,
+      y: dragState.origin.y + event.clientY - dragState.startY,
+    });
+  }
+
+  function handleArtworkPointerUp(event: ReactPointerEvent<HTMLImageElement>) {
+    if (dragStateRef.current?.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    dragStateRef.current = null;
+  }
+
+async function generateNanoBananaMockup() {
+  if (!state.primaryAssetId || !activeArtworkAsset) {
+    setMockupError("Select artwork first.");
     return;
   }
 
-  if (!state.product || !state.fabric || !state.color) {
-    alert("Please complete selection");
-    return;
-  }
+  setMockupPending(true);
+  setMockupError(null);
 
-  if (status !== "authenticated") {
-    setCheckoutAfterAuth(true);
-    requestAuth("login");
-    return;
-  }
+  try {
+    const response = await fetch("/api/mockups/nanobanana", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        buildId,
+        assetId: state.primaryAssetId,
+        product: state.product,
+        color: state.color,
+        placement: activePlacement,
+      }),
+    });
 
-  setCustomerEmail((current) => current || session?.user?.email || "");
-  setCheckoutError(null);
-  setShowCheckout(true);
+    const data = await response.json().catch(() => null);
+
+    if (!response.ok || !data?.ok) {
+      throw new Error(data?.error ?? "Could not generate mockup.");
+    }
+
+    // ✅ التغيير هنا فقط: fallback آمن
+    setGeneratedMockupUrl(data.imageUrl || activeArtworkAsset.url);
+
+  } catch (error) {
+    setGeneratedMockupUrl(activeArtworkAsset?.url ?? null); // fallback آمن
+    setMockupError(
+      error instanceof Error ? error.message : "Could not generate mockup."
+    );
+  } finally {
+    setMockupPending(false);
+  }
 }
+
+  function openCheckout() {
+    if (!price || price.mode !== "standard") {
+      alert("Pricing not ready");
+      return;
+    }
+
+    if (!state.product || !state.fabric || !state.color) {
+      alert("Please complete selection");
+      return;
+    }
+
+    if (status !== "authenticated") {
+      setShowAuthModal(true);
+      return;
+    }
+
+    // ✅ بدل popup القديم → redirect مباشر
+    router.push(`/checkout?buildId=${buildId}`);
+  }
 
 async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   event.preventDefault();
@@ -527,8 +692,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
 
     save({
       ...state,
-      product: "CUSTOM" as ProductType,
-      customNotes: JSON.stringify({ placement: next }),
+      customNotes: upsertPlacementsInNotes(state.customNotes, next),
     });
   }
 
@@ -537,7 +701,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     : state.product === "CUSTOM"
       ? "Custom garments require a tailored quote."
       : price?.mode === "standard"
-        ? `$${price.total.toFixed(2)}`
+        ? `${price.currency} ${price.total.toFixed(2)}`
         : price?.message ?? "Pricing unavailable";
 
   const selectionSummary = [
@@ -559,7 +723,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   // إحداثيات مصممة خصيصاً لتتناسب مع صورة front-tshirt.png المفرغة اللي في المودال
   const bespokeArtworkStyle = useMemo(() => {
     if (!activePlacement) return {};
-    const styles: Record<PlacementKey, React.CSSProperties> = {
+    const styles: Record<PlacementKey, CSSProperties> = {
       CENTER_FRONT: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
       FULL_FRONT: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
       LEFT_CHEST: { top: "32%", left: "62%", transform: "translateX(-50%)", width: "10%", height: "auto" }, 
@@ -571,6 +735,16 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     };
     return styles[activePlacement];
   }, [activePlacement]);
+
+  const bespokeShirtSrc = useMemo(
+    () => getBespokeShirtImage(state.product, state.color, activePlacement),
+    [activePlacement, state.color, state.product],
+  );
+  const bespokeArtworkTransform = useMemo(() => {
+    const baseTransform =
+      typeof bespokeArtworkStyle.transform === "string" ? bespokeArtworkStyle.transform : "";
+    return `${baseTransform} translate(${artworkTransform.x}px, ${artworkTransform.y}px) scale(${artworkTransform.scale})`.trim();
+  }, [artworkTransform, bespokeArtworkStyle]);
 
   const authPopup =
     mounted && showAuthModal
@@ -838,28 +1012,33 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
 
               <div className="studio-bespoke-preview">
                 <div className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                  {/* هنا حافظت لك على صورتك الأصلية بتاعت المودال بدون تغيير */}
                  <img
-  src={activePlacement.includes("BACK") ? "/images/back-tshirt.png" : "/images/front-tshirt.png"}
-  alt="T-shirt preview"
-  className="studio-bespoke-shirt"
-  style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
-/>
+                    src={generatedMockupUrl ?? bespokeShirtSrc}
+                    alt="T-shirt preview"
+                    className="studio-bespoke-shirt"
+                    style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+                  />
 
-                  {/* ده اللوجو اللي بينزل فوق صورتك بالإحداثيات المظبوطة */}
-                  {artworkUrl && (
+                  {artworkUrl && !generatedMockupUrl ? (
                     <img
                       src={artworkUrl!}
                       alt="Artwork preview"
-                      className="studio-bespoke-artwork"
+                      className="studio-bespoke-artwork studio-bespoke-artwork-draggable"
                       style={{ 
                         position: "absolute", 
                         zIndex: 40, 
-                        mixBlendMode: "multiply", 
-                        ...bespokeArtworkStyle 
+                        mixBlendMode: state.color === "WHITE" ? "multiply" : "normal",
+                        opacity: state.color === "WHITE" ? 0.95 : 1,
+                        ...bespokeArtworkStyle,
+                        transform: bespokeArtworkTransform,
                       }}
+                      draggable={false}
+                      onPointerDown={handleArtworkPointerDown}
+                      onPointerMove={handleArtworkPointerMove}
+                      onPointerUp={handleArtworkPointerUp}
+                      onPointerCancel={handleArtworkPointerUp}
                     />
-                  )}
+                  ) : null}
                 </div>
 
                 <div className="studio-bespoke-placement-area">
@@ -924,16 +1103,81 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                           className="studio-selected-artwork-image"
                         />
                       </div>
-                    ) : null}
-
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="studio-selected-artwork-add"
-                    >
-                      + Add
-                    </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="studio-selected-artwork-add"
+                      >
+                        + Add
+                      </button>
+                    )}
                   </div>
+
+                  {activeArtworkAsset ? (
+                    <div className="studio-artwork-tools">
+                      <div className="studio-artwork-transform-controls">
+                        <button
+                          type="button"
+                          onClick={() => changeArtworkScale(artworkTransform.scale - 0.1)}
+                          aria-label="Zoom artwork out"
+                        >
+                          -
+                        </button>
+                        <input
+                          type="range"
+                          min="0.4"
+                          max="2.4"
+                          step="0.05"
+                          value={artworkTransform.scale}
+                          onChange={(event) => changeArtworkScale(Number(event.target.value))}
+                          aria-label="Artwork zoom"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => changeArtworkScale(artworkTransform.scale + 0.1)}
+                          aria-label="Zoom artwork in"
+                        >
+                          +
+                        </button>
+                        <button
+                          type="button"
+                          onClick={resetArtworkTransform}
+                          className="studio-artwork-reset-button"
+                        >
+                          Reset
+                        </button>
+                      </div>
+
+                      <div className="studio-nanobanana-actions">
+                        <button
+                          type="button"
+                          onClick={() => void generateNanoBananaMockup()}
+                          disabled={mockupPending || !state.primaryAssetId}
+                          className="studio-nanobanana-button"
+                        >
+                          {mockupPending
+                            ? "Generating..."
+                            : generatedMockupUrl
+                              ? "Regenerate Nano Banana Mockup"
+                              : "Generate Nano Banana Mockup"}
+                        </button>
+                        {generatedMockupUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setGeneratedMockupUrl(null)}
+                            className="studio-artwork-edit-button"
+                          >
+                            Edit Placement
+                          </button>
+                        ) : null}
+                      </div>
+
+                      {mockupError ? (
+                        <div className="studio-bespoke-error">{mockupError}</div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
 
                 <button
@@ -948,9 +1192,8 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                   <div className="studio-bespoke-label">Your Uploads</div>
 
                   <div className="studio-upload-grid">
-                    {Array.from({ length: Math.max(4, userAssets.length) }).map((_, index) => {
-                      const asset = userAssets[index];
-                      if (asset) {
+                    {userAssets.length ? (
+                      userAssets.map((asset) => {
                         const isCurrentActive = state.primaryAssetId === asset.id || artworkUrl === asset.url;
                         return (
                           <button
@@ -971,18 +1214,10 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                             />
                           </button>
                         );
-                      }
-                      return (
-                        <button
-                          key={index}
-                          type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="studio-upload-slot"
-                        >
-                          <span className="studio-upload-placeholder">▧</span>
-                        </button>
-                      );
-                    })}
+                      })
+                    ) : (
+                      <div className="studio-upload-empty">No uploads yet</div>
+                    )}
                   </div>
                 </div>
 
@@ -1285,6 +1520,8 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
               color={state.color}
               artworkUrl={artworkUrl}
               activePlacement={activePlacement}
+              artworkTransform={artworkTransform}
+              generatedMockupUrl={generatedMockupUrl}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
@@ -1375,14 +1612,23 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                 </div>
 
                 <div className="studio-action-row">
-                  <button
-                    type="button"
-                    onClick={openCheckout}
-                    disabled={!isStandardCheckout || isCreatingOrder}
-                    className="studio-add-button"
-                  >
-                    {isCreatingOrder ? "Creating..." : "Checkout"}
-                  </button>
+<button
+  onClick={openCheckout}
+  disabled={!isStandardCheckout || isCreatingOrder}
+  className="
+    studio-add-button
+  "
+>
+  <span className="flex items-center justify-center gap-2">
+    Checkout
+    <span className="transition-transform duration-300 group-hover:translate-x-1">
+      →
+    </span>
+  </span>
+
+  {/* underline animation */}
+  <span className="absolute bottom-0 left-0 h-[1px] w-0 bg-black transition-all duration-300 hover:w-full" />
+</button>
 
                   <button type="button" className="studio-wishlist-button">
                     Add To Wishlist
