@@ -74,6 +74,9 @@ const ALLOWED_ARTWORK_MIME_TYPES = new Set([
   "image/jpeg",
   "image/webp",
   "image/svg+xml",
+  "image/jpg",
+  "image/pjpeg",
+  "image/pjp",
 ]);
 
 function cn(...parts: Array<string | false | null | undefined>) {
@@ -517,6 +520,7 @@ async function generateNanoBananaMockup() {
         product: state.product,
         color: state.color,
         placement: activePlacement,
+        artworkTransform,
       }),
     });
 
@@ -526,11 +530,14 @@ async function generateNanoBananaMockup() {
       throw new Error(data?.error ?? "Could not generate mockup.");
     }
 
-    // ✅ التغيير هنا فقط: fallback آمن
-    setGeneratedMockupUrl(data.imageUrl || activeArtworkAsset.url);
+    if (typeof data.imageUrl !== "string" || !data.imageUrl) {
+      throw new Error("Gemini did not return a mockup image.");
+    }
+
+    setGeneratedMockupUrl(data.imageUrl);
 
   } catch (error) {
-    setGeneratedMockupUrl(activeArtworkAsset?.url ?? null); // fallback آمن
+    setGeneratedMockupUrl(null);
     setMockupError(
       error instanceof Error ? error.message : "Could not generate mockup."
     );
