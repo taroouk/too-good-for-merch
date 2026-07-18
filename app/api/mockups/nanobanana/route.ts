@@ -588,7 +588,7 @@ export async function POST(req: Request) {
         ],
         response_format: {
           type: "image",
-          mime_type: "image/png",
+          mime_type: "image/jpeg",
         },
         generation_config: {
           temperature: 0,
