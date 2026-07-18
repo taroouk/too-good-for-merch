@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react";
+import type {
+  ChangeEvent,
+  CSSProperties,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { createPortal } from "react-dom";
+import * as htmlToImage from "html-to-image";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type {
@@ -23,6 +28,16 @@ import {
   upsertPlacementsInNotes,
   type PlacementKey,
 } from "src/pricing/placements";
+import CheckoutButton from "src/studio/ui/components/CheckoutButton";
+import ColorSelector from "src/studio/ui/components/ColorSelector";
+import FabricSelector from "src/studio/ui/components/FabricSelector";
+import PriceCard from "src/studio/ui/components/PriceCard";
+import ProductSelector from "src/studio/ui/components/ProductSelector";
+import QuantitySelector from "src/studio/ui/components/QuantitySelector";
+import ArtworkModal from "src/studio/ui/modals/ArtworkModal";
+import AuthModal from "src/studio/ui/modals/AuthModal";
+import BespokeModal from "src/studio/ui/modals/BespokeModal";
+import CheckoutModal from "src/studio/ui/modals/CheckoutModal";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
 type PriceResult =
@@ -65,10 +80,15 @@ type ArtworkTransform = {
   y: number;
   scale: number;
 };
+type ReferenceImagePayload = {
+  data: string;
+  mimeType: "image/png";
+};
 
 const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
 const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1 };
 const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
+const MAX_REFERENCE_IMAGE_SIDE = 1536;
 const ALLOWED_ARTWORK_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -109,6 +129,25 @@ function getBespokeShirtImage(
 
   if (isBack) return isBlack ? "/images/TGFM Black Back.png" : "/images/TGFM White Back.png";
   return isBlack ? "/images/TGFM Black.png" : "/images/TGFM White.png";
+}
+
+
+function loadImageElement(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Could not capture the current preview image."));
+    image.src = src;
+  });
+}
+
+function inlineImageFromDataUrl(dataUrl: string): ReferenceImagePayload {
+  const [metadata, data] = dataUrl.split(",");
+  if (!metadata?.startsWith("data:image/png;base64") || !data) {
+    throw new Error("Could not capture the current preview image.");
+  }
+
+  return { data, mimeType: "image/png" };
 }
 
 export default function BuilderClient({
@@ -176,6 +215,16 @@ export default function BuilderClient({
     origin: ArtworkTransform;
   } | null>(null);
 
+  const previewRef = useRef<HTMLDivElement | null>(null);
+
+  const lastGeneratedSnapshot = useRef<{
+    artworkUrl: string | null;
+    artworkTransform: ArtworkTransform;
+    activePlacement: PlacementKey;
+    color: GarmentColor;
+    product: ProductType;
+  } | null>(null);
+
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
   const pricingPlacements = useMemo<PlacementKey[]>(
     () => (selectedPlacements.length ? selectedPlacements : ["CENTER_FRONT"]),
@@ -225,6 +274,33 @@ export default function BuilderClient({
     );
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
+  const [isMockupStale, setIsMockupStale] = useState(false);
+
+  useEffect(() => {
+    const snapshot = lastGeneratedSnapshot.current;
+    if (!snapshot) {
+      setIsMockupStale(false);
+      return;
+    }
+
+    const stale =
+      snapshot.artworkUrl !== artworkUrl ||
+      snapshot.artworkTransform.x !== artworkTransform.x ||
+      snapshot.artworkTransform.y !== artworkTransform.y ||
+      snapshot.artworkTransform.scale !== artworkTransform.scale ||
+      snapshot.activePlacement !== activePlacement ||
+      snapshot.color !== (state.color ?? "WHITE") ||
+      snapshot.product !== (state.product ?? "FITTED");
+
+    setIsMockupStale(stale);
+  }, [artworkUrl, artworkTransform, activePlacement, state.color, state.product]);
+
+  const shouldShowGenerateButton = useMemo(() => {
+    if (!state.primaryAssetId || !activeArtworkAsset) return false;
+    if (!generatedMockupUrl) return true;
+    return isMockupStale;
+  }, [generatedMockupUrl, isMockupStale, state.primaryAssetId, activeArtworkAsset]);
+
   useEffect(() => {
     setMounted(true);
   }, []);
@@ -240,9 +316,23 @@ export default function BuilderClient({
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
   useEffect(() => {
-    setGeneratedMockupUrl(null);
-    setMockupError(null);
-  }, [activePlacement, state.color, state.primaryAssetId, state.product]);
+    const snapshot = lastGeneratedSnapshot.current;
+    if (!snapshot) return;
+
+    const stale =
+      snapshot.artworkUrl !== artworkUrl ||
+      snapshot.artworkTransform.x !== artworkTransform.x ||
+      snapshot.artworkTransform.y !== artworkTransform.y ||
+      snapshot.artworkTransform.scale !== artworkTransform.scale ||
+      snapshot.activePlacement !== activePlacement ||
+      snapshot.color !== (state.color ?? "WHITE") ||
+      snapshot.product !== (state.product ?? "FITTED");
+
+    if (stale) {
+      setGeneratedMockupUrl(null);
+      setMockupError(null);
+    }
+  }, [artworkUrl, artworkTransform, activePlacement, state.color, state.product]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -501,50 +591,7 @@ export default function BuilderClient({
     dragStateRef.current = null;
   }
 
-async function generateNanoBananaMockup() {
-  if (!state.primaryAssetId || !activeArtworkAsset) {
-    setMockupError("Select artwork first.");
-    return;
-  }
 
-  setMockupPending(true);
-  setMockupError(null);
-
-  try {
-    const response = await fetch("/api/mockups/nanobanana", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        buildId,
-        assetId: state.primaryAssetId,
-        product: state.product,
-        color: state.color,
-        placement: activePlacement,
-        artworkTransform,
-      }),
-    });
-
-    const data = await response.json().catch(() => null);
-
-    if (!response.ok || !data?.ok) {
-      throw new Error(data?.error ?? "Could not generate mockup.");
-    }
-
-    if (typeof data.imageUrl !== "string" || !data.imageUrl) {
-      throw new Error("Gemini did not return a mockup image.");
-    }
-
-    setGeneratedMockupUrl(data.imageUrl);
-
-  } catch (error) {
-    setGeneratedMockupUrl(null);
-    setMockupError(
-      error instanceof Error ? error.message : "Could not generate mockup."
-    );
-  } finally {
-    setMockupPending(false);
-  }
-}
 
   function openCheckout() {
     if (!price || price.mode !== "standard") {
@@ -703,6 +750,99 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     });
   }
 
+  function selectFittedProduct() {
+    save({
+      ...state,
+      product: "FITTED" as ProductType,
+    });
+  }
+
+  function selectOversizedProduct() {
+    save({
+      ...state,
+      product: "OVERSIZED" as ProductType,
+    });
+  }
+
+  function selectBlackColor() {
+    save({
+      ...state,
+      color: "BLACK" as GarmentColor,
+    });
+  }
+
+  function selectWhiteColor() {
+    save({
+      ...state,
+      color: "WHITE" as GarmentColor,
+    });
+  }
+
+  function toggleFabricMenu() {
+    setFabricOpen((value) => !value);
+  }
+
+  function selectFabric(fabric: FabricType) {
+    save({
+      ...state,
+      fabric,
+    });
+    setFabricOpen(false);
+  }
+
+  function decreaseQuantity() {
+    save({ ...state, quantity: Math.max(1, qty - 1) });
+  }
+
+  function increaseQuantity() {
+    save({ ...state, quantity: Math.min(9999, qty + 1) });
+  }
+
+  function handleQuantityChange(event: ChangeEvent<HTMLInputElement>) {
+    save({
+      ...state,
+      quantity: clampQty(Number(event.target.value)),
+    });
+  }
+
+  function closeAuthModal() {
+    setShowAuthModal(false);
+    setCheckoutAfterAuth(false);
+  }
+
+  function toggleAuthMode() {
+    switchAuthMode(authMode === "login" ? "signup" : "login");
+  }
+
+  function closeCheckoutModal() {
+    if (!isCreatingOrder) setShowCheckout(false);
+  }
+
+  function selectCardPayment() {
+    setPaymentMethod("CARD");
+  }
+
+  function selectWalletPayment() {
+    setPaymentMethod("WALLET");
+  }
+
+  function handleArtworkScaleChange(event: ChangeEvent<HTMLInputElement>) {
+    changeArtworkScale(Number(event.target.value));
+  }
+
+  function handlePlacementClick(key: PlacementKey) {
+    togglePlacement(key);
+    setActivePlacement(key);
+  }
+
+  function saveBespokeTShirt() {
+    save({
+      ...state,
+      product: "CUSTOM" as ProductType,
+    });
+    setShowBespokeModal(false);
+  }
+
   const priceText = loadingPrice
     ? "Calculating..."
     : state.product === "CUSTOM"
@@ -753,115 +893,126 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     return `${baseTransform} translate(${artworkTransform.x}px, ${artworkTransform.y}px) scale(${artworkTransform.scale})`.trim();
   }, [artworkTransform, bespokeArtworkStyle]);
 
+  async function exportMannequinReferenceImage(): Promise<ReferenceImagePayload> {
+    const mannequinImage = await loadImageElement(bespokeShirtSrc);
+    const sourceWidth = mannequinImage.naturalWidth || mannequinImage.width || 1024;
+    const sourceHeight = mannequinImage.naturalHeight || mannequinImage.height || 1024;
+    const scale = Math.min(
+      1,
+      MAX_REFERENCE_IMAGE_SIDE / Math.max(sourceWidth, sourceHeight),
+    );
+    const canvasWidth = Math.max(1, Math.round(sourceWidth * scale));
+    const canvasHeight = Math.max(1, Math.round(sourceHeight * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+
+    const context = canvas.getContext("2d");
+    if (!context) {
+      throw new Error("Could not export the mannequin reference image.");
+    }
+
+    context.clearRect(0, 0, canvasWidth, canvasHeight);
+    context.drawImage(mannequinImage, 0, 0, canvasWidth, canvasHeight);
+
+    return inlineImageFromDataUrl(canvas.toDataURL("image/png"));
+  }
+
+  async function exportCompositePreview(): Promise<ReferenceImagePayload> {
+    if (!artworkUrl) {
+      throw new Error("Select artwork first.");
+    }
+
+    const node = previewRef.current;
+    if (!node) {
+      throw new Error("Open the preview to export the composite image.");
+    }
+
+    const dataUrl = await htmlToImage.toPng(node, {
+      cacheBust: true,
+      pixelRatio: 3,
+      backgroundColor: undefined,
+    });
+
+    const dataUrlMatch = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
+    if (!dataUrlMatch) {
+      throw new Error("Could not capture the composite preview image.");
+    }
+
+    return { data: dataUrlMatch[2], mimeType: "image/png" };
+  }
+
+  async function generateNanoBananaMockup() {
+    if (!state.primaryAssetId || !activeArtworkAsset) {
+      setMockupError("Select artwork first.");
+      return;
+    }
+
+    setMockupPending(true);
+    setMockupError(null);
+
+    try {
+      const referenceImage = await exportMannequinReferenceImage();
+      const compositeImage = await exportCompositePreview();
+      const response = await fetch("/api/mockups/nanobanana", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buildId,
+          assetId: state.primaryAssetId,
+          referenceImage,
+          compositeImage,
+          placement: activePlacement,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error ?? "Could not generate mockup.");
+      }
+
+      if (typeof data.imageUrl !== "string" || !data.imageUrl) {
+        throw new Error("Gemini did not return a mockup image.");
+      }
+
+      setGeneratedMockupUrl(data.imageUrl);
+      lastGeneratedSnapshot.current = {
+        artworkUrl,
+        artworkTransform,
+        activePlacement,
+        color: state.color ?? "WHITE",
+        product: state.product ?? "FITTED",
+      };
+    } catch (error) {
+      setGeneratedMockupUrl(null);
+      setMockupError(
+        error instanceof Error ? error.message : "Could not generate mockup.",
+      );
+    } finally {
+      setMockupPending(false);
+    }
+  }
+
   const authPopup =
     mounted && showAuthModal
       ? createPortal(
-          <div className="studio-modal-overlay">
-            <div className="studio-auth-modal studio-modal-panel">
-              <button
-                type="button"
-                onClick={() => { setShowAuthModal(false); setCheckoutAfterAuth(false); }}
-                className="studio-modal-close"
-                aria-label="Close login or signup"
-              >
-                ×
-              </button>
-
-              <div className="studio-modal-kicker">TGFM Account</div>
-              <h2 className="studio-auth-title">Login Or Sign Up</h2>
-              <p className="studio-auth-copy">
-                Continue to save your artwork and build your T-shirt.
-              </p>
-
-              <div className="studio-auth-tabs" role="tablist" aria-label="Account mode">
-                <button
-                  type="button"
-                  onClick={() => switchAuthMode("login")}
-                  className={cn(
-                    "studio-auth-tab",
-                    authMode === "login" ? "studio-auth-tab-active" : "",
-                  )}
-                  aria-pressed={authMode === "login"}
-                >
-                  Login
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => switchAuthMode("signup")}
-                  className={cn(
-                    "studio-auth-tab",
-                    authMode === "signup" ? "studio-auth-tab-active" : "",
-                  )}
-                  aria-pressed={authMode === "signup"}
-                >
-                  Sign Up
-                </button>
-              </div>
-
-              <form className="studio-auth-form" onSubmit={handleAuthSubmit}>
-                <label className="studio-auth-field">
-                  <span className="studio-auth-label">Email</span>
-                  <input
-                    className="studio-auth-input"
-                    type="email"
-                    value={authEmail}
-                    onChange={(event) => setAuthEmail(event.target.value)}
-                    autoComplete="email"
-                    placeholder="you@email.com"
-                    required
-                  />
-                </label>
-
-                <label className="studio-auth-field">
-                  <span className="studio-auth-label">Password</span>
-                  <input
-                    className="studio-auth-input"
-                    type="password"
-                    value={authPassword}
-                    onChange={(event) => setAuthPassword(event.target.value)}
-                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                    minLength={authMode === "signup" ? 8 : undefined}
-                    placeholder={authMode === "signup" ? "min 8 chars" : "password"}
-                    required
-                  />
-                </label>
-
-                {authMode === "signup" ? (
-                  <div className="studio-auth-hint">
-                    Password must be at least 8 characters.
-                  </div>
-                ) : null}
-
-                {authError ? <div className="studio-auth-error">{authError}</div> : null}
-
-                <button
-                  type="submit"
-                  className="studio-auth-submit"
-                  disabled={authPending || status === "loading"}
-                >
-                  {authPending
-                    ? authMode === "signup"
-                      ? "Creating..."
-                      : "Logging in..."
-                    : authMode === "signup"
-                      ? "Create Account"
-                      : "Login"}
-                </button>
-              </form>
-
-              <div className="studio-auth-footer">
-                {authMode === "login" ? "New here?" : "Already have an account?"}{" "}
-                <button
-                  type="button"
-                  onClick={() => switchAuthMode(authMode === "login" ? "signup" : "login")}
-                  className="studio-auth-inline-button"
-                >
-                  {authMode === "login" ? "Create account" : "Login"}
-                </button>
-              </div>
-            </div>
-          </div>,
+          <AuthModal
+            authMode={authMode}
+            authEmail={authEmail}
+            authPassword={authPassword}
+            authError={authError}
+            authPending={authPending}
+            submitDisabled={authPending || status === "loading"}
+            onClose={closeAuthModal}
+            onSelectLogin={() => switchAuthMode("login")}
+            onSelectSignup={() => switchAuthMode("signup")}
+            onToggleMode={toggleAuthMode}
+            onSubmit={handleAuthSubmit}
+            onEmailChange={(event) => setAuthEmail(event.target.value)}
+            onPasswordChange={(event) => setAuthPassword(event.target.value)}
+          />,
           document.body,
         )
       : null;
@@ -869,91 +1020,23 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   const checkoutPopup =
     mounted && showCheckout
       ? createPortal(
-          <div className="studio-modal-overlay">
-            <div className="relative w-[min(92vw,540px)] rounded-[28px] bg-white p-6 text-black shadow-2xl sm:p-8">
-              <button
-                type="button"
-                onClick={() => !isCreatingOrder && setShowCheckout(false)}
-                className="absolute right-5 top-4 text-3xl leading-none text-black/40 hover:text-black"
-                aria-label="Close checkout"
-              >
-                ×
-              </button>
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-black/45">Secure checkout</p>
-              <h2 className="mt-2 text-3xl font-semibold">Complete your order</h2>
-              <p className="mt-2 text-sm leading-6 text-black/55">
-                Your final total is calculated on our server. Card details are entered securely on Paymob.
-              </p>
-
-              <form onSubmit={handleCheckoutSubmit} className="mt-6 space-y-4">
-                <label className="block text-sm font-medium">
-                  Full name
-                  <input
-                    value={customerName}
-                    onChange={(event) => setCustomerName(event.target.value)}
-                    autoComplete="name"
-                    required
-                    minLength={2}
-                    className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
-                  />
-                </label>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-medium">
-                    Email
-                    <input
-                      value={customerEmail}
-                      onChange={(event) => setCustomerEmail(event.target.value)}
-                      type="email"
-                      autoComplete="email"
-                      required
-                      className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
-                    />
-                  </label>
-                  <label className="block text-sm font-medium">
-                    Phone
-                    <input
-                      value={customerPhone}
-                      onChange={(event) => setCustomerPhone(event.target.value)}
-                      type="tel"
-                      autoComplete="tel"
-                      placeholder="+20 10 0000 0000"
-                      required
-                      className="mt-2 h-12 w-full rounded-xl border border-black/15 px-4 outline-none focus:border-black"
-                    />
-                  </label>
-                </div>
-
-                <fieldset>
-                  <legend className="text-sm font-medium">Payment method</legend>
-                  <div className="mt-2 grid gap-3 sm:grid-cols-2">
-                    <label className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-4", paymentMethod === "CARD" ? "border-black bg-black text-white" : "border-black/15")}>
-                      <input type="radio" name="paymentMethod" value="CARD" checked={paymentMethod === "CARD"} onChange={() => setPaymentMethod("CARD")} />
-                      <span className="font-semibold">Credit / debit card</span>
-                    </label>
-                    {walletEnabled ? (
-                      <label className={cn("flex cursor-pointer items-center gap-3 rounded-xl border p-4", paymentMethod === "WALLET" ? "border-black bg-black text-white" : "border-black/15")}>
-                        <input type="radio" name="paymentMethod" value="WALLET" checked={paymentMethod === "WALLET"} onChange={() => setPaymentMethod("WALLET")} />
-                        <span className="font-semibold">Mobile wallet</span>
-                      </label>
-                    ) : null}
-                  </div>
-                </fieldset>
-
-                <div className="flex items-center justify-between rounded-xl bg-[#f5f3ef] p-4">
-                  <span className="text-sm text-black/55">Estimated total</span>
-                  <strong className="text-lg">{price?.mode === "standard" ? `${price.currency} ${price.total.toFixed(2)}` : "—"}</strong>
-                </div>
-                {checkoutError ? <div className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{checkoutError}</div> : null}
-                <button
-                  type="submit"
-                  disabled={isCreatingOrder}
-                  className="h-13 w-full rounded-xl bg-black px-5 py-3.5 font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-                >
-                  {isCreatingOrder ? "Connecting to Paymob…" : "Continue to secure payment"}
-                </button>
-              </form>
-            </div>
-          </div>,
+          <CheckoutModal
+            customerName={customerName}
+            customerEmail={customerEmail}
+            customerPhone={customerPhone}
+            paymentMethod={paymentMethod}
+            walletEnabled={walletEnabled}
+            estimatedTotalText={price?.mode === "standard" ? `${price.currency} ${price.total.toFixed(2)}` : "—"}
+            checkoutError={checkoutError}
+            isCreatingOrder={isCreatingOrder}
+            onClose={closeCheckoutModal}
+            onSubmit={handleCheckoutSubmit}
+            onCustomerNameChange={(event) => setCustomerName(event.target.value)}
+            onCustomerEmailChange={(event) => setCustomerEmail(event.target.value)}
+            onCustomerPhoneChange={(event) => setCustomerPhone(event.target.value)}
+            onSelectCardPayment={selectCardPayment}
+            onSelectWalletPayment={selectWalletPayment}
+          />,
           document.body,
         )
       : null;
@@ -961,44 +1044,10 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   const customPopup =
     mounted && showCustomPopup
       ? createPortal(
-          <div className="studio-modal-overlay">
-            <div className="studio-custom-request-modal studio-modal-panel">
-              <button
-                type="button"
-                onClick={() => setShowCustomPopup(false)}
-                className="studio-modal-close"
-                aria-label="Close custom garment request"
-              >
-                ×
-              </button>
-
-              <div className="studio-modal-kicker">TGFM Bespoke</div>
-
-              <h2 className="studio-custom-request-title">Custom Garment Request</h2>
-
-              <p className="studio-custom-request-copy">
-                Custom garment constructions are not available for instant checkout.
-                We&apos;ll review your request and provide a tailored quote based on
-                your customization needs.
-              </p>
-
-              <button
-                type="button"
-                onClick={continueCustomRequest}
-                className="studio-modal-primary-button"
-              >
-                Continue With Custom Request
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setShowCustomPopup(false)}
-                className="studio-modal-secondary-button"
-              >
-                Go Back
-              </button>
-            </div>
-          </div>,
+          <ArtworkModal
+            onClose={() => setShowCustomPopup(false)}
+            onContinueCustomRequest={continueCustomRequest}
+          />,
           document.body,
         )
       : null;
@@ -1006,248 +1055,45 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   const bespokeModal =
     mounted && showBespokeModal
       ? createPortal(
-          <div className="studio-modal-overlay studio-modal-overlay-soft">
-            <div className="studio-bespoke-modal studio-modal-panel">
-              <button
-                type="button"
-                onClick={() => setShowBespokeModal(false)}
-                className="studio-modal-close"
-                aria-label="Close bespoke builder"
-              >
-                ×
-              </button>
-
-              <div className="studio-bespoke-preview">
-                <div className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-                 <img
-                    src={generatedMockupUrl ?? bespokeShirtSrc}
-                    alt="T-shirt preview"
-                    className="studio-bespoke-shirt"
-                    style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
-                  />
-
-                  {artworkUrl && !generatedMockupUrl ? (
-                    <img
-                      src={artworkUrl!}
-                      alt="Artwork preview"
-                      className="studio-bespoke-artwork studio-bespoke-artwork-draggable"
-                      style={{ 
-                        position: "absolute", 
-                        zIndex: 40, 
-                        mixBlendMode: state.color === "WHITE" ? "multiply" : "normal",
-                        opacity: state.color === "WHITE" ? 0.95 : 1,
-                        ...bespokeArtworkStyle,
-                        transform: bespokeArtworkTransform,
-                      }}
-                      draggable={false}
-                      onPointerDown={handleArtworkPointerDown}
-                      onPointerMove={handleArtworkPointerMove}
-                      onPointerUp={handleArtworkPointerUp}
-                      onPointerCancel={handleArtworkPointerUp}
-                    />
-                  ) : null}
-                </div>
-
-                <div className="studio-bespoke-placement-area">
-                  <div className="studio-bespoke-label">Select Placement</div>
-
-                  <div className="studio-placement-grid">
-                    {placementCards.map((placement) => {
-                      const active = selectedPlacements.includes(placement.key);
-                      const isViewed = activePlacement === placement.key;
-
-                      return (
-                        <button
-                          key={placement.key}
-                          type="button"
-                          onClick={() => {
-                            togglePlacement(placement.key);
-                            setActivePlacement(placement.key);
-                          }}
-                          className={cn(
-                            "studio-placement-card",
-                            active ? "studio-placement-card-active" : "",
-                            isViewed ? "border-black border-2" : ""
-                          )}
-                          aria-label={placement.label}
-                        >
-                          <img
-                            src={placement.image}
-                            alt={placement.label}
-                            className="studio-placement-image"
-                          />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div className="studio-bespoke-controls">
-                <div>
-                  <div className="studio-bespoke-kicker">Custom Artwork</div>
-                  <h2 className="studio-bespoke-title">Build Your T-Shirt</h2>
-                </div>
-
-                <div className="studio-selected-artwork-area">
-                  <div className="studio-bespoke-label">Selected Artwork</div>
-
-                  <div className="studio-selected-artwork-grid">
-                    {activeArtworkAsset ? (
-                      <div className="studio-selected-artwork-card">
-                        <button
-                          type="button"
-                          onClick={removeSelectedArtwork}
-                          className="studio-selected-artwork-remove"
-                          aria-label="Remove selected artwork"
-                        >
-                          ×
-                        </button>
-
-                        <img
-                          src={activeArtworkAsset.url}
-                          alt={activeArtworkAsset.fileName}
-                          className="studio-selected-artwork-image"
-                        />
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="studio-selected-artwork-add"
-                      >
-                        + Add
-                      </button>
-                    )}
-                  </div>
-
-                  {activeArtworkAsset ? (
-                    <div className="studio-artwork-tools">
-                      <div className="studio-artwork-transform-controls">
-                        <button
-                          type="button"
-                          onClick={() => changeArtworkScale(artworkTransform.scale - 0.1)}
-                          aria-label="Zoom artwork out"
-                        >
-                          -
-                        </button>
-                        <input
-                          type="range"
-                          min="0.4"
-                          max="2.4"
-                          step="0.05"
-                          value={artworkTransform.scale}
-                          onChange={(event) => changeArtworkScale(Number(event.target.value))}
-                          aria-label="Artwork zoom"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => changeArtworkScale(artworkTransform.scale + 0.1)}
-                          aria-label="Zoom artwork in"
-                        >
-                          +
-                        </button>
-                        <button
-                          type="button"
-                          onClick={resetArtworkTransform}
-                          className="studio-artwork-reset-button"
-                        >
-                          Reset
-                        </button>
-                      </div>
-
-                      <div className="studio-nanobanana-actions">
-                        <button
-                          type="button"
-                          onClick={() => void generateNanoBananaMockup()}
-                          disabled={mockupPending || !state.primaryAssetId}
-                          className="studio-nanobanana-button"
-                        >
-                          {mockupPending
-                            ? "Generating..."
-                            : generatedMockupUrl
-                              ? "Regenerate Nano Banana Mockup"
-                              : "Generate Nano Banana Mockup"}
-                        </button>
-                        {generatedMockupUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setGeneratedMockupUrl(null)}
-                            className="studio-artwork-edit-button"
-                          >
-                            Edit Placement
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {mockupError ? (
-                        <div className="studio-bespoke-error">{mockupError}</div>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="studio-bespoke-upload-button"
-                >
-                  Upload Artwork
-                </button>
-
-                <div>
-                  <div className="studio-bespoke-label">Your Uploads</div>
-
-                  <div className="studio-upload-grid">
-                    {userAssets.length ? (
-                      userAssets.map((asset) => {
-                        const isCurrentActive = state.primaryAssetId === asset.id || artworkUrl === asset.url;
-                        return (
-                          <button
-                            key={asset.id}
-                            type="button"
-                            onClick={() => void selectAsset(asset)}
-                            className={cn(
-                              "studio-upload-slot",
-                              isCurrentActive ? "border-black border-[1.5px]" : ""
-                            )}
-                            style={{ padding: 0, overflow: "hidden" }}
-                            disabled={attachingAssetId === asset.id}
-                          >
-                            <img
-                              src={asset.url}
-                              alt={asset.fileName}
-                              className="studio-upload-image"
-                            />
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <div className="studio-upload-empty">No uploads yet</div>
-                    )}
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    save({
-                      ...state,
-                      product: "CUSTOM" as ProductType,
-                    });
-                    setShowBespokeModal(false);
-                  }}
-                  className="studio-bespoke-save-button"
-                >
-                  Save T-Shirt
-                </button>
-              </div>
-            </div>
-          </div>,
+          <BespokeModal
+            generatedMockupUrl={generatedMockupUrl}
+            bespokeShirtSrc={bespokeShirtSrc}
+            artworkUrl={artworkUrl}
+            color={state.color}
+            bespokeArtworkStyle={bespokeArtworkStyle}
+            bespokeArtworkTransform={bespokeArtworkTransform}
+            placementCards={placementCards}
+            selectedPlacements={selectedPlacements}
+            activePlacement={activePlacement}
+            activeArtworkAsset={activeArtworkAsset}
+            artworkTransform={artworkTransform}
+            mockupPending={mockupPending}
+            canGenerateMockup={Boolean(state.primaryAssetId)}
+            shouldShowGenerateButton={shouldShowGenerateButton}
+            isMockupStale={isMockupStale}
+            mockupError={mockupError}
+            userAssets={userAssets}
+            selectedPrimaryAssetId={state.primaryAssetId}
+            attachingAssetId={attachingAssetId}
+            previewRef={previewRef}
+            onClose={() => setShowBespokeModal(false)}
+            onArtworkPointerDown={handleArtworkPointerDown}
+            onArtworkPointerMove={handleArtworkPointerMove}
+            onArtworkPointerUp={handleArtworkPointerUp}
+            onPlacementClick={handlePlacementClick}
+            onRemoveSelectedArtwork={removeSelectedArtwork}
+            onAddArtworkClick={() => fileInputRef.current?.click()}
+            onZoomOut={() => changeArtworkScale(artworkTransform.scale - 0.1)}
+            onArtworkScaleChange={handleArtworkScaleChange}
+            onZoomIn={() => changeArtworkScale(artworkTransform.scale + 0.1)}
+            onResetArtworkTransform={resetArtworkTransform}
+            onGenerateMockup={() => void generateNanoBananaMockup()}
+            onSelectAsset={(asset) => void selectAsset(asset)}
+            onSaveTShirt={saveBespokeTShirt}
+          />,
           document.body,
         )
       : null;
-
   return (
     <>
       {authPopup}
@@ -1277,228 +1123,31 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                 </div>
 
               <div className="studio-left-stack">
-                <div className="studio-control-group">
-                  <div className="studio-control-heading">
-                    <div>
-                      <div className="studio-eyebrow">Product Type</div>
-                      <div className="studio-control-caption">
-                        Select the silhouette.
-                      </div>
-                    </div>
+                <ProductSelector
+                  product={state.product}
+                  onSelectFitted={selectFittedProduct}
+                  onSelectOversized={selectOversizedProduct}
+                  onRequestCustom={openCustomRequestPopup}
+                />
 
-                    <span className="studio-step-number">01</span>
-                  </div>
+                <ColorSelector
+                  color={state.color}
+                  currentColorLabel={currentColorLabel}
+                  customColourIcon={CUSTOM_COLOUR_ICON}
+                  onSelectBlack={selectBlackColor}
+                  onSelectWhite={selectWhiteColor}
+                  onRequestCustomColour={openCustomRequestPopup}
+                />
 
-                  <div className="studio-product-list">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        save({
-                          ...state,
-                          product: "FITTED" as ProductType,
-                        })
-                      }
-                      className={cn(
-                        "studio-product-button",
-                        state.product === "FITTED"
-                          ? "studio-product-button-active"
-                          : "studio-product-button-idle",
-                      )}
-                    >
-                      <span>Fitted T-Shirt</span>
-                      <span className="studio-product-meta">Classic</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        save({
-                          ...state,
-                          product: "OVERSIZED" as ProductType,
-                        })
-                      }
-                      className={cn(
-                        "studio-product-button",
-                        state.product === "OVERSIZED"
-                          ? "studio-product-button-active"
-                          : "studio-product-button-idle",
-                      )}
-                    >
-                      <span>Oversized T-Shirt</span>
-                      <span className="studio-product-meta">Relaxed</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={openCustomRequestPopup}
-                      className={cn(
-                        "studio-product-button",
-                        state.product === "CUSTOM"
-                          ? "studio-product-button-active"
-                          : "studio-product-button-idle",
-                      )}
-                    >
-                      <span>Bespoke</span>
-                      <span className="studio-product-meta">Custom</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="studio-control-group">
-                  <div className="studio-control-heading">
-                    <div>
-                      <div className="studio-eyebrow">Colour</div>
-                      <div className="studio-control-caption">
-                        Current: {currentColorLabel}
-                      </div>
-                    </div>
-
-                    <span className="studio-step-number">02</span>
-                  </div>
-
-                  <div className="studio-colour-row">
-                    <button
-                      type="button"
-                      aria-label="Select black"
-                      onClick={() =>
-                        save({
-                          ...state,
-                          color: "BLACK" as GarmentColor,
-                        })
-                      }
-                      className={cn(
-                        "studio-colour-dot",
-                        state.color === "BLACK" ? "studio-colour-dot-active" : "",
-                      )}
-                    >
-                      <span className="studio-colour-dot-core studio-colour-dot-core-black" />
-                    </button>
-
-                    <button
-                      type="button"
-                      aria-label="Select white"
-                      onClick={() =>
-                        save({
-                          ...state,
-                          color: "WHITE" as GarmentColor,
-                        })
-                      }
-                      className={cn(
-                        "studio-colour-dot studio-colour-dot-white",
-                        state.color === "WHITE" ? "studio-colour-dot-active" : "",
-                      )}
-                    >
-                      <span className="studio-colour-dot-core studio-colour-dot-core-white" />
-                    </button>
-
-                    <button
-                      type="button"
-                      aria-label="Request custom colour"
-                      onClick={openCustomRequestPopup}
-                      className="studio-colour-dot studio-colour-dot-custom"
-                    >
-                      <img
-                        src={CUSTOM_COLOUR_ICON}
-                        alt=""
-                        aria-hidden="true"
-                        className="studio-colour-custom-icon"
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="studio-control-group">
-                  <div className="studio-control-heading">
-                    <div>
-                      <div className="studio-fabric-title-row">
-                        <span className="studio-eyebrow mb-0">Fabric</span>
-                      </div>
-
-                      <div className="studio-control-caption">
-                        Current: {currentFabric.gsm}
-                      </div>
-                    </div>
-
-                    <span className="studio-step-number">03</span>
-                  </div>
-
-                  <div ref={fabricMenuRef} className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setFabricOpen((value) => !value)}
-                      className="studio-fabric-card"
-                      aria-expanded={fabricOpen}
-                      aria-haspopup="listbox"
-                    >
-                      <span className="studio-fabric-swatch" />
-
-                      <span className="studio-fabric-content">
-                        <span className="studio-fabric-name">{currentFabric.name}</span>
-                        <span className="studio-fabric-gsm">{currentFabric.gsm}</span>
-                        <span className="studio-fabric-desc">{currentFabric.desc}</span>
-                      </span>
-
-                      <svg
-                        className={cn(
-                          "studio-fabric-arrow",
-                          fabricOpen ? "rotate-180" : "",
-                        )}
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                        aria-hidden="true"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M19 9l-7 7-7-7"
-                        />
-                      </svg>
-                    </button>
-
-                    {fabricOpen ? (
-                      <div className="studio-fabric-menu" role="listbox">
-                        {fabricOptions.map((fabric) => (
-                          <button
-                            key={fabric.key}
-                            type="button"
-                            onClick={() => {
-                              save({
-                                ...state,
-                                fabric: fabric.key,
-                              });
-                              setFabricOpen(false);
-                            }}
-                            className={cn(
-                              "studio-fabric-option",
-                              state.fabric === fabric.key
-                                ? "studio-fabric-option-active"
-                                : "",
-                            )}
-                          >
-                            <span className="studio-fabric-swatch studio-fabric-option-swatch" />
-
-                            <span className="studio-fabric-option-copy">
-                              <span className="studio-fabric-option-name">
-                                {fabric.name}
-                              </span>
-
-                              <span className="studio-fabric-option-desc">
-                                {fabric.desc}
-                              </span>
-                            </span>
-
-                            {state.fabric === fabric.key ? (
-                              <span className="studio-fabric-check">✓</span>
-                            ) : null}
-                          </button>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-
+                <FabricSelector
+                  menuRef={fabricMenuRef}
+                  currentFabric={currentFabric}
+                  fabricOptions={fabricOptions}
+                  selectedFabric={state.fabric}
+                  open={fabricOpen}
+                  onToggleOpen={toggleFabricMenu}
+                  onSelectFabric={selectFabric}
+                />
                 <button
                   type="button"
                   className="studio-build-button"
@@ -1533,56 +1182,16 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
 
             <section className="studio-right-panel" aria-label="Order controls">
               <div className="studio-right-sticky">
-                <div className="studio-right-top">
-                  <div className="studio-price-stack">
-                    <div className="studio-price">{priceText}</div>
-                    <div className="studio-shipping-note">
-                      Incl. VAT. Ships in 3-5 business days.
-                    </div>
-                  </div>
-                </div>
+                <PriceCard priceText={priceText} />
 
                 <div className="studio-right-divider" />
 
-                <div className="studio-field-block studio-quantity-block">
-                  <div className="studio-right-label">Quantity</div>
-
-                  <div className="studio-quantity">
-                    <button
-                      type="button"
-                      onClick={() => save({ ...state, quantity: Math.max(1, qty - 1) })}
-                      className="studio-quantity-button"
-                      aria-label="Decrease quantity"
-                    >
-                      -
-                    </button>
-
-                    <input
-                      type="number"
-                      min={1}
-                      max={9999}
-                      value={qty}
-                      onChange={(event) =>
-                        save({
-                          ...state,
-                          quantity: clampQty(Number(event.target.value)),
-                        })
-                      }
-                      className="studio-quantity-input"
-                      aria-label="Quantity"
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => save({ ...state, quantity: Math.min(9999, qty + 1) })}
-                      className="studio-quantity-button"
-                      aria-label="Increase quantity"
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
-
+                <QuantitySelector
+                  quantity={qty}
+                  onDecrease={decreaseQuantity}
+                  onQuantityChange={handleQuantityChange}
+                  onIncrease={increaseQuantity}
+                />
                 <div className="studio-right-divider studio-right-divider-soft" />
 
                 <div className="studio-field-block">
@@ -1619,23 +1228,10 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                 </div>
 
                 <div className="studio-action-row">
-<button
-  onClick={openCheckout}
+<CheckoutButton
+  onCheckout={openCheckout}
   disabled={!isStandardCheckout || isCreatingOrder}
-  className="
-    studio-add-button
-  "
->
-  <span className="flex items-center justify-center gap-2">
-    Checkout
-    <span className="transition-transform duration-300 group-hover:translate-x-1">
-      →
-    </span>
-  </span>
-
-  {/* underline animation */}
-  <span className="absolute bottom-0 left-0 h-[1px] w-0 bg-black transition-all duration-300 hover:w-full" />
-</button>
+/>
 
                   <button type="button" className="studio-wishlist-button">
                     Add To Wishlist

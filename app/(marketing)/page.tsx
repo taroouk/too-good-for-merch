@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { CONTACT_EMAIL, EMAIL_URL, INSTAGRAM_URL, TIKTOK_URL, WHATSAPP_URL } from "src/lib/contact";
 import {

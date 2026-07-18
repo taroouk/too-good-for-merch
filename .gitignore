@@ -48,3 +48,6 @@ next-env.d.ts
 /app/generated/prisma
 .env.local
 /storage/
+
+# macOS
+.DS_Store
