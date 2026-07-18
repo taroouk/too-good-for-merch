@@ -1,65 +1,11 @@
 // file: src/actions/asset-actions.ts
 "use server";
 
-import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
-
-const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
-const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
-
-function extensionFor(fileName: string, mimeType: string) {
-  const fromName = path.extname(fileName).toLowerCase().replace(/[^a-z0-9.]/g, "");
-  if (fromName && fromName.length <= 8) return fromName;
-  if (mimeType === "image/png") return ".png";
-  if (mimeType === "image/jpeg") return ".jpg";
-  if (mimeType === "image/webp") return ".webp";
-  if (mimeType === "image/svg+xml") return ".svg";
-  return ".bin";
-}
-
-function looksLikeAllowedArtwork(buffer: Buffer, mimeType: string) {
-  if (mimeType === "image/png") {
-    return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-  }
-  if (mimeType === "image/jpeg") {
-    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
-  }
-  if (mimeType === "image/webp") {
-    return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
-  }
-  if (mimeType === "image/svg+xml") {
-    const text = buffer.subarray(0, 2048).toString("utf8").trimStart();
-    return text.startsWith("<svg") || text.startsWith("<?xml");
-  }
-  return false;
-}
-
-async function persistArtworkFile(buildId: string, file: File) {
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error("Artwork must be PNG, JPG, WEBP, or SVG.");
-  }
-  if (file.size <= 0 || file.size > MAX_ARTWORK_BYTES) {
-    throw new Error("Artwork file must be smaller than 10MB.");
-  }
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  if (!looksLikeAllowedArtwork(buffer, file.type)) {
-    throw new Error("Artwork file content does not match its file type.");
-  }
-
-  const id = randomUUID();
-  const ext = extensionFor(file.name, file.type);
-  const storageKey = `artwork/${buildId}/${id}${ext}`;
-  const absolutePath = path.join(process.cwd(), "storage", storageKey);
-  await mkdir(path.dirname(absolutePath), { recursive: true });
-  await writeFile(absolutePath, buffer, { flag: "wx" });
-  return { id, storageKey };
-}
+import { uploadArtwork } from "src/lib/storage";
 
 async function createAssetRecord(buildId: string, formData: FormData) {
   const file = formData.get("file");
@@ -71,7 +17,7 @@ async function createAssetRecord(buildId: string, formData: FormData) {
 
   if (!fileName) return;
 
-  const stored = uploadedFile ? await persistArtworkFile(buildId, uploadedFile) : null;
+  const stored = uploadedFile ? await uploadArtwork(buildId, uploadedFile) : null;
 
   return prisma.asset.create({
     data: {
@@ -81,7 +27,7 @@ async function createAssetRecord(buildId: string, formData: FormData) {
       mimeType,
       sizeBytes,
       storageKey: stored?.storageKey ?? null,
-      url: stored ? `/api/assets/${stored.id}/file` : null,
+      url: stored?.url ?? null,
       status: stored ? "READY" : "PENDING_UPLOAD",
     },
     select: { id: true, buildId: true, fileName: true, url: true },

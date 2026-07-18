@@ -1,10 +1,9 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
 import { Role } from "@prisma/client";
 import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { canAccessBuild } from "src/studio/permissions";
+import { getArtwork } from "src/lib/storage";
 
 export const runtime = "nodejs";
 
@@ -52,17 +51,6 @@ function labelFromEnum(value: string | null, fallback: string) {
     .split("_")
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
     .join(" ");
-}
-
-function storageFilePath(storageKey: string) {
-  const storageRoot = path.resolve(process.cwd(), "storage");
-  const filePath = path.resolve(storageRoot, storageKey);
-
-  if (filePath === storageRoot || !filePath.startsWith(`${storageRoot}${path.sep}`)) {
-    return null;
-  }
-
-  return filePath;
 }
 
 function base64ByteLength(data: string) {
@@ -404,23 +392,18 @@ async function readArtworkFromAsset(buildId: string, assetId: string) {
     } as const;
   }
 
-  const filePath = storageFilePath(asset.storageKey);
-  if (!filePath) {
-    return { error: apiError("Invalid artwork storage key.", 400) } as const;
-  }
-
-  try {
-    const file = await readFile(filePath);
-    return {
-      artworkUrl: asset.url,
-      image: {
-        data: file.toString("base64"),
-        mimeType,
-      },
-    } as const;
-  } catch {
+  const file = await getArtwork(asset.storageKey);
+  if (!file) {
     return { error: apiError("Artwork file missing.", 404) } as const;
   }
+
+  return {
+    artworkUrl: asset.url,
+    image: {
+      data: file.toString("base64"),
+      mimeType,
+    },
+  } as const;
 }
 
 function parseGeminiJson(text: string) {
