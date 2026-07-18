@@ -14,12 +14,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
     select: {
       fileName: true,
       mimeType: true,
-      storageKey: true,
       build: { select: { id: true, userId: true } },
     },
   });
 
-  if (!asset?.storageKey) {
+  if (!asset) {
     return NextResponse.json({ error: "Asset not found." }, { status: 404 });
   }
 
@@ -29,7 +28,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
     (await canAccessBuild(session?.user?.id ?? null, asset.build));
   if (!allowed) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
-  const file = await getArtwork(asset.storageKey);
+  const file = await getArtwork(assetId);
   if (!file) {
     return NextResponse.json({ error: "Asset file missing." }, { status: 404 });
   }
@@ -37,6 +36,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
   return new NextResponse(new Uint8Array(file), {
     headers: {
       "Content-Type": asset.mimeType ?? "application/octet-stream",
+      "Content-Length": String(file.byteLength),
       "Content-Disposition": `inline; filename="${asset.fileName.replaceAll('"', "")}"`,
       "Cache-Control": "private, max-age=300",
       "X-Content-Type-Options": "nosniff",

@@ -1,11 +1,12 @@
 // file: src/actions/asset-actions.ts
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
-import { uploadArtwork } from "src/lib/storage";
+import { hashArtworkData, uploadArtwork } from "src/lib/storage";
 
 async function createAssetRecord(buildId: string, formData: FormData) {
   const file = formData.get("file");
@@ -17,16 +18,19 @@ async function createAssetRecord(buildId: string, formData: FormData) {
 
   if (!fileName) return;
 
-  const stored = uploadedFile ? await uploadArtwork(buildId, uploadedFile) : null;
+  const stored = uploadedFile ? await uploadArtwork(uploadedFile) : null;
 
   return prisma.asset.create({
     data: {
       ...(stored ? { id: stored.id } : {}),
       buildId,
       fileName,
-      mimeType,
-      sizeBytes,
-      storageKey: stored?.storageKey ?? null,
+      mimeType: stored?.contentType ?? mimeType,
+      sizeBytes: stored?.fileSize ?? sizeBytes,
+      uploadedAt: stored?.uploadedAt,
+      artworkData: stored?.data,
+      artworkSha256: stored?.artworkSha256,
+      storageKey: null,
       url: stored?.url ?? null,
       status: stored ? "READY" : "PENDING_UPLOAD",
     },
@@ -82,13 +86,15 @@ export async function actionAttachExistingAsset(
       fileName: true,
       mimeType: true,
       sizeBytes: true,
-      storageKey: true,
+      uploadedAt: true,
+      artworkData: true,
+      artworkSha256: true,
       status: true,
       url: true,
     },
   });
 
-  if (!source?.url) return null;
+  if (!source?.url || !source.artworkData) return null;
 
   if (source.buildId === buildId) {
     return {
@@ -99,15 +105,20 @@ export async function actionAttachExistingAsset(
     };
   }
 
+  const copiedId = randomUUID();
   const copied = await prisma.asset.create({
     data: {
+      id: copiedId,
       buildId,
       fileName: source.fileName,
       mimeType: source.mimeType,
       sizeBytes: source.sizeBytes,
-      storageKey: source.storageKey,
+      uploadedAt: source.uploadedAt,
+      artworkData: source.artworkData,
+      artworkSha256: source.artworkSha256 ?? hashArtworkData(source.artworkData),
+      storageKey: null,
       status: source.status,
-      url: source.url,
+      url: `/api/assets/${copiedId}/file`,
     },
     select: { id: true, buildId: true, fileName: true, url: true },
   });

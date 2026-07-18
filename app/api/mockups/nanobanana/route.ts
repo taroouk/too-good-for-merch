@@ -366,13 +366,12 @@ async function readArtworkFromAsset(buildId: string, assetId: string) {
     where: { id: assetId, buildId },
     select: {
       url: true,
-      storageKey: true,
       mimeType: true,
       build: { select: { id: true, userId: true } },
     },
   });
 
-  if (!asset?.url || !asset.storageKey) {
+  if (!asset?.url) {
     return { error: apiError("Artwork asset not found.", 404) } as const;
   }
 
@@ -392,7 +391,7 @@ async function readArtworkFromAsset(buildId: string, assetId: string) {
     } as const;
   }
 
-  const file = await getArtwork(asset.storageKey);
+  const file = await getArtwork(assetId);
   if (!file) {
     return { error: apiError("Artwork file missing.", 404) } as const;
   }

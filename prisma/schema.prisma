@@ -63,9 +63,12 @@ model Asset {
   updatedAt       DateTime          @updatedAt
   buildId         String
   status          AssetStatus       @default(PENDING_UPLOAD)
-  fileName        String
-  mimeType        String?
-  sizeBytes       Int?
+  fileName        String            @map("filename")
+  mimeType        String?           @map("contentType")
+  sizeBytes       Int?              @map("fileSize")
+  uploadedAt      DateTime          @default(now())
+  artworkData     Bytes?
+  artworkSha256   String?           @db.VarChar(64)
   storageKey      String?
   url             String?
   build           Build             @relation(fields: [buildId], references: [id], onDelete: Cascade)
