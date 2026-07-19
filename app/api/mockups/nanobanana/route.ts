@@ -3,7 +3,8 @@ import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { canAccessBuild } from "src/studio/permissions";
-import { getArtwork } from "src/lib/storage";
+import { getArtwork, validateMockupData } from "src/lib/storage";
+import { computeMockupFingerprint, upsertMockupForDraft } from "src/db/mockup";
 
 export const runtime = "nodejs";
 
@@ -332,27 +333,39 @@ function nanoBananaPrompt({
   const view = placement.includes("BACK") ? "back" : "front";
 
   return `
-CRITICAL INSTRUCTIONS - READ CAREFULLY:
+CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC PRINTING ENGINE, NOT A CREATIVE IMAGE GENERATOR.
 
-You are performing a PIXEL-LEVEL IMAGE EDIT, not image generation.
+YOU ARE GIVEN THREE INPUT IMAGES, IN THIS ORDER:
 
-INPUT 1 (FIRST IMAGE): A clean render of a shirt on a mannequin with a transparent background. This is the ONLY image you may modify. Every pixel in this image that is NOT part of the artwork area must remain EXACTLY identical in the output.
+INPUT 1 - GARMENT:
+A clean render of a ${colorLabel} ${productLabel} (${view} view) on a mannequin. This defines the physical garment, its fabric, folds, wrinkles, lighting, shadows, camera angle, and background.
 
-INPUT 2 (SECOND IMAGE): A composition reference showing the exact target appearance. Use this ONLY to determine:
-- WHERE the artwork appears on the shirt
-- HOW LARGE the artwork should be
-- The artwork's exact aspect ratio and proportions
+INPUT 2 - COMPOSITE (PLACEMENT SOURCE OF TRUTH):
+A flat composite showing the garment from INPUT 1 with the customer artwork already placed onto it. This image is the AUTHORITATIVE REFERENCE for PLACEMENT ONLY:
+- WHERE the artwork sits on the garment (position / coordinates)
+- HOW LARGE the artwork is (scale)
+- The artwork's exact rotation, aspect ratio, and proportions
+You must reproduce the artwork at the SAME position, scale, rotation, and size as it appears in this composite. Do NOT move, resize, crop, rotate, or distort it.
 
-RULES - NO EXCEPTIONS:
-1. Do NOT generate a new image. Do NOT create a new mockup. Do NOT synthesize new content.
-2. Do NOT change the mannequin, model, body, pose, camera, angle, framing, or background.
-3. Do NOT change the shirt's color, fabric, folds, wrinkles, shadows, or geometry.
-4. Do NOT move, resize, crop, rotate, or distort the artwork.
-5. Do NOT change any pixel outside the artwork area.
-6. The output must have the EXACT same dimensions, composition, and visual elements as the FIRST image.
+INPUT 3 - ORIGINAL ARTWORK (PIXEL SOURCE OF TRUTH):
+The customer's original uploaded artwork file. This is the AUTHORITATIVE REFERENCE for the artwork's CONTENT AND PIXELS:
+- every pixel, every color, transparency, and detail
+- the exact logo, text, shapes, and typography
+Use this ONLY to guarantee the artwork content is reproduced faithfully.
 
-YOUR ONLY TASK:
-Apply the artwork from the SECOND image onto the shirt in the FIRST image so that it looks realistically printed on the fabric. The artwork must blend naturally with the shirt's folds, lighting, and shadows while remaining fully recognizable and unchanged in content.
+YOUR TASK:
+Treat INPUT 2 as a blueprint and INPUT 3 as the ink. Render the artwork from INPUT 3 onto the garment from INPUT 1, locked to the exact placement shown in INPUT 2, so it looks physically printed into the fabric (realistic ink, fabric texture, folds, wrinkles, lighting, shadows, perspective).
+
+STRICT PROHIBITIONS - ANY VIOLATION INVALIDATES THE OUTPUT:
+1. Do NOT redesign, redraw, reinterpret, recreate, sharpen, vectorize, restyle, simplify, or replace the artwork.
+2. Do NOT move, resize, crop, rotate, flip, or distort the artwork away from its placement in INPUT 2.
+3. Do NOT regenerate or invent new text, logos, shapes, or missing pixels. Preserve the original artwork exactly.
+4. Do NOT improve, refine, or alter typography.
+5. Do NOT change the garment, model, body, pose, camera, angle, framing, or background from INPUT 1.
+6. Do NOT change the shirt's color, fabric, folds, wrinkles, shadows, or geometry outside of applying the printed artwork.
+7. The output must keep the EXACT dimensions, composition, and visual elements of INPUT 1, with the artwork from INPUT 3 printed at the exact placement of INPUT 2.
+
+The artwork must stay locked to the transform shown in INPUT 2 as closely as physically possible.
 
 Garment context:
 - ${colorLabel} ${productLabel}
@@ -398,6 +411,7 @@ async function readArtworkFromAsset(buildId: string, assetId: string) {
 
   return {
     artworkUrl: asset.url,
+    mimeType,
     image: {
       data: file.toString("base64"),
       mimeType,
@@ -526,23 +540,40 @@ function logGeminiResponse({
   console.info("Nano Banana parsed image location:", parsedImageLocation);
 }
 
+function numValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await readJsonObject(req);
     if (!body) return apiError("Invalid JSON body.", 400);
 
     const buildId = stringValue(body.buildId);
+    const draftId = stringValue(body.draftId);
     const assetId = stringValue(body.assetId);
     const product = stringValue(body.product);
     const color = stringValue(body.color);
     const placement = stringValue(body.placement);
+    const x = numValue(body.x);
+    const y = numValue(body.y);
+    const scale = numValue(body.scale);
 
     if (!placement) {
       return apiError("Missing placement.", 400);
     }
 
-    if (!buildId || !assetId) {
-      return apiError("Missing assetId or buildId.", 400);
+    if (!buildId || !draftId || !assetId) {
+      return apiError("Missing draftId, assetId, or buildId.", 400);
+    }
+
+    if (x === null || y === null || scale === null) {
+      return apiError("Missing artwork transform (x, y, scale).", 400);
     }
 
     const referenceImage = parseInlineInputImage(body.referenceImage, "referenceImage");
@@ -553,6 +584,16 @@ export async function POST(req: Request) {
 
     const artwork = await readArtworkFromAsset(buildId, assetId);
     if ("error" in artwork) return artwork.error;
+
+    const fingerprint = computeMockupFingerprint({
+      assetId,
+      placement,
+      x,
+      y,
+      scale,
+      product,
+      color,
+    });
 
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
@@ -585,6 +626,11 @@ export async function POST(req: Request) {
             mime_type: compositeImage.image.mimeType,
             data: compositeImage.image.data,
           },
+          {
+            type: "image",
+            mime_type: artwork.mimeType,
+            data: artwork.image.data,
+          },
         ],
         response_format: {
           type: "image",
@@ -615,11 +661,40 @@ export async function POST(req: Request) {
 
     logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
 
+    let imageBuffer: Buffer;
+    if (generated.url) {
+      const remoteRes = await fetch(generated.url);
+      if (!remoteRes.ok) {
+        return apiError("Could not download the generated mockup image.", 502);
+      }
+      const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
+      imageBuffer = Buffer.from(remoteBytes);
+    } else if (generated.data) {
+      imageBuffer = Buffer.from(generated.data, "base64");
+    } else {
+      return apiError(geminiNoImageMessage(data), 500);
+    }
+
+    const storedMimeType = validateMockupData(imageBuffer, generated.mimeType);
+
+    const mockup = await upsertMockupForDraft(draftId, {
+      buildId,
+      assetId,
+      mimeType: storedMimeType,
+      data: imageBuffer,
+      fingerprint,
+      model,
+      placement,
+      prompt,
+    });
+
     return apiOk({
-      imageUrl: generated.url ? generated.url : `data:${generated.mimeType};base64,${generated.data}`,
+      imageUrl: mockup.url,
+      mockupId: mockup.id,
       prompt,
       sourceImageUrl: artwork.artworkUrl,
       model,
+      fingerprint,
     });
   } catch (err: unknown) {
     console.error(err);

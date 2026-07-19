@@ -20,12 +20,16 @@ export default async function BuilderPage({
       name: true,
       draft: {
         select: {
+          id: true,
           product: true,
           color: true,
           fabric: true,
           quantity: true,
           customNotes: true,
           primaryAssetId: true,
+          mockupId: true,
+          mockupFingerprint: true,
+          mockup: { select: { id: true, mimeType: true } },
         },
       },
       designs: {
@@ -69,13 +73,22 @@ export default async function BuilderPage({
     0
   );
 
+  const initialMockupUrl =
+    build.draft.mockupId && build.draft.mockup
+      ? `/api/mockups/${build.draft.mockup.id}/file`
+      : null;
+  const initialMockupFingerprint = build.draft.mockupFingerprint ?? null;
+
   return (
     <BuilderClient
       buildId={build.id}
+      draftId={build.draft.id}
       buildName={build.name ?? "Untitled"}
       draft={build.draft}
       placementsCount={placementsCount}
       initialUserAssets={initialUserAssets}
+      initialMockupUrl={initialMockupUrl}
+      initialMockupFingerprint={initialMockupFingerprint}
       walletEnabled={Boolean(process.env.PAYMOB_WALLET_INTEGRATION_ID?.trim())}
     />
   );

@@ -27,6 +27,7 @@ type TryOn3DPreviewProps = {
     scale: number;
   };
   generatedMockupUrl?: string | null;
+  isMockupStale?: boolean;
 };
 
 const PLACEMENT_SIDES: Record<PlacementKey, "front" | "back"> = {
@@ -68,6 +69,7 @@ export default function TryOn3DPreview({
   activePlacement,
   artworkTransform,
   generatedMockupUrl,
+  isMockupStale,
 }: TryOn3DPreviewProps) {
   const [previewSide, setPreviewSide] = useState<PreviewSide>("front");
 
@@ -82,7 +84,7 @@ export default function TryOn3DPreview({
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
   const generatedMockupSide = activePlacement ? PLACEMENT_SIDES[activePlacement] : "front";
   const showingGeneratedMockup = Boolean(
-    generatedMockupUrl && previewSide === generatedMockupSide,
+    generatedMockupUrl && previewSide === generatedMockupSide && !isMockupStale,
   );
   const modelImage = showingGeneratedMockup
     ? generatedMockupUrl!

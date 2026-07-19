@@ -77,3 +77,55 @@ export async function getArtwork(assetId: string): Promise<Buffer | null> {
 
   return asset?.artworkData ? Buffer.from(asset.artworkData) : null;
 }
+
+const ALLOWED_MOCKUP_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
+
+export function looksLikeAllowedMockup(buffer: Buffer, mimeType: string) {
+  if (mimeType === "image/png") {
+    return buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+  }
+  if (mimeType === "image/jpeg" || mimeType === "image/jpg") {
+    return buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mimeType === "image/webp") {
+    return buffer.subarray(0, 4).toString("ascii") === "RIFF" && buffer.subarray(8, 12).toString("ascii") === "WEBP";
+  }
+  return false;
+}
+
+export function normalizeMockupMimeType(mimeType: string) {
+  const normalized = mimeType.trim().toLowerCase();
+  if (normalized === "image/jpg" || normalized === "image/pjpeg") return "image/jpeg";
+  return normalized;
+}
+
+export function validateMockupData(buffer: Buffer, mimeType: string) {
+  const normalized = normalizeMockupMimeType(mimeType);
+  if (!ALLOWED_MOCKUP_MIME_TYPES.has(normalized)) {
+    throw new Error("AI mockup must be PNG, JPG, or WEBP.");
+  }
+  if (buffer.byteLength <= 0 || buffer.byteLength > 15 * 1024 * 1024) {
+    throw new Error("AI mockup file must be 15MB or smaller.");
+  }
+  if (!looksLikeAllowedMockup(buffer, normalized)) {
+    throw new Error("AI mockup content does not match its file type.");
+  }
+  return normalized;
+}
+
+export async function getMockup(mockupId: string): Promise<Buffer | null> {
+  if (!mockupId) return null;
+
+  const mockup = await prisma.mockup.findUnique({
+    where: { id: mockupId },
+    select: { data: true, mimeType: true },
+  });
+
+  if (!mockup?.data) return null;
+  return Buffer.from(mockup.data);
+}

@@ -117,20 +117,29 @@ export default function BespokeModal({
         </button>
 
         <div className="studio-bespoke-preview">
-          {isMockupStale ? (
+          {isMockupStale && generatedMockupUrl ? (
             <div className="studio-bespoke-stale-badge">
               Preview changed — AI mockup is outdated.
             </div>
           ) : null}
           <div ref={previewRef} className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
-           <img
-              src={generatedMockupUrl ?? bespokeShirtSrc}
-              alt="T-shirt preview"
-              className="studio-bespoke-shirt"
-              style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
-            />
+           {generatedMockupUrl && !isMockupStale ? (
+             <img
+               src={generatedMockupUrl}
+               alt="AI mockup preview"
+               className="studio-bespoke-shirt"
+               style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+             />
+           ) : (
+             <img
+               src={bespokeShirtSrc}
+               alt="T-shirt preview"
+               className="studio-bespoke-shirt"
+               style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+             />
+           )}
 
-            {artworkUrl && !generatedMockupUrl ? (
+            {artworkUrl && (!generatedMockupUrl || isMockupStale) ? (
               <img
                 src={artworkUrl}
                 alt="Artwork preview"

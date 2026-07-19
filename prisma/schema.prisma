@@ -36,6 +36,7 @@ model Build {
   draft     BuildDraft?
   designs   Design[]
   orders    Order[]
+  mockups   Mockup[]
 
   @@index([userId])
   @@index([status])
@@ -55,6 +56,31 @@ model BuildDraft {
   primaryAssetId String?
   build          Build         @relation(fields: [buildId], references: [id], onDelete: Cascade)
   primaryAsset   Asset?        @relation("DraftPrimaryAsset", fields: [primaryAssetId], references: [id])
+
+  mockupId                 String?       @map("aiMockupId")
+  mockupFingerprint        String?       @map("aiMockupFingerprint")
+  mockupGeneratedAt       DateTime?     @map("aiMockupGeneratedAt")
+  mockup                  Mockup?       @relation(fields: [mockupId], references: [id])
+}
+
+model Mockup {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  buildId        String
+  build          Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  drafts         BuildDraft[]
+  assetId        String?
+  mimeType       String?
+  data           Bytes
+  sha256         String?  @db.VarChar(64)
+  model          String?
+  placement      String?
+  fingerprint    String?
+  prompt         String?
+
+  @@index([buildId])
+  @@index([fingerprint])
 }
 
 model Asset {

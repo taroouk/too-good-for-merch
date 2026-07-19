@@ -22,6 +22,7 @@ import {
   actionAttachExistingAsset,
   actionCreateAssetForBuilder,
 } from "src/actions/asset-actions";
+import { computeMockupFingerprint } from "src/db/mockup";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
 import {
   placementsFromCustomNotes,
@@ -67,9 +68,12 @@ type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
 type BuilderClientProps = {
   buildId: string;
   buildName: string;
+  draftId: string;
   draft: DraftDTO;
   placementsCount: number;
   initialUserAssets?: UserAssetDTO[];
+  initialMockupUrl?: string | null;
+  initialMockupFingerprint?: string | null;
   walletEnabled?: boolean;
 };
 
@@ -152,9 +156,12 @@ function inlineImageFromDataUrl(dataUrl: string): ReferenceImagePayload {
 
 export default function BuilderClient({
   buildId,
+  draftId,
   draft,
   placementsCount,
   initialUserAssets = [],
+  initialMockupUrl = null,
+  initialMockupFingerprint = null,
   walletEnabled = false,
 }: BuilderClientProps) {
   const router = useRouter();
@@ -180,7 +187,12 @@ export default function BuilderClient({
   const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(
     DEFAULT_ARTWORK_TRANSFORM,
   );
-  const [generatedMockupUrl, setGeneratedMockupUrl] = useState<string | null>(null);
+  const [generatedMockupUrl, setGeneratedMockupUrl] = useState<string | null>(
+    initialMockupUrl,
+  );
+  const [persistedFingerprint, setPersistedFingerprint] = useState<string | null>(
+    initialMockupFingerprint,
+  );
   const [mockupPending, setMockupPending] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -216,14 +228,6 @@ export default function BuilderClient({
   } | null>(null);
 
   const previewRef = useRef<HTMLDivElement | null>(null);
-
-  const lastGeneratedSnapshot = useRef<{
-    artworkUrl: string | null;
-    artworkTransform: ArtworkTransform;
-    activePlacement: PlacementKey;
-    color: GarmentColor;
-    product: ProductType;
-  } | null>(null);
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
   const pricingPlacements = useMemo<PlacementKey[]>(
@@ -274,32 +278,36 @@ export default function BuilderClient({
     );
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
-  const [isMockupStale, setIsMockupStale] = useState(false);
+  const liveFingerprint = useMemo(
+    () =>
+      computeMockupFingerprint({
+        assetId: state.primaryAssetId ?? null,
+        placement: activePlacement,
+        x: artworkTransform.x,
+        y: artworkTransform.y,
+        scale: artworkTransform.scale,
+        product: state.product ?? null,
+        color: state.color ?? null,
+      }),
+    [artworkTransform, activePlacement, state.primaryAssetId, state.product, state.color],
+  );
 
-  useEffect(() => {
-    const snapshot = lastGeneratedSnapshot.current;
-    if (!snapshot) {
-      setIsMockupStale(false);
-      return;
-    }
-
-    const stale =
-      snapshot.artworkUrl !== artworkUrl ||
-      snapshot.artworkTransform.x !== artworkTransform.x ||
-      snapshot.artworkTransform.y !== artworkTransform.y ||
-      snapshot.artworkTransform.scale !== artworkTransform.scale ||
-      snapshot.activePlacement !== activePlacement ||
-      snapshot.color !== (state.color ?? "WHITE") ||
-      snapshot.product !== (state.product ?? "FITTED");
-
-    setIsMockupStale(stale);
-  }, [artworkUrl, artworkTransform, activePlacement, state.color, state.product]);
+  const isMockupStale = useMemo(() => {
+    if (!persistedFingerprint) return false;
+    return persistedFingerprint !== liveFingerprint;
+  }, [persistedFingerprint, liveFingerprint]);
 
   const shouldShowGenerateButton = useMemo(() => {
     if (!state.primaryAssetId || !activeArtworkAsset) return false;
     if (!generatedMockupUrl) return true;
     return isMockupStale;
   }, [generatedMockupUrl, isMockupStale, state.primaryAssetId, activeArtworkAsset]);
+
+  function discardGeneratedMockup() {
+    setGeneratedMockupUrl(null);
+    setPersistedFingerprint(null);
+    setMockupError(null);
+  }
 
   useEffect(() => {
     setMounted(true);
@@ -314,25 +322,6 @@ export default function BuilderClient({
       setUploadName(asset.fileName);
     }
   }, [artworkUrl, state.primaryAssetId, userAssets]);
-
-  useEffect(() => {
-    const snapshot = lastGeneratedSnapshot.current;
-    if (!snapshot) return;
-
-    const stale =
-      snapshot.artworkUrl !== artworkUrl ||
-      snapshot.artworkTransform.x !== artworkTransform.x ||
-      snapshot.artworkTransform.y !== artworkTransform.y ||
-      snapshot.artworkTransform.scale !== artworkTransform.scale ||
-      snapshot.activePlacement !== activePlacement ||
-      snapshot.color !== (state.color ?? "WHITE") ||
-      snapshot.product !== (state.product ?? "FITTED");
-
-    if (stale) {
-      setGeneratedMockupUrl(null);
-      setMockupError(null);
-    }
-  }, [artworkUrl, artworkTransform, activePlacement, state.color, state.product]);
 
   useEffect(() => {
     function handlePointerDown(event: MouseEvent) {
@@ -442,8 +431,7 @@ export default function BuilderClient({
     setUploadName(file.name);
     setArtworkUrl(localUrl);
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    setGeneratedMockupUrl(null);
-    setMockupError(null);
+    discardGeneratedMockup();
 
     const tempId = `temp-${Date.now()}`;
     const newLocalAsset: UserAssetDTO = {
@@ -494,8 +482,7 @@ export default function BuilderClient({
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    setGeneratedMockupUrl(null);
-    setMockupError(null);
+    discardGeneratedMockup();
 
     if (!asset.buildId || asset.buildId === buildId) {
       save({ ...state, primaryAssetId: asset.id });
@@ -534,8 +521,7 @@ export default function BuilderClient({
     setArtworkUrl(null);
     setUploadName("");
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    setGeneratedMockupUrl(null);
-    setMockupError(null);
+    discardGeneratedMockup();
     save({ ...state, primaryAssetId: null });
   }
 
@@ -545,8 +531,7 @@ export default function BuilderClient({
       y: Math.round(next.y),
       scale: clampArtworkScale(next.scale),
     });
-    setGeneratedMockupUrl(null);
-    setMockupError(null);
+    discardGeneratedMockup();
   }
 
   function changeArtworkScale(scale: number) {
@@ -960,10 +945,16 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           buildId,
+          draftId,
           assetId: state.primaryAssetId,
           referenceImage,
           compositeImage,
           placement: activePlacement,
+          x: artworkTransform.x,
+          y: artworkTransform.y,
+          scale: artworkTransform.scale,
+          product: state.product ?? null,
+          color: state.color ?? null,
         }),
       });
 
@@ -978,15 +969,11 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
       }
 
       setGeneratedMockupUrl(data.imageUrl);
-      lastGeneratedSnapshot.current = {
-        artworkUrl,
-        artworkTransform,
-        activePlacement,
-        color: state.color ?? "WHITE",
-        product: state.product ?? "FITTED",
-      };
+      if (typeof data.fingerprint === "string" && data.fingerprint) {
+        setPersistedFingerprint(data.fingerprint);
+      }
     } catch (error) {
-      setGeneratedMockupUrl(null);
+      discardGeneratedMockup();
       setMockupError(
         error instanceof Error ? error.message : "Could not generate mockup.",
       );
@@ -1178,6 +1165,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
               activePlacement={activePlacement}
               artworkTransform={artworkTransform}
               generatedMockupUrl={generatedMockupUrl}
+              isMockupStale={isMockupStale}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
