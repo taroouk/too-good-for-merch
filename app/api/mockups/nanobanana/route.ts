@@ -550,8 +550,13 @@ function numValue(value: unknown): number | null {
 }
 
 export async function POST(req: Request) {
+  console.info("[MOCKUP-DEBUG] ROUTE 1. POST entered");
   try {
     const body = await readJsonObject(req);
+    console.info("[MOCKUP-DEBUG] ROUTE 2. body parsed", {
+      hasBody: Boolean(body),
+      keys: body ? Object.keys(body) : [],
+    });
     if (!body) return apiError("Invalid JSON body.", 400);
 
     const buildId = stringValue(body.buildId);
@@ -594,6 +599,7 @@ export async function POST(req: Request) {
       product,
       color,
     });
+    console.info("[MOCKUP-DEBUG] ROUTE 4. fingerprint computed", { fingerprint });
 
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
@@ -602,6 +608,12 @@ export async function POST(req: Request) {
 
     const model = process.env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_GEMINI_IMAGE_MODEL;
     const prompt = nanoBananaPrompt({ product, color, placement });
+
+    console.info("[MOCKUP-DEBUG] ROUTE 5. BEFORE Gemini fetch", {
+      model,
+      hasApiKey: Boolean(apiKey),
+      inputCount: 4,
+    });
 
     const geminiRes = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
       method: "POST",
@@ -643,8 +655,15 @@ export async function POST(req: Request) {
       }),
       signal: AbortSignal.timeout(120_000),
     });
+    console.info("[MOCKUP-DEBUG] ROUTE 6. AFTER Gemini fetch", { status: geminiRes.status });
 
     const responseBody = await geminiRes.text();
+    console.info("[MOCKUP-DEBUG] ROUTE 6. Gemini responded", {
+      ok: geminiRes.ok,
+      status: geminiRes.status,
+      statusText: geminiRes.statusText,
+      bodyLength: responseBody.length,
+    });
 
     if (!geminiRes.ok) {
       logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
@@ -676,7 +695,12 @@ export async function POST(req: Request) {
     }
 
     const storedMimeType = validateMockupData(imageBuffer, generated.mimeType);
+    console.info("[MOCKUP-DEBUG] ROUTE 7. image validated", {
+      byteLength: imageBuffer.byteLength,
+      storedMimeType,
+    });
 
+    console.info("[MOCKUP-DEBUG] ROUTE 8. BEFORE upsertMockupForDraft (persist)");
     const mockup = await upsertMockupForDraft(draftId, {
       buildId,
       assetId,
@@ -686,6 +710,10 @@ export async function POST(req: Request) {
       model,
       placement,
       prompt,
+    });
+    console.info("[MOCKUP-DEBUG] ROUTE 9. AFTER upsertMockupForDraft (persisted)", {
+      mockupId: mockup.id,
+      url: mockup.url,
     });
 
     return apiOk({

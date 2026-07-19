@@ -934,31 +934,63 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
       return;
     }
 
+    console.info("[MOCKUP-DEBUG] 1. CLICK generateNanoBananaMockup", {
+      buildId,
+      draftId,
+      assetId: state.primaryAssetId,
+      placement: activePlacement,
+      transform: artworkTransform,
+      hasArtworkUrl: Boolean(artworkUrl),
+      previewRefPresent: Boolean(previewRef.current),
+    });
+
     setMockupPending(true);
     setMockupError(null);
 
     try {
+      console.info("[MOCKUP-DEBUG] 2. BEFORE exportMannequinReferenceImage()");
       const referenceImage = await exportMannequinReferenceImage();
+      console.info("[MOCKUP-DEBUG] 3. AFTER exportMannequinReferenceImage()", {
+        mimeType: referenceImage.mimeType,
+        dataLength: referenceImage.data.length,
+      });
+
+      console.info("[MOCKUP-DEBUG] 4. BEFORE exportCompositePreview()");
       const compositeImage = await exportCompositePreview();
+      console.info("[MOCKUP-DEBUG] 5. AFTER exportCompositePreview()", {
+        mimeType: compositeImage.mimeType,
+        dataLength: compositeImage.data.length,
+      });
+
+      const requestBody = {
+        buildId,
+        draftId,
+        assetId: state.primaryAssetId,
+        referenceImage,
+        compositeImage,
+        placement: activePlacement,
+        x: artworkTransform.x,
+        y: artworkTransform.y,
+        scale: artworkTransform.scale,
+        product: state.product ?? null,
+        color: state.color ?? null,
+      };
+      console.info("[MOCKUP-DEBUG] 6. REQUEST BODY BUILT", {
+        payloadKeys: Object.keys(requestBody),
+        bodySizeBytes: JSON.stringify(requestBody).length,
+      });
+
+      console.info("[MOCKUP-DEBUG] 7. BEFORE fetch() POST /api/mockups/nanobanana");
       const response = await fetch("/api/mockups/nanobanana", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          buildId,
-          draftId,
-          assetId: state.primaryAssetId,
-          referenceImage,
-          compositeImage,
-          placement: activePlacement,
-          x: artworkTransform.x,
-          y: artworkTransform.y,
-          scale: artworkTransform.scale,
-          product: state.product ?? null,
-          color: state.color ?? null,
-        }),
+        body: JSON.stringify(requestBody),
       });
+      console.info("[MOCKUP-DEBUG] 8. AFTER fetch() status", response.status, response.statusText);
 
+      console.info("[MOCKUP-DEBUG] 9. BEFORE response.json()");
       const data = await response.json().catch(() => null);
+      console.info("[MOCKUP-DEBUG] 10. AFTER response.json()", data);
 
       if (!response.ok || !data?.ok) {
         throw new Error(data?.error ?? "Could not generate mockup.");
@@ -968,11 +1000,20 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
         throw new Error("Gemini did not return a mockup image.");
       }
 
+      console.info("[MOCKUP-DEBUG] 11. BEFORE setGeneratedMockupUrl()");
       setGeneratedMockupUrl(data.imageUrl);
+      console.info("[MOCKUP-DEBUG] 12. AFTER setGeneratedMockupUrl()");
+
+      console.info("[MOCKUP-DEBUG] 13. BEFORE setPersistedFingerprint()");
       if (typeof data.fingerprint === "string" && data.fingerprint) {
         setPersistedFingerprint(data.fingerprint);
       }
+      console.info("[MOCKUP-DEBUG] 14. AFTER setPersistedFingerprint()");
     } catch (error) {
+      console.error("[MOCKUP-DEBUG] EXCEPTION THROWN:", error);
+      if (error instanceof Error) {
+        console.error("[MOCKUP-DEBUG] STACK:\n" + (error.stack ?? "(no stack)"));
+      }
       discardGeneratedMockup();
       setMockupError(
         error instanceof Error ? error.message : "Could not generate mockup.",
