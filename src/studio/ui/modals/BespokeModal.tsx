@@ -47,7 +47,7 @@ type BespokeModalProps = {
   userAssets: UserAssetDTO[];
   selectedPrimaryAssetId?: string | null;
   attachingAssetId: string | null;
-  previewRef: React.RefObject<HTMLDivElement | null>;
+  previewRef: (node: HTMLDivElement | null) => void;
   onClose: () => void;
   onArtworkPointerDown: PointerEventHandler<HTMLImageElement>;
   onArtworkPointerMove: PointerEventHandler<HTMLImageElement>;

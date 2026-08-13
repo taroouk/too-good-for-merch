@@ -27,9 +27,12 @@ export default async function BuilderPage({
           quantity: true,
           customNotes: true,
           primaryAssetId: true,
-          mockupId: true,
-          mockupFingerprint: true,
-          mockup: { select: { id: true, mimeType: true } },
+          printMockupId: true,
+          printMockupFingerprint: true,
+          printMockup: { select: { id: true, mimeType: true } },
+          aiMockupId: true,
+          aiMockupFingerprint: true,
+          aiMockup: { select: { id: true, mimeType: true } },
         },
       },
       designs: {
@@ -74,10 +77,15 @@ export default async function BuilderPage({
   );
 
   const initialMockupUrl =
-    build.draft.mockupId && build.draft.mockup
-      ? `/api/mockups/${build.draft.mockup.id}/file`
+    build.draft.printMockupId && build.draft.printMockup
+      ? `/api/mockups/${build.draft.printMockup.id}/file`
       : null;
-  const initialMockupFingerprint = build.draft.mockupFingerprint ?? null;
+  const initialMockupFingerprint = build.draft.printMockupFingerprint ?? null;
+  const initialAiMockupUrl =
+    build.draft.aiMockupId && build.draft.aiMockup
+      ? `/api/mockups/${build.draft.aiMockup.id}/file`
+      : null;
+  const initialAiMockupFingerprint = build.draft.aiMockupFingerprint ?? null;
 
   return (
     <BuilderClient
@@ -89,6 +97,8 @@ export default async function BuilderPage({
       initialUserAssets={initialUserAssets}
       initialMockupUrl={initialMockupUrl}
       initialMockupFingerprint={initialMockupFingerprint}
+      initialAiMockupUrl={initialAiMockupUrl ?? null}
+      initialAiMockupFingerprint={initialAiMockupFingerprint}
       walletEnabled={Boolean(process.env.PAYMOB_WALLET_INTEGRATION_ID?.trim())}
     />
   );

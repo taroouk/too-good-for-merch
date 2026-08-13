@@ -1,20 +1,41 @@
 import { Role } from "@prisma/client";
+import sharp from "sharp";
 import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
+import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
 import { computeMockupFingerprint, upsertMockupForDraft } from "src/db/mockup";
+import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
+import {
+  BASELINE_RENDER_DPI,
+  compositeArtworkOntoBase,
+  getPlacementSide,
+  loadTemplateBuffer,
+  remapResolvedPlacement,
+  resolvePlacement,
+  RendererError,
+} from "src/studio/render";
 
 export const runtime = "nodejs";
 
-const SUPPORTED_INPUT_MIME_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/jpg",
-  "image/pjpeg",
-]);
+const PRODUCTS = ["FITTED", "OVERSIZED"] as const;
+const COLORS = ["BLACK", "WHITE"] as const;
+
+function numValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return null;
+}
+
+function asEnum<T extends readonly string[]>(value: unknown, allowed: T): T[number] | null {
+  if (typeof value !== "string") return null;
+  return (allowed as readonly string[]).includes(value) ? (value as T[number]) : null;
+}
 
 type ParsedGeminiImage = {
   data?: string;
@@ -26,7 +47,18 @@ type ParsedGeminiImage = {
 const GEMINI_INTERACTIONS_ENDPOINT =
   "https://generativelanguage.googleapis.com/v1beta/interactions";
 const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
-const MAX_REFERENCE_IMAGE_BYTES = 10 * 1024 * 1024;
+
+// Gemini occasionally returns its own internal "Deadline expired before
+// operation could complete" error -- a transient timeout on Google's side
+// that arrives as a normal HTTP error response, not a network failure or a
+// timeout on our end (our own AbortSignal below never fires for this;
+// Gemini responds well within it). This is a known-retryable failure
+// class, so a single bounded retry is attempted before surfacing it.
+// Deliberately narrow: 5xx / a "deadline"-mentioning error body only.
+// Non-retryable failures (bad request, blocked prompt, bad API key, etc.)
+// are returned immediately on the first attempt, exactly as before.
+const MAX_GEMINI_ATTEMPTS = 2;
+const GEMINI_RETRY_DELAY_MS = 1500;
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -52,56 +84,6 @@ function labelFromEnum(value: string | null, fallback: string) {
     .split("_")
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
     .join(" ");
-}
-
-function base64ByteLength(data: string) {
-  const padding = data.endsWith("==") ? 2 : data.endsWith("=") ? 1 : 0;
-  return Math.floor((data.length * 3) / 4) - padding;
-}
-
-function parseInlineInputImage(value: unknown, label: string) {
-  const image = asRecord(value);
-  if (!image) {
-    return { error: apiError(`Missing ${label}.`, 400) } as const;
-  }
-
-  const rawMimeType =
-    stringValue(image.mimeType) ??
-    stringValue(image.mime_type) ??
-    stringValue(image.mediaType) ??
-    stringValue(image.media_type);
-  const rawData =
-    stringValue(image.data) ??
-    stringValue(image.base64) ??
-    stringValue(image.imageData) ??
-    stringValue(image.image_data);
-
-  if (!rawData) {
-    return { error: apiError(`Missing ${label} image data.`, 400) } as const;
-  }
-
-  const dataUrlMatch = rawData.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
-  const mimeType = (dataUrlMatch?.[1] ?? rawMimeType ?? "").toLowerCase();
-  const data = (dataUrlMatch?.[2] ?? rawData).replace(/\s/g, "");
-
-  if (!SUPPORTED_INPUT_MIME_TYPES.has(mimeType)) {
-    return {
-      error: apiError(`${label} must be PNG, JPG, or WEBP.`, 400),
-    } as const;
-  }
-
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(data)) {
-    return { error: apiError(`${label} image data must be base64.`, 400) } as const;
-  }
-
-  const byteLength = base64ByteLength(data);
-  if (byteLength <= 0 || byteLength > MAX_REFERENCE_IMAGE_BYTES) {
-    return {
-      error: apiError(`${label} image must be smaller than 10MB.`, 400),
-    } as const;
-  }
-
-  return { image: { data, mimeType } } as const;
 }
 
 function imageFromDataString(
@@ -318,7 +300,16 @@ function generatedImageFromResponse(value: unknown) {
   );
 }
 
-function nanoBananaPrompt({
+// Gemini NEVER receives the artwork -- not the raw file, not a composite,
+// not a screenshot, nothing that contains it. It receives exactly one
+// image (the clean, artwork-free garment template) and is asked only to
+// make THAT garment photorealistic. There is therefore nothing for it to
+// move, resize, rotate, crop, duplicate, redraw, or reinterpret: the
+// artwork doesn't exist yet at this stage of the pipeline. It gets
+// composited afterward, deterministically, by compositeArtworkOntoBase()
+// using the exact geometry resolvePlacement() already computed -- Gemini's
+// output is only ever used as a background layer.
+function blankGarmentPrompt({
   product,
   color,
   placement,
@@ -329,94 +320,40 @@ function nanoBananaPrompt({
 }) {
   const productLabel = labelFromEnum(product, "T-shirt");
   const colorLabel = labelFromEnum(color, "White");
-  const placementLabel = labelFromEnum(placement, "Center Front");
   const view = placement.includes("BACK") ? "back" : "front";
 
   return `
-CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC PRINTING ENGINE, NOT A CREATIVE IMAGE GENERATOR.
+CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC GARMENT PHOTOGRAPHY ENGINE, NOT A CREATIVE DESIGNER.
 
-YOU ARE GIVEN THREE INPUT IMAGES, IN THIS ORDER:
+TASK: Convert this clean garment reference into a photorealistic product photograph of the exact same BLANK garment. Do not add anything to it.
 
-INPUT 1 - GARMENT:
-A clean render of a ${colorLabel} ${productLabel} (${view} view) on a mannequin. This defines the physical garment, its fabric, folds, wrinkles, lighting, shadows, camera angle, and background.
+YOU ARE GIVEN ONE INPUT IMAGE:
 
-INPUT 2 - COMPOSITE (PLACEMENT SOURCE OF TRUTH):
-A flat composite showing the garment from INPUT 1 with the customer artwork already placed onto it. This image is the AUTHORITATIVE REFERENCE for PLACEMENT ONLY:
-- WHERE the artwork sits on the garment (position / coordinates)
-- HOW LARGE the artwork is (scale)
-- The artwork's exact rotation, aspect ratio, and proportions
-You must reproduce the artwork at the SAME position, scale, rotation, and size as it appears in this composite. Do NOT move, resize, crop, rotate, or distort it.
-
-INPUT 3 - ORIGINAL ARTWORK (PIXEL SOURCE OF TRUTH):
-The customer's original uploaded artwork file. This is the AUTHORITATIVE REFERENCE for the artwork's CONTENT AND PIXELS:
-- every pixel, every color, transparency, and detail
-- the exact logo, text, shapes, and typography
-Use this ONLY to guarantee the artwork content is reproduced faithfully.
+INPUT 1 - CLEAN GARMENT REFERENCE:
+A clean render of a ${colorLabel} ${productLabel} (${view} view), with no artwork, logo, or print on it. This defines the garment's exact type, color, and structure.
 
 YOUR TASK:
-Treat INPUT 2 as a blueprint and INPUT 3 as the ink. Render the artwork from INPUT 3 onto the garment from INPUT 1, locked to the exact placement shown in INPUT 2, so it looks physically printed into the fabric (realistic ink, fabric texture, folds, wrinkles, lighting, shadows, perspective).
+Produce a photorealistic version of this EXACT garment:
+- Preserve the garment type (${productLabel}).
+- Preserve the garment color (${colorLabel}).
+- Preserve the garment's structure and silhouette.
+- Render realistic fabric texture.
+- Render realistic folds and wrinkles.
+- Render realistic, natural lighting and shadows.
+- Produce a clean, photorealistic, completely BLANK garment.
 
 STRICT PROHIBITIONS - ANY VIOLATION INVALIDATES THE OUTPUT:
-1. Do NOT redesign, redraw, reinterpret, recreate, sharpen, vectorize, restyle, simplify, or replace the artwork.
-2. Do NOT move, resize, crop, rotate, flip, or distort the artwork away from its placement in INPUT 2.
-3. Do NOT regenerate or invent new text, logos, shapes, or missing pixels. Preserve the original artwork exactly.
-4. Do NOT improve, refine, or alter typography.
-5. Do NOT change the garment, model, body, pose, camera, angle, framing, or background from INPUT 1.
-6. Do NOT change the shirt's color, fabric, folds, wrinkles, shadows, or geometry outside of applying the printed artwork.
-7. The output must keep the EXACT dimensions, composition, and visual elements of INPUT 1, with the artwork from INPUT 3 printed at the exact placement of INPUT 2.
-
-The artwork must stay locked to the transform shown in INPUT 2 as closely as physically possible.
+1. Do NOT add any logo, artwork, graphic, or print of any kind.
+2. Do NOT add any text, lettering, or typography.
+3. Do NOT invent or hallucinate any graphics, patterns, or decoration.
+4. Do NOT change the garment type, color, or silhouette.
+5. Do NOT substitute a different garment.
+6. The output must be a completely blank, unprinted garment -- realism only, no design of any kind.
 
 Garment context:
 - ${colorLabel} ${productLabel}
 - ${view} view
-- ${placementLabel}
 `.trim();
-}
-
-async function readArtworkFromAsset(buildId: string, assetId: string) {
-  const asset = await prisma.asset.findFirst({
-    where: { id: assetId, buildId },
-    select: {
-      url: true,
-      mimeType: true,
-      build: { select: { id: true, userId: true } },
-    },
-  });
-
-  if (!asset?.url) {
-    return { error: apiError("Artwork asset not found.", 404) } as const;
-  }
-
-  const session = await auth();
-  const allowed =
-    session?.user?.role === Role.ADMIN ||
-    (await canAccessBuild(session?.user?.id ?? null, asset.build));
-
-  if (!allowed) {
-    return { error: apiError("Forbidden.", 403) } as const;
-  }
-
-  const mimeType = asset.mimeType?.toLowerCase() ?? "";
-  if (!SUPPORTED_INPUT_MIME_TYPES.has(mimeType)) {
-    return {
-      error: apiError("Nano Banana mockups need PNG, JPG, or WEBP artwork.", 400),
-    } as const;
-  }
-
-  const file = await getArtwork(assetId);
-  if (!file) {
-    return { error: apiError("Artwork file missing.", 404) } as const;
-  }
-
-  return {
-    artworkUrl: asset.url,
-    mimeType,
-    image: {
-      data: file.toString("base64"),
-      mimeType,
-    },
-  } as const;
 }
 
 function parseGeminiJson(text: string) {
@@ -497,6 +434,18 @@ function geminiErrorFromData(value: unknown) {
   return null;
 }
 
+// Narrow on purpose: only retry a failure that's actually transient.
+// Server-side (5xx) statuses and Gemini's own "Deadline expired ..."
+// wording (a DEADLINE_EXCEEDED-class error) are retryable; a genuine 4xx
+// (bad request, blocked prompt, invalid API key) never becomes correct by
+// retrying the identical request, so those still fail immediately, exactly
+// as before this change.
+function isRetryableGeminiFailure(status: number, responseBody: string): boolean {
+  if (status >= 500) return true;
+  const parsedError = geminiErrorFromData(parseGeminiJson(responseBody));
+  return typeof parsedError === "string" && /deadline/i.test(parsedError);
+}
+
 function geminiFailureMessage(responseBody: string, statusText?: string) {
   const parsed = parseGeminiJson(responseBody);
   const parsedError = geminiErrorFromData(parsed);
@@ -540,56 +489,66 @@ function logGeminiResponse({
   console.info("Nano Banana parsed image location:", parsedImageLocation);
 }
 
-function numValue(value: unknown): number | null {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return null;
-}
-
 export async function POST(req: Request) {
-  console.info("[MOCKUP-DEBUG] ROUTE 1. POST entered");
   try {
+    const session = await auth();
+
+    const limitKey = session?.user?.id ?? "anon";
+    const limit = rateLimit(req, `mockups:ai:${limitKey}`, 20, 10 * 60 * 1000);
+    if (!limit.ok) {
+      return apiError("Too many AI mockup requests. Please try again later.", 429, rateLimitHeaders(limit));
+    }
+
     const body = await readJsonObject(req);
-    console.info("[MOCKUP-DEBUG] ROUTE 2. body parsed", {
-      hasBody: Boolean(body),
-      keys: body ? Object.keys(body) : [],
-    });
     if (!body) return apiError("Invalid JSON body.", 400);
 
+    // Same request shape as /api/mockups/print, and for the same reason:
+    // artworkTransform is ephemeral client state (never persisted to
+    // BuildDraft), so the server cannot know the CURRENT Studio transform
+    // any other way. This is what guarantees the AI Mockup always
+    // corresponds to the exact current Studio state at the moment Generate
+    // is clicked -- there is no stored id to go stale, because nothing
+    // about placement/geometry is read from a previous request.
     const buildId = stringValue(body.buildId);
     const draftId = stringValue(body.draftId);
     const assetId = stringValue(body.assetId);
-    const product = stringValue(body.product);
-    const color = stringValue(body.color);
-    const placement = stringValue(body.placement);
+    const product = asEnum(body.product, PRODUCTS);
+    const color = asEnum(body.color, COLORS);
+    const placement = asEnum(body.placement, PLACEMENTS) as PlacementKey | null;
     const x = numValue(body.x);
     const y = numValue(body.y);
     const scale = numValue(body.scale);
-
-    if (!placement) {
-      return apiError("Missing placement.", 400);
-    }
+    const rotation = numValue(body.rotation) ?? 0;
 
     if (!buildId || !draftId || !assetId) {
-      return apiError("Missing draftId, assetId, or buildId.", 400);
+      return apiError("Missing buildId, draftId, or assetId.", 400);
     }
-
+    if (!product) return apiError("Missing or invalid product.", 400);
+    if (!color) return apiError("Missing or invalid color.", 400);
+    if (!placement) return apiError("Missing or invalid placement.", 400);
     if (x === null || y === null || scale === null) {
       return apiError("Missing artwork transform (x, y, scale).", 400);
     }
 
-    const referenceImage = parseInlineInputImage(body.referenceImage, "referenceImage");
-    if ("error" in referenceImage) return referenceImage.error;
+    const asset = await prisma.asset.findFirst({
+      where: { id: assetId, buildId },
+      select: { id: true, build: { select: { id: true, userId: true } } },
+    });
+    if (!asset) {
+      return apiError("Artwork asset not found.", 404);
+    }
 
-    const compositeImage = parseInlineInputImage(body.compositeImage, "compositeImage");
-    if ("error" in compositeImage) return compositeImage.error;
+    const allowed =
+      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, asset.build));
+    if (!allowed) {
+      return apiError("Forbidden.", 403);
+    }
 
-    const artwork = await readArtworkFromAsset(buildId, assetId);
-    if ("error" in artwork) return artwork.error;
-
+    // Same fingerprint shape/inputs as the print route (including the same
+    // fixed dpi baseline, even though this route has no dpi concept of its
+    // own) so the AI mockup's fingerprint exactly matches the print
+    // mockup's fingerprint for identical state -- isAiMockupStale and
+    // isPrintMockupStale compare against the same client-side value.
     const fingerprint = computeMockupFingerprint({
       assetId,
       placement,
@@ -598,8 +557,50 @@ export async function POST(req: Request) {
       scale,
       product,
       color,
+      rotation,
+      dpi: BASELINE_RENDER_DPI,
     });
-    console.info("[MOCKUP-DEBUG] ROUTE 4. fingerprint computed", { fingerprint });
+
+    // The ORIGINAL artwork bytes -- the only source of artwork content,
+    // now and always. This buffer is used only by the local Sharp
+    // post-compositor below; it is never sent to Gemini.
+    const artwork = await getArtwork(assetId);
+    if (!artwork) {
+      return apiError("Artwork file missing.", 404);
+    }
+
+    const side = getPlacementSide(placement);
+    const template = await loadTemplateBuffer(product, color, side);
+
+    let templateMeta: sharp.Metadata;
+    let artworkMeta: sharp.Metadata;
+    try {
+      templateMeta = await sharp(template).metadata();
+      artworkMeta = await sharp(artwork).metadata();
+    } catch {
+      throw new RendererError("Could not read the garment template or artwork image.", 500);
+    }
+    if (!templateMeta.width || !templateMeta.height) {
+      throw new RendererError("Garment template image is missing dimensions.", 500);
+    }
+    if (!artworkMeta.width || !artworkMeta.height) {
+      throw new RendererError("Artwork image is missing dimensions.", 400);
+    }
+
+    // Geometry resolved ONCE, via the exact same canonical function and
+    // placement config the Studio preview and the deterministic Print
+    // Mockup both already use. This never talks to Gemini and is not
+    // affected by anything Gemini returns.
+    const resolved = resolvePlacement({
+      product,
+      color,
+      placement,
+      transform: { x, y, scale, rotation },
+      templateWidth: templateMeta.width,
+      templateHeight: templateMeta.height,
+      artworkWidth: artworkMeta.width,
+      artworkHeight: artworkMeta.height,
+    });
 
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
@@ -607,67 +608,59 @@ export async function POST(req: Request) {
     }
 
     const model = process.env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_GEMINI_IMAGE_MODEL;
-    const prompt = nanoBananaPrompt({ product, color, placement });
+    const prompt = blankGarmentPrompt({ product, color, placement });
 
-    console.info("[MOCKUP-DEBUG] ROUTE 5. BEFORE Gemini fetch", {
+    // Gemini receives exactly ONE image: the clean, artwork-free garment
+    // template. Not the artwork, not a composite, not a screenshot -- there
+    // is nothing here for it to move, resize, rotate, crop, duplicate,
+    // redraw, or reinterpret. The request body is built once and reused
+    // verbatim across retry attempts -- retrying never changes what's sent.
+    const geminiRequestBody = JSON.stringify({
       model,
-      hasApiKey: Boolean(apiKey),
-      inputCount: 4,
-    });
-
-    const geminiRes = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey,
-      },
-      body: JSON.stringify({
-        model,
-        input: [
-          {
-            type: "text",
-            text: prompt,
-          },
-          {
-            type: "image",
-            mime_type: referenceImage.image.mimeType,
-            data: referenceImage.image.data,
-          },
-          {
-            type: "image",
-            mime_type: compositeImage.image.mimeType,
-            data: compositeImage.image.data,
-          },
-          {
-            type: "image",
-            mime_type: artwork.mimeType,
-            data: artwork.image.data,
-          },
-        ],
-        response_format: {
+      input: [
+        {
+          type: "text",
+          text: prompt,
+        },
+        {
           type: "image",
-          mime_type: "image/jpeg",
+          mime_type: "image/png",
+          data: template.toString("base64"),
         },
-        generation_config: {
-          temperature: 0,
-          top_k: 1,
-        },
-      }),
-      signal: AbortSignal.timeout(120_000),
-    });
-    console.info("[MOCKUP-DEBUG] ROUTE 6. AFTER Gemini fetch", { status: geminiRes.status });
-
-    const responseBody = await geminiRes.text();
-    console.info("[MOCKUP-DEBUG] ROUTE 6. Gemini responded", {
-      ok: geminiRes.ok,
-      status: geminiRes.status,
-      statusText: geminiRes.statusText,
-      bodyLength: responseBody.length,
+      ],
+      response_format: {
+        type: "image",
+        mime_type: "image/jpeg",
+      },
+      generation_config: {
+        temperature: 0,
+        top_k: 1,
+      },
     });
 
-    if (!geminiRes.ok) {
-      logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
-      return apiError(geminiFailureMessage(responseBody, geminiRes.statusText), geminiRes.status);
+    let geminiRes: Response;
+    let responseBody: string;
+    for (let attempt = 1; ; attempt++) {
+      geminiRes = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-goog-api-key": apiKey,
+        },
+        body: geminiRequestBody,
+        signal: AbortSignal.timeout(120_000),
+      });
+      responseBody = await geminiRes.text();
+
+      if (geminiRes.ok) break;
+
+      const retryable = isRetryableGeminiFailure(geminiRes.status, responseBody);
+      if (!retryable || attempt >= MAX_GEMINI_ATTEMPTS) {
+        logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
+        return apiError(geminiFailureMessage(responseBody, geminiRes.statusText), geminiRes.status);
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, GEMINI_RETRY_DELAY_MS));
     }
 
     const data = parseGeminiJson(responseBody);
@@ -680,51 +673,78 @@ export async function POST(req: Request) {
 
     logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
 
-    let imageBuffer: Buffer;
+    let geminiImage: Buffer;
     if (generated.url) {
       const remoteRes = await fetch(generated.url);
       if (!remoteRes.ok) {
-        return apiError("Could not download the generated mockup image.", 502);
+        return apiError("Could not download the generated garment image.", 502);
       }
       const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
-      imageBuffer = Buffer.from(remoteBytes);
+      geminiImage = Buffer.from(remoteBytes);
     } else if (generated.data) {
-      imageBuffer = Buffer.from(generated.data, "base64");
+      geminiImage = Buffer.from(generated.data, "base64");
     } else {
       return apiError(geminiNoImageMessage(data), 500);
     }
 
-    const storedMimeType = validateMockupData(imageBuffer, generated.mimeType);
-    console.info("[MOCKUP-DEBUG] ROUTE 7. image validated", {
-      byteLength: imageBuffer.byteLength,
-      storedMimeType,
+    // --- Deterministic post-compositor: geometry is guaranteed by code,
+    // not by Gemini. Gemini's image is used purely as a background layer.
+    let geminiMeta: sharp.Metadata;
+    try {
+      geminiMeta = await sharp(geminiImage).metadata();
+    } catch {
+      throw new RendererError("Gemini's garment image could not be read.", 500);
+    }
+    if (!geminiMeta.width || !geminiMeta.height) {
+      throw new RendererError("Gemini's garment image is missing dimensions.", 500);
+    }
+
+    // Gemini is not guaranteed to return an image the same size as the
+    // template it was given -- remap the already-resolved geometry onto
+    // whatever dimensions it actually returned, without distorting the
+    // artwork (see remapResolvedPlacement's own docs for why width/height
+    // aren't independently rescaled).
+    const remapped = remapResolvedPlacement(
+      resolved,
+      templateMeta.width,
+      templateMeta.height,
+      geminiMeta.width,
+      geminiMeta.height,
+    );
+
+    const finalImage = await compositeArtworkOntoBase(geminiImage, artwork, remapped);
+    const storedMimeType = validateMockupData(finalImage, "image/png");
+
+    // Best-effort lineage link to the draft's current Print Mockup (for
+    // display/debugging only) -- this route's own correctness never
+    // depends on the Print Mockup existing or being read.
+    const draftRow = await prisma.buildDraft.findFirst({
+      where: { id: draftId, buildId },
+      select: { printMockupId: true },
     });
 
-    console.info("[MOCKUP-DEBUG] ROUTE 8. BEFORE upsertMockupForDraft (persist)");
     const mockup = await upsertMockupForDraft(draftId, {
       buildId,
       assetId,
       mimeType: storedMimeType,
-      data: imageBuffer,
+      data: finalImage,
       fingerprint,
       model,
       placement,
       prompt,
-    });
-    console.info("[MOCKUP-DEBUG] ROUTE 9. AFTER upsertMockupForDraft (persisted)", {
-      mockupId: mockup.id,
-      url: mockup.url,
+      parentId: draftRow?.printMockupId ?? null,
     });
 
     return apiOk({
       imageUrl: mockup.url,
       mockupId: mockup.id,
-      prompt,
-      sourceImageUrl: artwork.artworkUrl,
       model,
       fingerprint,
     });
   } catch (err: unknown) {
+    if (err instanceof RendererError) {
+      return apiError(err.message, err.status);
+    }
     console.error(err);
 
     return apiError(errorMessage(err), 500);

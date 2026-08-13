@@ -57,23 +57,33 @@ model BuildDraft {
   build          Build         @relation(fields: [buildId], references: [id], onDelete: Cascade)
   primaryAsset   Asset?        @relation("DraftPrimaryAsset", fields: [primaryAssetId], references: [id])
 
-  mockupId                 String?       @map("aiMockupId")
-  mockupFingerprint        String?       @map("aiMockupFingerprint")
-  mockupGeneratedAt       DateTime?     @map("aiMockupGeneratedAt")
-  mockup                  Mockup?       @relation(fields: [mockupId], references: [id])
+  printMockupId           String?       @map("printMockupId")
+  printMockupFingerprint    String?       @map("printMockupFingerprint")
+  printMockupGeneratedAt  DateTime?     @map("printMockupGeneratedAt")
+  printMockup             Mockup?       @relation("PrintMockup", fields: [printMockupId], references: [id])
+
+  aiMockupId              String?       @map("aiMockupId")
+  aiMockupFingerprint     String?       @map("aiMockupFingerprint")
+  aiMockupGeneratedAt    DateTime?     @map("aiMockupGeneratedAt")
+  aiMockup                Mockup?       @relation("AiMockup", fields: [aiMockupId], references: [id])
 }
 
 model Mockup {
-  id             String   @id @default(cuid())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  kind           MockupKind  @default(AI)
+  parentId       String?
+  width          Int?
+  height         Int?
   buildId        String
-  build          Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
-  drafts         BuildDraft[]
+  build          Build        @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  printDrafts   BuildDraft[] @relation("PrintMockup")
+  aiDrafts       BuildDraft[] @relation("AiMockup")
   assetId        String?
   mimeType       String?
   data           Bytes
-  sha256         String?  @db.VarChar(64)
+  sha256         String?      @db.VarChar(64)
   model          String?
   placement      String?
   fingerprint    String?
@@ -81,6 +91,7 @@ model Mockup {
 
   @@index([buildId])
   @@index([fingerprint])
+  @@index([kind])
 }
 
 model Asset {
@@ -341,6 +352,11 @@ enum AssetStatus {
   PENDING_UPLOAD
   READY
   FAILED
+}
+
+enum MockupKind {
+  PRINT
+  AI
 }
 
 enum PlacementType {

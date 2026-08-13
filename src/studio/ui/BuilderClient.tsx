@@ -3,11 +3,9 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   ChangeEvent,
-  CSSProperties,
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { createPortal } from "react-dom";
-import * as htmlToImage from "html-to-image";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import type {
@@ -24,6 +22,14 @@ import {
 } from "src/actions/asset-actions";
 import { computeMockupFingerprint } from "src/db/mockup";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
+// transform.ts and placement-css.ts have zero server-only imports (no
+// node:fs, no sharp) -- safe to import directly from a client component.
+// Do not import from the src/studio/render barrel (index.ts) here, since
+// it also re-exports server-only modules (templates.ts uses
+// node:fs/promises).
+import { BASELINE_RENDER_DPI, getEffectiveScaleBounds } from "src/studio/render/transform";
+import { getPlacementStyle } from "src/studio/render/placement-css";
+import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
 import {
   placementsFromCustomNotes,
   upsertPlacementsInNotes,
@@ -74,6 +80,8 @@ type BuilderClientProps = {
   initialUserAssets?: UserAssetDTO[];
   initialMockupUrl?: string | null;
   initialMockupFingerprint?: string | null;
+  initialAiMockupUrl?: string | null;
+  initialAiMockupFingerprint?: string | null;
   walletEnabled?: boolean;
 };
 
@@ -84,15 +92,10 @@ type ArtworkTransform = {
   y: number;
   scale: number;
 };
-type ReferenceImagePayload = {
-  data: string;
-  mimeType: "image/png";
-};
 
 const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
 const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1 };
 const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
-const MAX_REFERENCE_IMAGE_SIDE = 1536;
 const ALLOWED_ARTWORK_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -136,24 +139,6 @@ function getBespokeShirtImage(
 }
 
 
-function loadImageElement(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image();
-    image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("Could not capture the current preview image."));
-    image.src = src;
-  });
-}
-
-function inlineImageFromDataUrl(dataUrl: string): ReferenceImagePayload {
-  const [metadata, data] = dataUrl.split(",");
-  if (!metadata?.startsWith("data:image/png;base64") || !data) {
-    throw new Error("Could not capture the current preview image.");
-  }
-
-  return { data, mimeType: "image/png" };
-}
-
 export default function BuilderClient({
   buildId,
   draftId,
@@ -162,6 +147,8 @@ export default function BuilderClient({
   initialUserAssets = [],
   initialMockupUrl = null,
   initialMockupFingerprint = null,
+  initialAiMockupUrl = null,
+  initialAiMockupFingerprint = null,
   walletEnabled = false,
 }: BuilderClientProps) {
   const router = useRouter();
@@ -187,11 +174,22 @@ export default function BuilderClient({
   const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(
     DEFAULT_ARTWORK_TRANSFORM,
   );
-  const [generatedMockupUrl, setGeneratedMockupUrl] = useState<string | null>(
+  // printMockupUrl/printMockupFingerprint hold the deterministic compositor
+  // result (POST /api/mockups/print, persisted as Mockup(kind="PRINT")).
+  // aiMockupUrl/aiMockupFingerprint hold the Gemini result (POST
+  // /api/mockups/nanobanana, persisted as Mockup(kind="AI")). These two used
+  // to collide: the state below named "generatedMockupUrl" was seeded from
+  // the print-sourced prop but written to by the AI generator -- kept
+  // genuinely separate now.
+  const [printMockupUrl, setPrintMockupUrl] = useState<string | null>(
     initialMockupUrl,
   );
-  const [persistedFingerprint, setPersistedFingerprint] = useState<string | null>(
+  const [printMockupFingerprint, setPrintMockupFingerprint] = useState<string | null>(
     initialMockupFingerprint,
+  );
+  const [aiMockupUrl, setAiMockupUrl] = useState<string | null>(initialAiMockupUrl ?? null);
+  const [aiMockupFingerprint, setAiMockupFingerprint] = useState<string | null>(
+    initialAiMockupFingerprint ?? null,
   );
   const [mockupPending, setMockupPending] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
@@ -227,7 +225,14 @@ export default function BuilderClient({
     origin: ArtworkTransform;
   } | null>(null);
 
-  const previewRef = useRef<HTMLDivElement | null>(null);
+  // previewRef (ref callback) attaches to .studio-bespoke-canvas, which is
+  // portal-rendered by BespokeModal only once the user opens it -- well
+  // after this component's first render. A ref callback fires exactly when
+  // that attach/detach happens, so bespokeCanvasWidth (used below to
+  // convert artworkTransform's fraction-based x/y into real px for the
+  // CSS translate()) is never stuck at a stale/zero measurement.
+  const { setRef: previewRef, nodeRef: previewNodeRef, width: bespokeCanvasWidth } =
+    useMeasuredRefCallback<HTMLDivElement>();
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
   const pricingPlacements = useMemo<PlacementKey[]>(
@@ -278,7 +283,17 @@ export default function BuilderClient({
     );
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
-  const liveFingerprint = useMemo(
+  // The AI mockup is now 100% derived from the Print Mockup (POST
+  // /api/mockups/nanobanana resolves the Print Mockup server-side from
+  // draftId and stamps the AI mockup with the Print Mockup's own
+  // fingerprint verbatim -- see app/api/mockups/nanobanana/route.ts). So
+  // there is exactly one live fingerprint, using the same rotation (always
+  // 0 today, no client rotation control yet) and dpi (BASELINE_RENDER_DPI,
+  // since generatePrintMockup never overrides it) the server will actually
+  // use, so a fresh print mockup doesn't immediately appear stale against
+  // its own just-persisted fingerprint. Both isPrintMockupStale and
+  // isAiMockupStale compare against it.
+  const livePrintFingerprint = useMemo(
     () =>
       computeMockupFingerprint({
         assetId: state.primaryAssetId ?? null,
@@ -288,24 +303,43 @@ export default function BuilderClient({
         scale: artworkTransform.scale,
         product: state.product ?? null,
         color: state.color ?? null,
+        rotation: 0,
+        dpi: BASELINE_RENDER_DPI,
       }),
     [artworkTransform, activePlacement, state.primaryAssetId, state.product, state.color],
   );
 
-  const isMockupStale = useMemo(() => {
-    if (!persistedFingerprint) return false;
-    return persistedFingerprint !== liveFingerprint;
-  }, [persistedFingerprint, liveFingerprint]);
+  const isPrintMockupStale = useMemo(() => {
+    if (!printMockupFingerprint) return false;
+    return printMockupFingerprint !== livePrintFingerprint;
+  }, [printMockupFingerprint, livePrintFingerprint]);
 
-  const shouldShowGenerateButton = useMemo(() => {
+  const isAiMockupStale = useMemo(() => {
+    if (!aiMockupFingerprint) return false;
+    return aiMockupFingerprint !== livePrintFingerprint;
+  }, [aiMockupFingerprint, livePrintFingerprint]);
+
+  const shouldShowGenerateAiButton = useMemo(() => {
     if (!state.primaryAssetId || !activeArtworkAsset) return false;
-    if (!generatedMockupUrl) return true;
-    return isMockupStale;
-  }, [generatedMockupUrl, isMockupStale, state.primaryAssetId, activeArtworkAsset]);
+    if (!aiMockupUrl) return true;
+    return isAiMockupStale;
+  }, [aiMockupUrl, isAiMockupStale, state.primaryAssetId, activeArtworkAsset]);
 
-  function discardGeneratedMockup() {
-    setGeneratedMockupUrl(null);
-    setPersistedFingerprint(null);
+  function discardPrintMockup() {
+    setPrintMockupUrl(null);
+    setPrintMockupFingerprint(null);
+  }
+
+  function discardAiMockup() {
+    setAiMockupUrl(null);
+    setAiMockupFingerprint(null);
+  }
+
+  // A placement/product/color/transform change invalidates both tracks --
+  // both compare against livePrintFingerprint (see above).
+  function discardMockups() {
+    discardPrintMockup();
+    discardAiMockup();
     setMockupError(null);
   }
 
@@ -431,7 +465,7 @@ export default function BuilderClient({
     setUploadName(file.name);
     setArtworkUrl(localUrl);
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    discardGeneratedMockup();
+    discardMockups();
 
     const tempId = `temp-${Date.now()}`;
     const newLocalAsset: UserAssetDTO = {
@@ -482,7 +516,7 @@ export default function BuilderClient({
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    discardGeneratedMockup();
+    discardMockups();
 
     if (!asset.buildId || asset.buildId === buildId) {
       save({ ...state, primaryAssetId: asset.id });
@@ -521,17 +555,20 @@ export default function BuilderClient({
     setArtworkUrl(null);
     setUploadName("");
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    discardGeneratedMockup();
+    discardMockups();
     save({ ...state, primaryAssetId: null });
   }
 
   function updateArtworkTransform(next: ArtworkTransform) {
     setArtworkTransform({
-      x: Math.round(next.x),
-      y: Math.round(next.y),
+      // x/y are fractions of the preview container's own width (see
+      // src/studio/render/transform.ts), not raw px -- round to decimal
+      // precision like scale, not to the nearest integer.
+      x: Math.round(next.x * 10000) / 10000,
+      y: Math.round(next.y * 10000) / 10000,
       scale: clampArtworkScale(next.scale),
     });
-    discardGeneratedMockup();
+    discardMockups();
   }
 
   function changeArtworkScale(scale: number) {
@@ -546,7 +583,14 @@ export default function BuilderClient({
   }
 
   function handleArtworkPointerDown(event: ReactPointerEvent<HTMLImageElement>) {
-    if (!artworkUrl || generatedMockupUrl) return;
+    // The draggable overlay <img> only exists in the DOM when it's meant
+    // to be interactive (BespokeModal renders it only when
+    // !generatedMockupUrl || isMockupStale) -- gating on printMockupUrl
+    // here too was redundant, and actively wrong now that "Generate AI
+    // Mockup" always (re)generates a Print Mockup first: printMockupUrl
+    // would stay permanently truthy after the very first click, silently
+    // blocking every subsequent drag for the rest of the session.
+    if (!artworkUrl) return;
     event.preventDefault();
     dragStateRef.current = {
       pointerId: event.pointerId,
@@ -561,10 +605,19 @@ export default function BuilderClient({
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
 
+    // previewRef is the (now square, see .studio-bespoke-canvas) drag
+    // surface -- convert the raw pointer pixel delta into a fraction of
+    // its live rendered width, matching the units resolvePlacement expects
+    // server-side. Measured live (not cached at pointerdown) since it's a
+    // cheap read and keeps this correct even if the canvas were to resize
+    // mid-drag.
+    const containerWidth = previewNodeRef.current?.getBoundingClientRect().width;
+    if (!containerWidth) return;
+
     updateArtworkTransform({
       ...dragState.origin,
-      x: dragState.origin.x + event.clientX - dragState.startX,
-      y: dragState.origin.y + event.clientY - dragState.startY,
+      x: dragState.origin.x + (event.clientX - dragState.startX) / containerWidth,
+      y: dragState.origin.y + (event.clientY - dragState.startY) / containerWidth,
     });
   }
 
@@ -820,11 +873,16 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     setActivePlacement(key);
   }
 
+  // "Save T-Shirt" just persists/closes -- it must NOT force product to
+  // CUSTOM. This modal (openBespokeBuilder, the "Build Your T-Shirt"
+  // button) is also the FITTED/OVERSIZED artwork editor, not only the
+  // Bespoke request flow, so overwriting product here silently downgraded
+  // an already-chosen FITTED/OVERSIZED selection to CUSTOM on every save,
+  // which then failed generatePrintMockup's product check on the next
+  // "Generate AI Mockup" click even though the user never touched product.
+  // continueCustomRequest() above is the only place that should set CUSTOM.
   function saveBespokeTShirt() {
-    save({
-      ...state,
-      product: "CUSTOM" as ProductType,
-    });
+    save({ ...state });
     setShowBespokeModal(false);
   }
 
@@ -852,145 +910,82 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     price?.mode === "standard" &&
     state.product !== "CUSTOM";
 
-  // إحداثيات مصممة خصيصاً لتتناسب مع صورة front-tshirt.png المفرغة اللي في المودال
+  // Canonical placement geometry -- the same shared config the server
+  // compositor and TryOn3DPreview use (src/studio/render/placement-config.ts
+  // via placement-css.ts). The bespoke canvas is forced to the same 1:1
+  // aspect ratio as the template images (.studio-bespoke-canvas in
+  // app/globals.css), so this box lands in the same relative position here
+  // as everywhere else -- no second, canvas-tuned table.
   const bespokeArtworkStyle = useMemo(() => {
     if (!activePlacement) return {};
-    const styles: Record<PlacementKey, CSSProperties> = {
-      CENTER_FRONT: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
-      FULL_FRONT: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
-      LEFT_CHEST: { top: "32%", left: "62%", transform: "translateX(-50%)", width: "10%", height: "auto" }, 
-      RIGHT_CHEST: { top: "32%", left: "38%", transform: "translateX(-50%)", width: "10%", height: "auto" },
-      CENTER_BACK: { top: "35%", left: "50%", transform: "translateX(-50%)", width: "24%", height: "auto" },
-      FULL_BACK: { top: "28%", left: "50%", transform: "translateX(-50%)", width: "36%", height: "auto" },
-      LEFT_SLEEVE: { top: "42%", left: "84%", transform: "translateX(-50%)", width: "10%", height: "auto" },
-      RIGHT_SLEEVE: { top: "42%", left: "16%", transform: "translateX(-50%)", width: "10%", height: "auto" },
-    };
-    return styles[activePlacement];
-  }, [activePlacement]);
+    const resolvedProduct: ProductType = state.product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
+    const resolvedColor: GarmentColor = state.color === "BLACK" ? "BLACK" : "WHITE";
+    return getPlacementStyle(resolvedProduct, resolvedColor, activePlacement);
+  }, [activePlacement, state.product, state.color]);
 
   const bespokeShirtSrc = useMemo(
     () => getBespokeShirtImage(state.product, state.color, activePlacement),
     [activePlacement, state.color, state.product],
   );
+
   const bespokeArtworkTransform = useMemo(() => {
     const baseTransform =
       typeof bespokeArtworkStyle.transform === "string" ? bespokeArtworkStyle.transform : "";
-    return `${baseTransform} translate(${artworkTransform.x}px, ${artworkTransform.y}px) scale(${artworkTransform.scale})`.trim();
-  }, [artworkTransform, bespokeArtworkStyle]);
+    const offsetX = artworkTransform.x * bespokeCanvasWidth;
+    const offsetY = artworkTransform.y * bespokeCanvasWidth;
+    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${artworkTransform.scale})`.trim();
+  }, [artworkTransform, bespokeArtworkStyle, bespokeCanvasWidth]);
 
-  async function exportMannequinReferenceImage(): Promise<ReferenceImagePayload> {
-    const mannequinImage = await loadImageElement(bespokeShirtSrc);
-    const sourceWidth = mannequinImage.naturalWidth || mannequinImage.width || 1024;
-    const sourceHeight = mannequinImage.naturalHeight || mannequinImage.height || 1024;
-    const scale = Math.min(
-      1,
-      MAX_REFERENCE_IMAGE_SIDE / Math.max(sourceWidth, sourceHeight),
-    );
-    const canvasWidth = Math.max(1, Math.round(sourceWidth * scale));
-    const canvasHeight = Math.max(1, Math.round(sourceHeight * scale));
-
-    const canvas = document.createElement("canvas");
-    canvas.width = canvasWidth;
-    canvas.height = canvasHeight;
-
-    const context = canvas.getContext("2d");
-    if (!context) {
-      throw new Error("Could not export the mannequin reference image.");
-    }
-
-    context.clearRect(0, 0, canvasWidth, canvasHeight);
-    context.drawImage(mannequinImage, 0, 0, canvasWidth, canvasHeight);
-
-    return inlineImageFromDataUrl(canvas.toDataURL("image/png"));
-  }
-
-  async function exportCompositePreview(): Promise<ReferenceImagePayload> {
-    if (!artworkUrl) {
-      throw new Error("Select artwork first.");
-    }
-
-    const node = previewRef.current;
-    if (!node) {
-      throw new Error("Open the preview to export the composite image.");
-    }
-
-    const dataUrl = await htmlToImage.toPng(node, {
-      cacheBust: true,
-      pixelRatio: 3,
-      backgroundColor: undefined,
-    });
-
-    const dataUrlMatch = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i);
-    if (!dataUrlMatch) {
-      throw new Error("Could not capture the composite preview image.");
-    }
-
-    return { data: dataUrlMatch[2], mimeType: "image/png" };
-  }
-
+  // Single user-facing action: "Generate AI Mockup" always (re)generates a
+  // fresh, deterministic Print Mockup from the CURRENT Studio artwork state
+  // first, then feeds that into Gemini -- there is no separate
+  // user-triggered Print Mockup step. This is unconditional (not gated on
+  // isPrintMockupStale) so the AI mockup can never be generated against a
+  // Print Mockup that doesn't correspond to what's currently on screen;
+  // when nothing changed, /api/mockups/print's own fingerprint cache makes
+  // the repeat call a cheap no-op re-render. The AI route
+  // (app/api/mockups/nanobanana/route.ts) then consumes only {buildId,
+  // draftId} and resolves the Print Mockup, garment reference, product,
+  // color, and placement itself, server-side, from rows the draft already
+  // owns -- no client-captured DOM screenshot, raw artwork, or transform
+  // numbers are ever sent to it.
   async function generateNanoBananaMockup() {
     if (!state.primaryAssetId || !activeArtworkAsset) {
       setMockupError("Select artwork first.");
       return;
     }
 
-    console.info("[MOCKUP-DEBUG] 1. CLICK generateNanoBananaMockup", {
-      buildId,
-      draftId,
-      assetId: state.primaryAssetId,
-      placement: activePlacement,
-      transform: artworkTransform,
-      hasArtworkUrl: Boolean(artworkUrl),
-      previewRefPresent: Boolean(previewRef.current),
-    });
-
     setMockupPending(true);
     setMockupError(null);
 
     try {
-      console.info("[MOCKUP-DEBUG] 2. BEFORE exportMannequinReferenceImage()");
-      const referenceImage = await exportMannequinReferenceImage();
-      console.info("[MOCKUP-DEBUG] 3. AFTER exportMannequinReferenceImage()", {
-        mimeType: referenceImage.mimeType,
-        dataLength: referenceImage.data.length,
-      });
+      // The Print Mockup remains an internal step (canonical artifact +
+      // what TryOn3DPreview shows), but the AI route no longer reads it:
+      // it resolves geometry itself from the same live transform sent
+      // below, so this call and the one after it are independent, not a
+      // read-after-write dependency.
+      const printResult = await generatePrintMockup();
+      if (!printResult.ok) {
+        throw new Error(printResult.error);
+      }
 
-      console.info("[MOCKUP-DEBUG] 4. BEFORE exportCompositePreview()");
-      const compositeImage = await exportCompositePreview();
-      console.info("[MOCKUP-DEBUG] 5. AFTER exportCompositePreview()", {
-        mimeType: compositeImage.mimeType,
-        dataLength: compositeImage.data.length,
-      });
-
-      const requestBody = {
-        buildId,
-        draftId,
-        assetId: state.primaryAssetId,
-        referenceImage,
-        compositeImage,
-        placement: activePlacement,
-        x: artworkTransform.x,
-        y: artworkTransform.y,
-        scale: artworkTransform.scale,
-        product: state.product ?? null,
-        color: state.color ?? null,
-      };
-      console.info("[MOCKUP-DEBUG] 6. REQUEST BODY BUILT", {
-        payloadKeys: Object.keys(requestBody),
-        bodySizeBytes: JSON.stringify(requestBody).length,
-      });
-
-      console.info("[MOCKUP-DEBUG] 7. BEFORE fetch() POST /api/mockups/nanobanana");
       const response = await fetch("/api/mockups/nanobanana", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify({
+          buildId,
+          draftId,
+          assetId: state.primaryAssetId,
+          placement: activePlacement,
+          x: artworkTransform.x,
+          y: artworkTransform.y,
+          scale: artworkTransform.scale,
+          product: state.product,
+          color: state.color,
+        }),
       });
-      console.info("[MOCKUP-DEBUG] 8. AFTER fetch() status", response.status, response.statusText);
 
-      console.info("[MOCKUP-DEBUG] 9. BEFORE response.json()");
       const data = await response.json().catch(() => null);
-      console.info("[MOCKUP-DEBUG] 10. AFTER response.json()", data);
 
       if (!response.ok || !data?.ok) {
         throw new Error(data?.error ?? "Could not generate mockup.");
@@ -1000,26 +995,78 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
         throw new Error("Gemini did not return a mockup image.");
       }
 
-      console.info("[MOCKUP-DEBUG] 11. BEFORE setGeneratedMockupUrl()");
-      setGeneratedMockupUrl(data.imageUrl);
-      console.info("[MOCKUP-DEBUG] 12. AFTER setGeneratedMockupUrl()");
-
-      console.info("[MOCKUP-DEBUG] 13. BEFORE setPersistedFingerprint()");
+      setAiMockupUrl(data.imageUrl);
       if (typeof data.fingerprint === "string" && data.fingerprint) {
-        setPersistedFingerprint(data.fingerprint);
+        setAiMockupFingerprint(data.fingerprint);
       }
-      console.info("[MOCKUP-DEBUG] 14. AFTER setPersistedFingerprint()");
     } catch (error) {
-      console.error("[MOCKUP-DEBUG] EXCEPTION THROWN:", error);
-      if (error instanceof Error) {
-        console.error("[MOCKUP-DEBUG] STACK:\n" + (error.stack ?? "(no stack)"));
-      }
-      discardGeneratedMockup();
+      discardAiMockup();
       setMockupError(
         error instanceof Error ? error.message : "Could not generate mockup.",
       );
     } finally {
       setMockupPending(false);
+    }
+  }
+
+  // Deterministic Print Mockup: unlike the Gemini flow below, the server
+  // composites from the raw uploaded artwork bytes it already has, so this
+  // only needs to send transform/placement numbers -- no client-side canvas
+  // export required. Returns a result (not void): generateNanoBananaMockup
+  // awaits this to gate AI generation on a fresh Print Mockup, and needs
+  // the outcome directly -- state setters here don't update this
+  // function's own closure, so the caller can't reliably learn success/
+  // failure by re-reading printMockupUrl/printMockupError afterwards.
+  async function generatePrintMockup(): Promise<
+    { ok: true; url: string; fingerprint: string | null } | { ok: false; error: string }
+  > {
+    if (!state.primaryAssetId || !activeArtworkAsset) {
+      return { ok: false, error: "Select artwork first." };
+    }
+    if (state.product !== "FITTED" && state.product !== "OVERSIZED") {
+      return { ok: false, error: "Select Fitted or Oversized before generating a mockup." };
+    }
+    if (state.color !== "BLACK" && state.color !== "WHITE") {
+      return { ok: false, error: "Select Black or White before generating a mockup." };
+    }
+
+    try {
+      const response = await fetch("/api/mockups/print", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          buildId,
+          draftId,
+          assetId: state.primaryAssetId,
+          placement: activePlacement,
+          x: artworkTransform.x,
+          y: artworkTransform.y,
+          scale: artworkTransform.scale,
+          product: state.product,
+          color: state.color,
+        }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.ok) {
+        throw new Error(data?.error ?? "Could not generate print mockup.");
+      }
+
+      if (typeof data.imageUrl !== "string" || !data.imageUrl) {
+        throw new Error("The print mockup service did not return an image.");
+      }
+
+      setPrintMockupUrl(data.imageUrl);
+      const fingerprint = typeof data.fingerprint === "string" && data.fingerprint ? data.fingerprint : null;
+      if (fingerprint) {
+        setPrintMockupFingerprint(fingerprint);
+      }
+      return { ok: true, url: data.imageUrl, fingerprint };
+    } catch (error) {
+      discardPrintMockup();
+      const message = error instanceof Error ? error.message : "Could not generate print mockup.";
+      return { ok: false, error: message };
     }
   }
 
@@ -1084,7 +1131,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     mounted && showBespokeModal
       ? createPortal(
           <BespokeModal
-            generatedMockupUrl={generatedMockupUrl}
+            generatedMockupUrl={aiMockupUrl}
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
             color={state.color}
@@ -1097,8 +1144,8 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
             artworkTransform={artworkTransform}
             mockupPending={mockupPending}
             canGenerateMockup={Boolean(state.primaryAssetId)}
-            shouldShowGenerateButton={shouldShowGenerateButton}
-            isMockupStale={isMockupStale}
+            shouldShowGenerateButton={shouldShowGenerateAiButton}
+            isMockupStale={isAiMockupStale}
             mockupError={mockupError}
             userAssets={userAssets}
             selectedPrimaryAssetId={state.primaryAssetId}
@@ -1205,8 +1252,8 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
               artworkUrl={artworkUrl}
               activePlacement={activePlacement}
               artworkTransform={artworkTransform}
-              generatedMockupUrl={generatedMockupUrl}
-              isMockupStale={isMockupStale}
+              generatedMockupUrl={printMockupUrl}
+              isMockupStale={isPrintMockupStale}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">

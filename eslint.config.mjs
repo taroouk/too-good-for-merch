@@ -17,6 +17,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Transient tsc output for the render module test runner (scripts/run-render-tests.mjs)
+    ".render-test-build/**",
   ]),
 ]);
 

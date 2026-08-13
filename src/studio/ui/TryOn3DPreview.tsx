@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
-import type { CSSProperties } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import type { GarmentColor, ProductType } from "@prisma/client";
+// Both modules have zero server-only imports (no node:fs, no sharp) --
+// safe to import directly from a client component. This is the canonical
+// placement geometry, the same one the server compositor uses (see
+// src/studio/render/placement-config.ts) -- do not add a local
+// placement-coordinate table here.
+import { getPlacementSide } from "src/studio/render/placement-config";
+import { getPlacementStyle } from "src/studio/render/placement-css";
+import { useContainerWidth } from "src/studio/ui/useContainerSize";
 
 type PreviewSide = "front" | "back";
 
@@ -28,17 +35,6 @@ type TryOn3DPreviewProps = {
   };
   generatedMockupUrl?: string | null;
   isMockupStale?: boolean;
-};
-
-const PLACEMENT_SIDES: Record<PlacementKey, "front" | "back"> = {
-  LEFT_CHEST: "front",
-  RIGHT_CHEST: "front",
-  CENTER_FRONT: "front",
-  FULL_FRONT: "front",
-  RIGHT_SLEEVE: "front",
-  LEFT_SLEEVE: "front",
-  CENTER_BACK: "back",
-  FULL_BACK: "back",
 };
 
 // هنا دي صور الموديلز الأصلية بتاعتك بدون أي تغيير
@@ -75,14 +71,14 @@ export default function TryOn3DPreview({
 
   // ده بيخلي البريفيو الخارجي يلف تلقائي مع اختيارك من المودال
   useEffect(() => {
-    if (activePlacement && PLACEMENT_SIDES[activePlacement]) {
-      setPreviewSide(PLACEMENT_SIDES[activePlacement]);
+    if (activePlacement) {
+      setPreviewSide(getPlacementSide(activePlacement));
     }
   }, [activePlacement]);
 
   const frontImage = useMemo(() => getFrontModelImage(product, color), [color, product]);
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
-  const generatedMockupSide = activePlacement ? PLACEMENT_SIDES[activePlacement] : "front";
+  const generatedMockupSide = activePlacement ? getPlacementSide(activePlacement) : "front";
   const showingGeneratedMockup = Boolean(
     generatedMockupUrl && previewSide === generatedMockupSide && !isMockupStale,
   );
@@ -95,44 +91,32 @@ export default function TryOn3DPreview({
   const shouldShowArtwork = useMemo(() => {
     if (showingGeneratedMockup) return false;
     if (!artworkUrl || !activePlacement) return false;
-    return previewSide === (PLACEMENT_SIDES[activePlacement] || "front");
+    return previewSide === getPlacementSide(activePlacement);
   }, [artworkUrl, activePlacement, previewSide, showingGeneratedMockup]);
 
-  // دي الإحداثيات المخصصة عشان اللوجو ينزل على صورة الموديل (البنت) بالظبط بدون أي ترحيل
+  // Canonical placement geometry -- the same shared config the server
+  // compositor renders from (src/studio/render/placement-config.ts),
+  // converted to CSS via placement-css.ts. No local coordinate table here.
   const artworkStyle = useMemo(() => {
     if (!activePlacement) return {};
-    const isOversized = product === "OVERSIZED";
-    const styles: Record<"OVERSIZED" | "FITTED", Record<PlacementKey, CSSProperties>> = {
-      OVERSIZED: {
-        CENTER_FRONT: { top: "48%", left: "50%", transform: "translateX(-50%)", width: "22%", height: "auto" },
-        FULL_FRONT: { top: "46%", left: "50%", transform: "translateX(-50%)", width: "26%", height: "auto" },
-        LEFT_CHEST: { top: "48%", left: "43%", width: "6%", height: "auto" },
-        RIGHT_CHEST: { top: "48%", left: "51%", width: "6%", height: "auto" },
-        CENTER_BACK: { top: "48%", left: "50%", transform: "translateX(-50%)", width: "22%", height: "auto" },
-        FULL_BACK: { top: "46%", left: "50%", transform: "translateX(-50%)", width: "28%", height: "auto" },
-        LEFT_SLEEVE: { top: "50%", left: "33%", width: "6%", height: "auto" },
-        RIGHT_SLEEVE: { top: "50%", left: "61%", width: "6%", height: "auto" },
-      },
-      FITTED: {
-        CENTER_FRONT: { top: "50%", left: "50%", transform: "translateX(-50%)", width: "18%", height: "auto" },
-        FULL_FRONT: { top: "46%", left: "50%", transform: "translateX(-50%)", width: "23%", height: "auto" },
-        LEFT_CHEST: { top: "49%", left: "44%", width: "5.5%", height: "auto" },
-        RIGHT_CHEST: { top: "49%", left: "51%", width: "5.5%", height: "auto" },
-        CENTER_BACK: { top: "50%", left: "50%", transform: "translateX(-50%)", width: "18%", height: "auto" },
-        FULL_BACK: { top: "46%", left: "50%", transform: "translateX(-50%)", width: "25%", height: "auto" },
-        LEFT_SLEEVE: { top: "50%", left: "35%", width: "5%", height: "auto" },
-        RIGHT_SLEEVE: { top: "50%", left: "60%", width: "5%", height: "auto" },
-      },
-    };
-    const key = isOversized ? "OVERSIZED" : "FITTED";
-    return styles[key][activePlacement];
-  }, [product, activePlacement]);
+    const resolvedProduct: ProductType = product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
+    const resolvedColor: GarmentColor = color === "BLACK" ? "BLACK" : "WHITE";
+    return getPlacementStyle(resolvedProduct, resolvedColor, activePlacement);
+  }, [product, color, activePlacement]);
 
+  // artworkTransform.x/y are fractions of the preview container's own
+  // width (see src/studio/render/transform.ts) -- track the container's
+  // live rendered width (fluid, w-full) to convert back to real px for
+  // CSS translate().
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const containerWidth = useContainerWidth(containerRef);
   const artworkTransformStyle = useMemo(() => {
     const baseTransform = typeof artworkStyle.transform === "string" ? artworkStyle.transform : "";
     const transform = artworkTransform ?? { x: 0, y: 0, scale: 1 };
-    return `${baseTransform} translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`.trim();
-  }, [artworkStyle, artworkTransform]);
+    const offsetX = transform.x * containerWidth;
+    const offsetY = transform.y * containerWidth;
+    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${transform.scale})`.trim();
+  }, [artworkStyle, artworkTransform, containerWidth]);
 
   function cnDot(active: boolean) {
     return active
@@ -150,7 +134,10 @@ export default function TryOn3DPreview({
         <div className="studio-preview-status"><span />Ready</div>
       </div>
 
-      <div className="studio-preview-inner studio-preview-inner-clean flex items-center justify-center relative aspect-square w-full bg-white">
+      <div
+        ref={containerRef}
+        className="studio-preview-inner studio-preview-inner-clean flex items-center justify-center relative aspect-square w-full bg-white"
+      >
         
         {/* دي صورتك الأصلية زي ما هي */}
         <img

@@ -1,0 +1,136 @@
+// file: src/studio/render/__tests__/geometry-parity.test.ts
+//
+// Proves the invariant this redesign exists for: Studio preview geometry
+// === deterministic Print Mockup geometry, for every (product, placement,
+// x, y, scale) combination -- not just at one hand-picked value.
+//
+// The Studio preview (TryOn3DPreview.tsx / BuilderClient.tsx's bespoke
+// canvas) positions the artwork with CSS: top/left/width from
+// getPlacementStyle() (placement-css.ts, itself derived from
+// getPlacementBox() below), then `transform: translate(x*W, y*H)
+// scale(s)` with the browser's default transform-origin (50% 50%, i.e.
+// the box's own center) -- see BuilderClient.tsx's bespokeArtworkTransform
+// and TryOn3DPreview.tsx's artworkTransformStyle. Both containers are
+// forced to the template's own 1:1 aspect ratio (app/globals.css
+// .studio-bespoke-canvas; Tailwind aspect-square on .studio-preview-inner)
+// so a fraction of the container is the same fraction of the template.
+//
+// cssEquivalentBox() below reimplements exactly that CSS composition
+// (independently of transform.ts's scaleBoxAroundCenter) directly from
+// getPlacementBox()'s canonical output, and this suite asserts it matches
+// resolvePlacement()'s actual pixel output. If a future change moves one
+// side off the shared formula (e.g. a new hardcoded coordinate table, or a
+// top-left-anchored scale on one side only), this test fails.
+import assert from "node:assert/strict";
+import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
+import { getPlacementBox } from "../placement-config";
+import { resolvePlacement } from "../transform";
+import { runSuite } from "./test-harness";
+
+const PRODUCTS: ProductType[] = ["FITTED", "OVERSIZED"];
+const COLOR: GarmentColor = "WHITE";
+const PLACEMENTS: PlacementType[] = [
+  "FULL_FRONT",
+  "CENTER_FRONT",
+  "LEFT_CHEST",
+  "RIGHT_CHEST",
+  "FULL_BACK",
+  "CENTER_BACK",
+  "LEFT_SLEEVE",
+  "RIGHT_SLEEVE",
+];
+const SCALES = [0.6, 1, 1.4];
+const OFFSETS = [
+  { x: 0, y: 0 },
+  { x: 0.08, y: -0.05 },
+  { x: -0.12, y: 0.1 },
+];
+
+const TEMPLATE_SIZE = 2000; // square, like the real templates (1254x1254 / 2480x2480)
+const ARTWORK_WIDTH = 400;
+const ARTWORK_HEIGHT = 240;
+
+// Independent reimplementation of "top/left/width box, then CSS
+// `transform: translate(x*W, y*H) scale(s)` with default (center)
+// transform-origin" -- the exact rule the browser applies to the Studio
+// preview's artwork <img>. Deliberately not calling scaleBoxAroundCenter.
+function cssEquivalentBox(
+  product: ProductType,
+  color: GarmentColor,
+  placement: PlacementType,
+  transform: { x: number; y: number; scale: number },
+  templateWidth: number,
+  templateHeight: number,
+  artworkWidth: number,
+  artworkHeight: number,
+) {
+  const box = getPlacementBox(product, color, placement);
+  const width0 = box.widthPct * templateWidth;
+  const height0 = width0 * (artworkHeight / artworkWidth);
+  const left0 = box.xPct * templateWidth;
+  const top0 = box.yPct * templateHeight;
+
+  const centerX = left0 + width0 / 2;
+  const centerY = top0 + height0 / 2;
+  const scaledWidth = width0 * transform.scale;
+  const scaledHeight = height0 * transform.scale;
+
+  // scale(s) around the box's own center, applied first (innermost)...
+  const afterScaleLeft = centerX - scaledWidth / 2;
+  const afterScaleTop = centerY - scaledHeight / 2;
+  // ...then translate(x*W, y*H), applied second (outermost), in real px
+  // unaffected by the scale -- matches CSS matrix composition order for
+  // `transform: translate(...) scale(...)`.
+  const left = afterScaleLeft + transform.x * templateWidth;
+  const top = afterScaleTop + transform.y * templateHeight;
+
+  return {
+    left: Math.round(left),
+    top: Math.round(top),
+    width: Math.max(1, Math.round(scaledWidth)),
+    height: Math.max(1, Math.round(scaledHeight)),
+  };
+}
+
+export async function runAll() {
+  const tests: Record<string, () => void> = {};
+
+  for (const product of PRODUCTS) {
+    for (const placement of PLACEMENTS) {
+      for (const scale of SCALES) {
+        for (const { x, y } of OFFSETS) {
+          const name = `${product}/${placement} scale=${scale} x=${x} y=${y} -- CSS box matches resolvePlacement`;
+          tests[name] = () => {
+            const expected = cssEquivalentBox(
+              product,
+              COLOR,
+              placement,
+              { x, y, scale },
+              TEMPLATE_SIZE,
+              TEMPLATE_SIZE,
+              ARTWORK_WIDTH,
+              ARTWORK_HEIGHT,
+            );
+            const actual = resolvePlacement({
+              product,
+              color: COLOR,
+              placement,
+              transform: { x, y, scale },
+              templateWidth: TEMPLATE_SIZE,
+              templateHeight: TEMPLATE_SIZE,
+              artworkWidth: ARTWORK_WIDTH,
+              artworkHeight: ARTWORK_HEIGHT,
+            });
+
+            assert.equal(actual.left, expected.left, `left mismatch for ${name}`);
+            assert.equal(actual.top, expected.top, `top mismatch for ${name}`);
+            assert.equal(actual.width, expected.width, `width mismatch for ${name}`);
+            assert.equal(actual.height, expected.height, `height mismatch for ${name}`);
+          };
+        }
+      }
+    }
+  }
+
+  return runSuite("geometry-parity", tests);
+}

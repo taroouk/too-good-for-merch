@@ -14,10 +14,10 @@ function errorResponse(error: unknown, orderId?: string) {
     return NextResponse.json({ error: error.message, orderId }, { status: error.status });
   }
   if (error instanceof PaymobError) {
-    console.error("PAYMOB_CREATE_ERROR", error.message, error.details);
+    console.error("PAYMOB_CREATE_ERROR", error.message);
     return NextResponse.json({ error: error.message, orderId }, { status: 502 });
   }
-  console.error("CHECKOUT_CREATE_ERROR", error);
+  console.error("CHECKOUT_CREATE_ERROR", error instanceof Error ? error.message : error);
   return NextResponse.json({ error: "Unable to start payment. Please try again.", orderId }, { status: 500 });
 }
 
