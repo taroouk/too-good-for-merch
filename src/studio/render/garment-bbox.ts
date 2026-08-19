@@ -1,0 +1,298 @@
+// file: src/studio/render/garment-bbox.ts
+//
+// Detects the photographed garment's own bounding box within an image --
+// used to remap artwork placement onto Gemini's output relative to where
+// the garment actually is, not relative to the full (mostly empty) canvas.
+// See transform.ts's remapResolvedPlacementToGarmentBBox for why: this
+// method was validated against 16 real /api/mockups/nanobanana generations
+// (scripts/investigate-geometry.mjs) before being wired into production.
+import sharp from "sharp";
+import { RendererError } from "./errors";
+import type { GarmentBBox } from "./types";
+
+export type DetectedGarmentBBox = GarmentBBox & {
+  method: "alpha-scan" | "border-flood-fill";
+};
+
+// Purely for diagnostic logging (see assertPlausibleBBox) -- never read by
+// any detection/threshold logic, so passing or omitting this cannot change
+// what gets accepted or rejected.
+export type GarmentBBoxLogContext = {
+  role: "template" | "gemini-output";
+  product?: string | null;
+  color?: string | null;
+  placement?: string | null;
+};
+
+// A detected bbox this small relative to its image is almost certainly a
+// detection failure (noisy background defeating trim, or a corrupt/blank
+// image), not a real tight crop -- a real garment photo, however zoomed,
+// still fills a meaningful fraction of the frame. Guards against feeding a
+// degenerate bbox into remapResolvedPlacementToGarmentBBox, which would
+// blow the artwork up to an absurd size.
+const MIN_BBOX_FRACTION = 0.05;
+
+// A detected bbox touching (near enough) opposite edges of its image on an
+// axis is almost certainly ALSO a detection failure, not a real edge-to-
+// edge photo: a backstop for whatever the border-flood-fill below doesn't
+// already catch (e.g. an image with no discernible background border at
+// all). Threshold set from real data: the widest/tallest LEGITIMATE bbox
+// seen across 24+ real generations topped out at 98.3%.
+const MAX_BBOX_FRACTION = 0.995;
+
+// Below this alpha value a pixel counts as "part of the subject" when
+// scanning a genuinely transparent image; above it (see
+// TRANSPARENCY_PRESENT_THRESHOLD) a pixel counts as "real transparency" at
+// all, distinguishing an actually-transparent template from an opaque
+// photo that merely carries an (all-255) alpha channel, e.g. from a prior
+// ensureAlpha() call.
+const ALPHA_SUBJECT_THRESHOLD = 10;
+const ALPHA_TRANSPARENCY_PRESENT_THRESHOLD = 250;
+
+// Max per-channel difference between ADJACENT pixels for them to still
+// count as "the same background region" during the border flood fill
+// below. Measured from real Gemini output: within a genuine background
+// (including a visible lighting vignette/gradient), the largest observed
+// pixel-to-pixel step was 4; crossing onto the actual subject (hair,
+// garment, a rendering-defect void) jumped by 99+. 16 sits with a wide
+// margin on both sides of that gap.
+const ADJACENT_STEP_THRESHOLD = 16;
+
+function assertPlausibleBBox(
+  bbox: GarmentBBox,
+  imageWidth: number,
+  imageHeight: number,
+  context?: GarmentBBoxLogContext,
+): void {
+  const widthFrac = bbox.width / imageWidth;
+  const heightFrac = bbox.height / imageHeight;
+
+  // Built as a list (rather than one inline boolean) purely so a rejection
+  // can report exactly which rule(s) fired -- same truth table as before,
+  // not a behavior change.
+  const failedRules: string[] = [];
+  if (!Number.isFinite(widthFrac) || !Number.isFinite(heightFrac)) failedRules.push("non-finite fraction");
+  if (widthFrac < MIN_BBOX_FRACTION) failedRules.push(`widthFrac < MIN_BBOX_FRACTION (${MIN_BBOX_FRACTION})`);
+  if (heightFrac < MIN_BBOX_FRACTION) failedRules.push(`heightFrac < MIN_BBOX_FRACTION (${MIN_BBOX_FRACTION})`);
+  if (widthFrac > MAX_BBOX_FRACTION) failedRules.push(`widthFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
+  if (heightFrac > MAX_BBOX_FRACTION) failedRules.push(`heightFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
+
+  if (failedRules.length > 0) {
+    console.error("detectGarmentBBox: rejected an implausible garment bbox", {
+      imageWidth,
+      imageHeight,
+      bbox,
+      leftFrac: bbox.left / imageWidth,
+      topFrac: bbox.top / imageHeight,
+      widthFrac,
+      heightFrac,
+      failedRules,
+      context: context ?? "not available",
+    });
+    throw new RendererError(
+      "Could not reliably detect the garment in the generated image.",
+      500,
+    );
+  }
+}
+
+// Genuinely transparent image (the clean template): scan the alpha channel
+// directly for the bbox of non-transparent pixels. Exact -- no
+// thresholding/guessing needed, since we control how these templates are
+// authored.
+async function alphaScanBBox(
+  buffer: Buffer,
+  imageWidth: number,
+  imageHeight: number,
+  context?: GarmentBBoxLogContext,
+): Promise<DetectedGarmentBBox | null> {
+  const { data, info } = await sharp(buffer).raw().ensureAlpha().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  let sawRealTransparency = false;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * channels + 3];
+      if (alpha < ALPHA_TRANSPARENCY_PRESENT_THRESHOLD) sawRealTransparency = true;
+      if (alpha > ALPHA_SUBJECT_THRESHOLD) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  if (!sawRealTransparency || maxX < minX) return null;
+
+  const bbox: DetectedGarmentBBox = {
+    left: minX,
+    top: minY,
+    width: maxX - minX + 1,
+    height: maxY - minY + 1,
+    method: "alpha-scan",
+  };
+  assertPlausibleBBox(bbox, imageWidth, imageHeight, context);
+  return bbox;
+}
+
+// Opaque photoreal image (Gemini's output -- observed to carry hasAlpha
+// with alpha=255 everywhere, i.e. NOT actually transparent).
+//
+// This used to call sharp's trim(), which compares every pixel against a
+// SINGLE fixed reference colour (sampled from one corner) with one fixed
+// threshold. That failed on real Gemini output: a white garment on a
+// white/near-white background can have a subtle but genuine lighting
+// vignette (observed: top-left corner [229,230,230] vs bottom-right corner
+// [201,200,194], a ~30-unit drift) -- small enough per-pixel step to be
+// visually invisible, but large enough that its CUMULATIVE drift from one
+// fixed corner reference exceeded trim()'s threshold before reaching the
+// true garment edge, so trim silently gave up trimming that side and
+// reported a garment ~65% wider than four other generations of the exact
+// same request. Root-caused via scripts/investigate-geometry.mjs by
+// comparing the failing run's raw pixels against a correct run's.
+//
+// Fix: flood-fill "background" inward from every border pixel, where two
+// ADJACENT pixels are considered the same background region if they're
+// within ADJACENT_STEP_THRESHOLD of EACH OTHER (not of one distant fixed
+// reference). A smooth gradient/vignette has a tiny step at every single
+// pixel (measured max 4 in the real failing case) even though its total
+// corner-to-corner drift is large, so the flood traverses it completely;
+// a genuine subject edge (hair, garment, or a rendering-defect solid-fill
+// void) is a single large jump (measured 99+) that stops the flood. The
+// detected garment bbox is the bounding box of whatever pixels the flood
+// never reached. This also correctly handles a Gemini rendering defect
+// observed separately (a solid-colour void filling part of the frame,
+// touching the canvas edges): being internally uniform and border-
+// touching, the void gets flood-filled as "background" too and is
+// excluded from the subject bbox, rather than inflating it.
+//
+// Deliberately NOT connected-component analysis (picking the single
+// largest contiguous non-background blob): tried it, and it discarded fine
+// hair detail -- thin strands against a light background fragment into
+// many small pixel-disconnected pieces at this threshold, so "largest
+// component" kept only the torso/jeans mass and cropped the head off.
+// Taking the union bbox of everything the flood didn't reach (this
+// function) is what correctly spans hair + torso + jeans as one box, and
+// was validated against 24+ real generations (scripts/investigate-
+// geometry.mjs) including the vignette and void failure cases above.
+function borderFloodFillBBox(
+  data: Buffer,
+  width: number,
+  height: number,
+  channels: number,
+): { left: number; top: number; width: number; height: number } {
+  const total = width * height;
+  const reachedFromBorder = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let queueHead = 0;
+  let queueTail = 0;
+
+  function withinStep(idxA: number, idxB: number): boolean {
+    return (
+      Math.abs(data[idxA] - data[idxB]) <= ADJACENT_STEP_THRESHOLD &&
+      Math.abs(data[idxA + 1] - data[idxB + 1]) <= ADJACENT_STEP_THRESHOLD &&
+      Math.abs(data[idxA + 2] - data[idxB + 2]) <= ADJACENT_STEP_THRESHOLD
+    );
+  }
+
+  function seedBorder(x: number, y: number) {
+    const pos = y * width + x;
+    if (reachedFromBorder[pos]) return;
+    reachedFromBorder[pos] = 1;
+    queue[queueTail++] = pos;
+  }
+
+  function tryEnqueue(x: number, y: number, fromIdx: number) {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const pos = y * width + x;
+    if (reachedFromBorder[pos]) return;
+    const idx = pos * channels;
+    if (!withinStep(fromIdx, idx)) return;
+    reachedFromBorder[pos] = 1;
+    queue[queueTail++] = pos;
+  }
+
+  // Every border pixel is a valid background seed -- background is
+  // whatever is CONNECTED to the border via small steps, regardless of
+  // absolute colour, so a black backdrop and a white backdrop are handled
+  // identically without needing to know the garment colour up front.
+  for (let x = 0; x < width; x++) {
+    seedBorder(x, 0);
+    seedBorder(x, height - 1);
+  }
+  for (let y = 0; y < height; y++) {
+    seedBorder(0, y);
+    seedBorder(width - 1, y);
+  }
+
+  while (queueHead < queueTail) {
+    const pos = queue[queueHead++];
+    const x = pos % width;
+    const y = (pos - x) / width;
+    const idx = pos * channels;
+    tryEnqueue(x - 1, y, idx);
+    tryEnqueue(x + 1, y, idx);
+    tryEnqueue(x, y - 1, idx);
+    tryEnqueue(x, y + 1, idx);
+  }
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!reachedFromBorder[y * width + x]) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  return { left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+async function opaqueSubjectBBox(
+  buffer: Buffer,
+  imageWidth: number,
+  imageHeight: number,
+  context?: GarmentBBoxLogContext,
+): Promise<DetectedGarmentBBox> {
+  const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+
+  const found = borderFloodFillBBox(data, width, height, channels);
+  if (found.width <= 0 || found.height <= 0) {
+    throw new RendererError("Could not detect the garment's bounding box in the generated image.", 500);
+  }
+
+  const bbox: DetectedGarmentBBox = { ...found, method: "border-flood-fill" };
+  assertPlausibleBBox(bbox, imageWidth, imageHeight, context);
+  return bbox;
+}
+
+export async function detectGarmentBBox(
+  imageBuffer: Buffer,
+  context?: GarmentBBoxLogContext,
+): Promise<DetectedGarmentBBox> {
+  const meta = await sharp(imageBuffer).metadata();
+  const { width, height } = meta;
+  if (!width || !height) {
+    throw new RendererError("Image is missing dimensions; cannot detect the garment.", 500);
+  }
+
+  if (meta.hasAlpha) {
+    const viaAlpha = await alphaScanBBox(imageBuffer, width, height, context);
+    if (viaAlpha) return viaAlpha;
+  }
+
+  return opaqueSubjectBBox(imageBuffer, width, height, context);
+}

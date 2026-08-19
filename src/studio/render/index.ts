@@ -8,6 +8,8 @@ export * from "./placement-config";
 export * from "./transform";
 export * from "./templates";
 export * from "./composite";
+export * from "./garment-bbox";
+export * from "./gemini-prompt";
 
 let cachedRenderer: MockupRenderer | null = null;
 let cachedEngine: string | null = null;

@@ -10,10 +10,12 @@ import { computeMockupFingerprint, upsertMockupForDraft } from "src/db/mockup";
 import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
 import {
   BASELINE_RENDER_DPI,
+  blankGarmentPrompt,
   compositeArtworkOntoBase,
+  detectGarmentBBox,
   getPlacementSide,
   loadTemplateBuffer,
-  remapResolvedPlacement,
+  remapResolvedPlacementToGarmentBBox,
   resolvePlacement,
   RendererError,
 } from "src/studio/render";
@@ -76,14 +78,6 @@ function asArray(value: unknown) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Server error.";
-}
-
-function labelFromEnum(value: string | null, fallback: string) {
-  if (!value) return fallback;
-  return value
-    .split("_")
-    .map((part) => part.charAt(0) + part.slice(1).toLowerCase())
-    .join(" ");
 }
 
 function imageFromDataString(
@@ -309,52 +303,11 @@ function generatedImageFromResponse(value: unknown) {
 // composited afterward, deterministically, by compositeArtworkOntoBase()
 // using the exact geometry resolvePlacement() already computed -- Gemini's
 // output is only ever used as a background layer.
-function blankGarmentPrompt({
-  product,
-  color,
-  placement,
-}: {
-  product: string | null;
-  color: string | null;
-  placement: string;
-}) {
-  const productLabel = labelFromEnum(product, "T-shirt");
-  const colorLabel = labelFromEnum(color, "White");
-  const view = placement.includes("BACK") ? "back" : "front";
-
-  return `
-CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC GARMENT PHOTOGRAPHY ENGINE, NOT A CREATIVE DESIGNER.
-
-TASK: Convert this clean garment reference into a photorealistic product photograph of the exact same BLANK garment. Do not add anything to it.
-
-YOU ARE GIVEN ONE INPUT IMAGE:
-
-INPUT 1 - CLEAN GARMENT REFERENCE:
-A clean render of a ${colorLabel} ${productLabel} (${view} view), with no artwork, logo, or print on it. This defines the garment's exact type, color, and structure.
-
-YOUR TASK:
-Produce a photorealistic version of this EXACT garment:
-- Preserve the garment type (${productLabel}).
-- Preserve the garment color (${colorLabel}).
-- Preserve the garment's structure and silhouette.
-- Render realistic fabric texture.
-- Render realistic folds and wrinkles.
-- Render realistic, natural lighting and shadows.
-- Produce a clean, photorealistic, completely BLANK garment.
-
-STRICT PROHIBITIONS - ANY VIOLATION INVALIDATES THE OUTPUT:
-1. Do NOT add any logo, artwork, graphic, or print of any kind.
-2. Do NOT add any text, lettering, or typography.
-3. Do NOT invent or hallucinate any graphics, patterns, or decoration.
-4. Do NOT change the garment type, color, or silhouette.
-5. Do NOT substitute a different garment.
-6. The output must be a completely blank, unprinted garment -- realism only, no design of any kind.
-
-Garment context:
-- ${colorLabel} ${productLabel}
-- ${view} view
-`.trim();
-}
+//
+// blankGarmentPrompt() itself now lives in src/studio/render/gemini-prompt.ts
+// (moved out so it has zero server-only imports and is unit-testable by the
+// same harness as the rest of that module -- see its own docs for why the
+// COMPOSITION LOCK section exists).
 
 function parseGeminiJson(text: string) {
   try {
@@ -602,6 +555,18 @@ export async function POST(req: Request) {
       artworkHeight: artworkMeta.height,
     });
 
+    // The template's own garment bbox -- detected once here (not per
+    // Gemini response) since it only depends on the template, which is
+    // fixed for this request. See remapResolvedPlacementToGarmentBBox: this
+    // is the anchor `resolved` gets re-expressed relative to, instead of
+    // the full template canvas.
+    const templateGarmentBBox = await detectGarmentBBox(template, {
+      role: "template",
+      product,
+      color,
+      placement,
+    });
+
     const apiKey = process.env.GEMINI_API_KEY?.trim();
     if (!apiKey) {
       return apiError("Missing GEMINI_API_KEY.", 500);
@@ -699,18 +664,31 @@ export async function POST(req: Request) {
       throw new RendererError("Gemini's garment image is missing dimensions.", 500);
     }
 
-    // Gemini is not guaranteed to return an image the same size as the
-    // template it was given -- remap the already-resolved geometry onto
-    // whatever dimensions it actually returned, without distorting the
-    // artwork (see remapResolvedPlacement's own docs for why width/height
-    // aren't independently rescaled).
-    const remapped = remapResolvedPlacement(
+    // Gemini is not guaranteed to preserve the template's framing -- it can
+    // return the same output dimensions while still cropping/zooming/
+    // repositioning the garment within them (proven by repeated-generation
+    // testing, see scripts/investigate-geometry.mjs). Remapping by full
+    // canvas dimensions alone (the old remapResolvedPlacement) silently
+    // ignores exactly that. Detect where the garment actually landed in
+    // THIS response and remap relative to it instead.
+    const geminiGarmentBBox = await detectGarmentBBox(geminiImage, {
+      role: "gemini-output",
+      product,
+      color,
+      placement,
+    });
+    const remapped = remapResolvedPlacementToGarmentBBox(
       resolved,
-      templateMeta.width,
-      templateMeta.height,
-      geminiMeta.width,
-      geminiMeta.height,
+      templateGarmentBBox,
+      geminiGarmentBBox,
     );
+
+    console.info("Nano Banana garment-relative remap:", {
+      templateGarmentBBox,
+      geminiGarmentBBox,
+      resolved,
+      remapped,
+    });
 
     const finalImage = await compositeArtworkOntoBase(geminiImage, artwork, remapped);
     const storedMimeType = validateMockupData(finalImage, "image/png");

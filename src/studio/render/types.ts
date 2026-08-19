@@ -63,3 +63,18 @@ export type ResolvedPlacement = {
   height: number;
   rotation: number;
 };
+
+// The photographed garment's own bounding box within a base image, in that
+// image's own pixel space -- NOT the full image bounds. A template's canvas
+// is mostly empty space around the garment; Gemini's re-render can change
+// how much of the frame the garment occupies (crop/zoom/framing) without
+// changing the output canvas size at all, so remapping artwork placement by
+// full-image dimensions alone (see remapResolvedPlacement) silently ignores
+// exactly the thing that moved. GarmentBBox is the anchor
+// remapResolvedPlacementToGarmentBBox uses instead.
+export type GarmentBBox = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};

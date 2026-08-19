@@ -29,8 +29,19 @@ const FITTED_BOXES: Record<PlacementType, PlacementBox> = {
   FULL_FRONT: { xPct: 0.385, yPct: 0.46, widthPct: 0.23 },
   LEFT_CHEST: { xPct: 0.44, yPct: 0.49, widthPct: 0.055 },
   RIGHT_CHEST: { xPct: 0.51, yPct: 0.49, widthPct: 0.055 },
-  CENTER_BACK: { xPct: 0.41, yPct: 0.5, widthPct: 0.18 },
-  FULL_BACK: { xPct: 0.375, yPct: 0.46, widthPct: 0.25 },
+  // BACK boxes below are calibrated separately from FRONT -- the back
+  // template (TGFM White/Black Back.png, 1024x1536) has different photo
+  // framing than the front template, so identical (xPct, yPct) values do
+  // NOT land on the same physical body location. Measured directly by
+  // sampling pixels down the panel's horizontal center on the real back
+  // template: the shirt fabric itself spans yFrac 0.286-0.716 (y=440-1100
+  // of 1536px), not the 0-1 range the old copied-from-front values assumed.
+  // yPct below targets the upper third of that measured span (shoulder-
+  // blade height), mirroring how CENTER_FRONT/FULL_FRONT sit on the chest.
+  // xPct/widthPct were already correctly centered on the back panel, so
+  // only yPct changes here. See scripts/investigate-geometry.mjs.
+  CENTER_BACK: { xPct: 0.41, yPct: 0.4, widthPct: 0.18 },
+  FULL_BACK: { xPct: 0.375, yPct: 0.36, widthPct: 0.25 },
   LEFT_SLEEVE: { xPct: 0.35, yPct: 0.5, widthPct: 0.05 },
   RIGHT_SLEEVE: { xPct: 0.6, yPct: 0.5, widthPct: 0.05 },
 };
@@ -40,8 +51,10 @@ const OVERSIZED_BOXES: Record<PlacementType, PlacementBox> = {
   FULL_FRONT: { xPct: 0.37, yPct: 0.46, widthPct: 0.26 },
   LEFT_CHEST: { xPct: 0.43, yPct: 0.48, widthPct: 0.06 },
   RIGHT_CHEST: { xPct: 0.51, yPct: 0.48, widthPct: 0.06 },
-  CENTER_BACK: { xPct: 0.39, yPct: 0.48, widthPct: 0.22 },
-  FULL_BACK: { xPct: 0.36, yPct: 0.46, widthPct: 0.28 },
+  // See the FITTED_BOXES comment above -- same recalibration, measured
+  // against Oversized White/Black Back.png (yFrac 0.271-0.708 measured).
+  CENTER_BACK: { xPct: 0.39, yPct: 0.38, widthPct: 0.22 },
+  FULL_BACK: { xPct: 0.36, yPct: 0.36, widthPct: 0.28 },
   LEFT_SLEEVE: { xPct: 0.33, yPct: 0.5, widthPct: 0.06 },
   RIGHT_SLEEVE: { xPct: 0.61, yPct: 0.5, widthPct: 0.06 },
 };

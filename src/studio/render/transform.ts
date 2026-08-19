@@ -2,7 +2,7 @@
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import { RendererError } from "./errors";
 import { getPlacementBox } from "./placement-config";
-import type { ArtworkTransform, PlacementBox, ResolvedPlacement } from "./types";
+import type { ArtworkTransform, GarmentBBox, PlacementBox, ResolvedPlacement } from "./types";
 
 // x/y are fractions of the placement container's own width/height (see
 // resolvePlacement below), not raw pixels -- resolution-independent, so the
@@ -209,6 +209,46 @@ export function remapResolvedPlacement(
   return {
     left: Math.round(leftFrac * toWidth),
     top: Math.round(topFrac * toHeight),
+    width,
+    height,
+    rotation: resolved.rotation,
+  };
+}
+
+// Maps a ResolvedPlacement from the template's pixel space onto a target
+// image's pixel space using each image's own GARMENT bounding box as the
+// anchor, not the full canvas (contrast remapResolvedPlacement above, which
+// assumes the garment occupies the same relative position/size in both
+// images -- proven false by repeated-generation testing: Gemini can return
+// the same output dimensions while framing/cropping/zooming the garment
+// completely differently between calls, e.g. a tight fabric-only crop on
+// one run and a full head-to-waist model shot on the next). Both bboxes are
+// caller-supplied (see garment-bbox.ts's detectGarmentBBox) in their own
+// image's pixel space; this function is pure geometry with no image I/O.
+//
+// Same invariants as remapResolvedPlacement, applied relative to the
+// garment bbox instead of the full canvas: position is remapped
+// independently per axis (each axis using that axis's own bbox dimension),
+// and size is remapped by width only, with height re-derived from the
+// artwork's own aspect ratio -- never independently rescaled -- so the
+// artwork can never be stretched/distorted even when the template and
+// target garment bboxes have different aspect ratios.
+export function remapResolvedPlacementToGarmentBBox(
+  resolved: ResolvedPlacement,
+  fromGarmentBBox: GarmentBBox,
+  toGarmentBBox: GarmentBBox,
+): ResolvedPlacement {
+  const leftFrac = (resolved.left - fromGarmentBBox.left) / fromGarmentBBox.width;
+  const topFrac = (resolved.top - fromGarmentBBox.top) / fromGarmentBBox.height;
+  const widthFrac = resolved.width / fromGarmentBBox.width;
+  const artworkAspect = resolved.width > 0 ? resolved.height / resolved.width : 1;
+
+  const width = Math.max(1, Math.round(widthFrac * toGarmentBBox.width));
+  const height = Math.max(1, Math.round(width * artworkAspect));
+
+  return {
+    left: Math.round(toGarmentBBox.left + leftFrac * toGarmentBBox.width),
+    top: Math.round(toGarmentBBox.top + topFrac * toGarmentBBox.height),
     width,
     height,
     rotation: resolved.rotation,
