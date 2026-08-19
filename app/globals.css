@@ -2223,8 +2223,10 @@ h6,
   background-size: 80px 80px !important;
 }
 
-.studio-builder-grid {
-  grid-template-columns: 394px minmax(0, 1fr) 394px !important;
+@media (min-width: 1025px) {
+  .studio-builder-grid {
+    grid-template-columns: 394px minmax(0, 1fr) 394px !important;
+  }
 }
 
 .studio-left-panel,
@@ -2715,8 +2717,10 @@ h6,
   background: #f5f4f0 !important;
 }
 
-.studio-builder-grid {
-  grid-template-columns: 418px minmax(0, 1fr) 412px !important;
+@media (min-width: 1025px) {
+  .studio-builder-grid {
+    grid-template-columns: 418px minmax(0, 1fr) 412px !important;
+  }
 }
 
 .studio-left-panel {
