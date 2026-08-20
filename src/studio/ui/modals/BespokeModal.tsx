@@ -116,6 +116,7 @@ export default function BespokeModal({
           ×
         </button>
 
+        <div className="studio-bespoke-scroll">
         <div className="studio-bespoke-preview">
           {isMockupStale && generatedMockupUrl ? (
             <div className="studio-bespoke-stale-badge">
@@ -334,6 +335,7 @@ export default function BespokeModal({
           >
             Save T-Shirt
           </button>
+        </div>
         </div>
       </div>
     </div>

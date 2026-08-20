@@ -798,12 +798,15 @@ h6,
   top: auto;
   bottom: calc(100% + 8px);
   z-index: 40;
+  max-height: min(320px, calc(100vh - 32px));
+  max-height: min(320px, calc(100dvh - 32px));
   border: 1px solid #111111;
   border-radius: var(--studio-radius);
   background: rgba(255,255,255,0.98);
   box-shadow: 0 28px 60px rgba(0,0,0,0.12);
   animation: studioDropdownIn 180ms var(--studio-ease);
-  overflow: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .studio-fabric-option {
@@ -1384,15 +1387,39 @@ h6,
   transform: rotate(90deg);
 }
 
+@media (max-width: 640px) {
+  .studio-modal-close {
+    height: 44px;
+    width: 44px;
+    right: 8px;
+    top: 4px;
+  }
+}
+
+/* Shared scroll region for modal panels: keeps the close button (a sibling,
+   positioned absolute against the panel) fixed in place while everything
+   else scrolls inside the panel's own max-height. */
+.studio-modal-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
 .studio-custom-request-modal {
   position: relative;
   width: 494px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
   border: 1px solid #000000;
   border-radius: var(--studio-radius);
   background: #ffffff;
   padding: 54px 60px 52px;
   box-shadow: 0 34px 90px rgba(0,0,0,0.18);
+  overflow: hidden;
 }
 
 .studio-modal-kicker {
@@ -1424,11 +1451,16 @@ h6,
   position: relative;
   width: 454px;
   max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  display: flex;
+  flex-direction: column;
   border: 1px solid #000000;
   border-radius: var(--studio-radius);
   background: #ffffff;
   padding: 48px 44px 36px;
   box-shadow: 0 34px 90px rgba(0,0,0,0.18);
+  overflow: hidden;
 }
 
 .studio-auth-title {
@@ -1611,14 +1643,27 @@ h6,
   width: 820px;
   max-width: calc(100vw - 32px);
   max-height: min(720px, calc(100svh - 32px)) !important;
-  min-height: 430px;
-  display: grid;
-  grid-template-columns: 382px 1fr;
+  max-height: min(720px, calc(100dvh - 32px)) !important;
+  min-height: min(430px, calc(100dvh - 32px));
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid #000000;
   border-radius: var(--studio-radius);
   background: #ffffff;
   box-shadow: 0 34px 90px rgba(0,0,0,0.18);
+}
+
+/* Wraps preview + controls so the modal scrolls as one region while the
+   close button (a sibling, absolutely positioned against the panel) stays
+   fixed in view. Desktop keeps the original 2-column grid; mobile stacks. */
+.studio-bespoke-scroll {
+  display: grid;
+  grid-template-columns: 382px 1fr;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .studio-bespoke-preview {
@@ -2137,7 +2182,7 @@ h6,
     grid-template-columns: 1fr !important;
   }
 
-  .studio-bespoke-modal {
+  .studio-bespoke-scroll {
     grid-template-columns: 1fr !important;
   }
 

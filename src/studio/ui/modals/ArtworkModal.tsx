@@ -19,31 +19,33 @@ export default function ArtworkModal({
           ×
         </button>
 
-        <div className="studio-modal-kicker">TGFM Bespoke</div>
+        <div className="studio-modal-scroll">
+          <div className="studio-modal-kicker">TGFM Bespoke</div>
 
-        <h2 className="studio-custom-request-title">Custom Garment Request</h2>
+          <h2 className="studio-custom-request-title">Custom Garment Request</h2>
 
-        <p className="studio-custom-request-copy">
-          Custom garment constructions are not available for instant checkout.
-          We&apos;ll review your request and provide a tailored quote based on
-          your customization needs.
-        </p>
+          <p className="studio-custom-request-copy">
+            Custom garment constructions are not available for instant checkout.
+            We&apos;ll review your request and provide a tailored quote based on
+            your customization needs.
+          </p>
 
-        <button
-          type="button"
-          onClick={onContinueCustomRequest}
-          className="studio-modal-primary-button"
-        >
-          Continue With Custom Request
-        </button>
+          <button
+            type="button"
+            onClick={onContinueCustomRequest}
+            className="studio-modal-primary-button"
+          >
+            Continue With Custom Request
+          </button>
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="studio-modal-secondary-button"
-        >
-          Go Back
-        </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="studio-modal-secondary-button"
+          >
+            Go Back
+          </button>
+        </div>
       </div>
     </div>
   );
