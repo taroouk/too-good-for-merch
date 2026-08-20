@@ -1,4 +1,3 @@
-import Link from "next/link";
 import {
   CONTACT_EMAIL,
   EMAIL_URL,
@@ -23,7 +22,7 @@ export default function ContactPage() {
             <a href={TIKTOK_URL}>TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp {WHATSAPP_PHONE}</a>
             <a href={EMAIL_URL}>{CONTACT_EMAIL}</a>
-            <Link href="/studio">ENTER STUDIO</Link>
+            <a href="/studio">ENTER STUDIO</a>
           </div>
         </div>
 

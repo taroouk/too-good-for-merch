@@ -60,7 +60,7 @@ export default function MarketingLayout({
         </Link>
 
         <nav className="marketingNav marketingNavRight" aria-label="Account links">
-          <Link href="/studio">ENTER STUDIO</Link>
+          <a href="/studio">ENTER STUDIO</a>
           <AuthAction className="authActionReset" />
         </nav>
       </header>
@@ -86,9 +86,9 @@ export default function MarketingLayout({
           <div className="mobileMenuDivider" />
 
           <div className="mobileMenuGroup">
-            <Link href="/studio" onClick={closeMenu}>
+            <a href="/studio" onClick={closeMenu}>
               ENTER STUDIO
-            </Link>
+            </a>
             <AuthAction className="authActionReset" onAction={closeMenu} />
           </div>
         </div>

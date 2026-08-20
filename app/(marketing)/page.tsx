@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { CONTACT_EMAIL, EMAIL_URL, INSTAGRAM_URL, TIKTOK_URL, WHATSAPP_URL } from "src/lib/contact";
@@ -465,13 +464,13 @@ export default function HomePage() {
       <HeroFigma />
 
       <section className="enter">
-      <Link href="/studio" className="enterInner">
+      <a href="/studio" className="enterInner">
           <span className="enterWord">ENTER</span>
           <div className="enterPanel">
             <img src="/images/enter.jpg" alt="Enter Studio" />
           </div>
           <span className="enterWord">STUDIO</span>
-        </Link>
+        </a>
       </section>
 
       <section className="section our-work" id="our-work">

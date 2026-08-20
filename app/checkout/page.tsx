@@ -143,9 +143,9 @@ function CheckoutContent() {
         <section className="w-full max-w-md rounded-2xl bg-white p-7 text-center shadow-sm">
           <h1 className="text-2xl font-semibold">Checkout unavailable</h1>
           <p className="mt-2 text-sm text-black/55">{error ?? "No build was selected."}</p>
-          <Link href="/studio" className="mt-6 inline-flex rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
+          <a href="/studio" className="mt-6 inline-flex rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
             Back to studio
-          </Link>
+          </a>
         </section>
       </main>
     );

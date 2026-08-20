@@ -20,9 +20,9 @@ export default async function OrdersPage() {
             <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
             <h1 className="mt-2 text-4xl font-semibold">Your orders</h1>
           </div>
-          <Link href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
+          <a href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
             Open studio
-          </Link>
+          </a>
         </div>
         <div className="mt-8 space-y-3">
           {orders.map((order) => (

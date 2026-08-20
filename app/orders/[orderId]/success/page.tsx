@@ -28,9 +28,9 @@ export default async function SuccessPage({ params }: { params: Promise<{ orderI
           <Link href={`/orders/${order.id}`} className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
             View order
           </Link>
-          <Link href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
+          <a href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
             Back to studio
-          </Link>
+          </a>
         </div>
       </div>
     </main>
