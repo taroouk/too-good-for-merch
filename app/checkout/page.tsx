@@ -51,6 +51,7 @@ function CheckoutContent() {
   const [method, setMethod] = useState<PaymentMethod>("CARD");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [orderId, setOrderId] = useState<string | null>(null);
 
   const loginHref = useMemo(() => {
     const callbackUrl = `/checkout${buildId ? `?buildId=${encodeURIComponent(buildId)}` : ""}`;
@@ -105,10 +106,14 @@ function CheckoutContent() {
     setSubmitting(true);
     setError(null);
 
+    // Reuse the order created by a previous attempt (if any) instead of
+    // creating a new one on every retry - the server only creates a fresh
+    // order when no orderId is provided.
     const response = await fetch("/api/payments/paymob/create-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        orderId: orderId ?? undefined,
         buildId,
         method,
         customer: {
@@ -119,6 +124,8 @@ function CheckoutContent() {
       }),
     });
     const data = await response.json().catch(() => null);
+
+    if (typeof data?.orderId === "string") setOrderId(data.orderId);
 
     if (response.ok && data?.paymentUrl) {
       window.location.assign(data.paymentUrl);

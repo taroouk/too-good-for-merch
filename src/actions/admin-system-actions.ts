@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAdmin } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { createPaymobPayment } from "src/lib/payments/paymob";
+import { InvalidExchangeRateInputError, parseExchangeRateInput } from "src/pricing/currency";
 
 export async function generateRetryPaymentLinkAction(formData: FormData) {
   const admin = await requireAdmin();
@@ -51,13 +52,37 @@ export async function updateStoreSettingsAction(formData: FormData) {
   const shipping = Number(formData.get("shipping"));
   if (storeName.length < 2 || !/^[A-Z]{3}$/.test(currency)) throw new Error("Invalid store settings.");
   if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100 || !Number.isFinite(shipping) || shipping < 0) throw new Error("Tax or shipping is invalid.");
+
+  let usdToEgpRate: number | null;
+  try {
+    usdToEgpRate = parseExchangeRateInput(String(formData.get("usdToEgpRate") ?? ""));
+  } catch (error) {
+    if (error instanceof InvalidExchangeRateInputError) throw error;
+    throw new Error("USD → EGP exchange rate must be a positive number.");
+  }
+
+  const previous = await prisma.storeSetting.findUnique({ where: { id: "store" } });
+
   await prisma.$transaction([
     prisma.storeSetting.upsert({
       where: { id: "store" },
-      update: { storeName, currency, taxRateBps: Math.round(taxRate * 100), shippingCents: Math.round(shipping * 100) },
-      create: { id: "store", storeName, currency, taxRateBps: Math.round(taxRate * 100), shippingCents: Math.round(shipping * 100) },
+      update: { storeName, currency, taxRateBps: Math.round(taxRate * 100), shippingCents: Math.round(shipping * 100), usdToEgpRate },
+      create: { id: "store", storeName, currency, taxRateBps: Math.round(taxRate * 100), shippingCents: Math.round(shipping * 100), usdToEgpRate },
     }),
-    prisma.adminAuditLog.create({ data: { adminId: admin.id, action: "STORE_SETTINGS_UPDATED", metadata: { storeName, currency, taxRate, shipping } as Prisma.InputJsonValue } }),
+    prisma.adminAuditLog.create({
+      data: {
+        adminId: admin.id,
+        action: "STORE_SETTINGS_UPDATED",
+        metadata: {
+          storeName,
+          currency,
+          taxRate,
+          shipping,
+          previousUsdToEgpRate: previous?.usdToEgpRate ?? null,
+          usdToEgpRate,
+        } as Prisma.InputJsonValue,
+      },
+    }),
   ]);
   revalidatePath("/admin/settings");
   redirect(`/admin/settings?notice=${encodeURIComponent("Store settings saved.")}`);

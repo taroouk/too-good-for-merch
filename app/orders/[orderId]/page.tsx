@@ -14,6 +14,16 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
   if (!order) notFound();
   if (session.user.role !== Role.ADMIN && order.userId !== session.user.id) notFound();
 
+  // Paymob's payment_keys call is created with expiration: 3600 (see
+  // createPaymobPayment) - the hosted payment link itself expires after an
+  // hour. If the most recent attempt is older than that and the order is
+  // still awaiting a webhook, the customer's polling would otherwise spin
+  // on "waiting for confirmation" forever with no way out.
+  const latestAttempt = await prisma.paymentAttempt.findFirst({
+    where: { orderId: order.id },
+    orderBy: { createdAt: "desc" },
+    select: { createdAt: true },
+  });
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
       <div className="mx-auto max-w-2xl">
@@ -27,6 +37,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
             orderId={order.id}
             initialStatus={order.paymentStatus}
             retryEnabled={order.paymentStatus !== "PAID"}
+            latestAttemptAt={latestAttempt?.createdAt.toISOString() ?? null}
           />
           <div className="mt-7 border-t border-black/10 pt-6">
             {order.items.map((item) => (

@@ -43,6 +43,24 @@ const RETRYABLE_READ_ACTIONS = new Set([
 const RETRYABLE_CONNECTION_ERROR_CODES = new Set(["P1001", "P1017"]);
 const RETRY_DELAY_MS = 200;
 
+// PrismaClientInitializationError (thrown when the engine can't establish
+// its *first* connection, e.g. `prisma.user.findUnique(...)` as the very
+// first query against a Neon compute that auto-suspended from inactivity
+// and needs a few seconds to wake) is a *different* error class from
+// PrismaClientKnownRequestError above -- confirmed by reading
+// node_modules/@prisma/client/runtime/library.js: it carries `.errorCode`,
+// not `.code`, so the P1001/P1017 check above never matches it and this
+// class of failure was silently going unretried. Verified empirically
+// (scripts/_tmp_middleware_probe.mjs, removed) that $use's `next(params)`
+// promise does reject with this error class, so it's catchable here.
+// Neon's wake-from-suspend latency runs a few seconds, not milliseconds,
+// so this gets its own slower backoff rather than reusing RETRY_DELAY_MS.
+const INIT_RETRY_DELAYS_MS = [500, 1500, 3000];
+
+function isPrismaInitializationError(error: unknown): boolean {
+  return Boolean(error) && (error as { name?: string }).name === "PrismaClientInitializationError";
+}
+
 // `@prisma/client` resolves to a browser-safe stub when this file ends up
 // in a client bundle (it does -- src/db/mockup.ts imports `prisma` here
 // and is itself imported by the "use client" BuilderClient.tsx for
@@ -68,20 +86,34 @@ if (typeof window === "undefined") {
         return next(params);
       }
 
-      try {
-        return await next(params);
-      } catch (error) {
-        const code = (error as { code?: string } | null)?.code;
-        if (!code || !RETRYABLE_CONNECTION_ERROR_CODES.has(code)) {
-          throw error;
-        }
+      for (let attempt = 0; attempt <= INIT_RETRY_DELAYS_MS.length; attempt += 1) {
+        try {
+          return await next(params);
+        } catch (error) {
+          if (isPrismaInitializationError(error)) {
+            if (attempt >= INIT_RETRY_DELAYS_MS.length) throw error;
+            const delay = INIT_RETRY_DELAYS_MS[attempt];
+            console.warn(
+              `prisma: initialization error on ${params.model ?? "?"}.${params.action} (likely Neon compute waking from suspend) -- retrying in ${delay}ms (attempt ${attempt + 1}/${INIT_RETRY_DELAYS_MS.length})`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, delay));
+            continue;
+          }
 
-        console.warn(
-          `prisma: transient connection error ${code} on ${params.model ?? "?"}.${params.action} -- retrying once`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
-        return next(params);
+          const code = (error as { code?: string } | null)?.code;
+          if (!code || !RETRYABLE_CONNECTION_ERROR_CODES.has(code)) {
+            throw error;
+          }
+
+          console.warn(
+            `prisma: transient connection error ${code} on ${params.model ?? "?"}.${params.action} -- retrying once`,
+          );
+          await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+          return next(params);
+        }
       }
+      // Unreachable: the loop above always returns or throws.
+      throw new Error("prisma: retry loop exited without a result");
     });
   }
 }

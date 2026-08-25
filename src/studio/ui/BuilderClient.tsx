@@ -240,7 +240,7 @@ export default function BuilderClient({
     [selectedPlacements],
   );
 
-  const fabricOptions = [
+  const allFabricOptions = [
     {
       key: "ESSENTIALS_170" as FabricType,
       name: "ESSENTIALS",
@@ -260,6 +260,16 @@ export default function BuilderClient({
       desc: "Dense luxury cotton with elevated structure and a substantial drape.",
     },
   ];
+
+  // FITTED + HEAVYWEIGHT_300 has no configured price anywhere (PricingRule
+  // is empty and FALLBACK_PRICES has no FITTED.HEAVYWEIGHT_300 entry -- see
+  // src/pricing/engine.ts), so computePrice() rejects it and checkout
+  // throws. This hides the option for FITTED rather than letting a
+  // customer pick a combination that can never reach checkout; it changes
+  // no pricing or rendering behavior.
+  const fabricOptions = allFabricOptions.filter(
+    (fabric) => !(state.product === "FITTED" && fabric.key === "HEAVYWEIGHT_300"),
+  );
 
   const placementCards: Array<{ key: PlacementKey; label: string; image: string }> = [
     { key: "FULL_FRONT", label: "Full Front", image: "/images/Frame 1.png" },
@@ -792,6 +802,9 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     save({
       ...state,
       product: "FITTED" as ProductType,
+      // HEAVYWEIGHT_300 is hidden for FITTED above (no configured price) --
+      // fall back rather than leave an unpriced combination in state.
+      fabric: state.fabric === "HEAVYWEIGHT_300" ? ("SIGNATURE_200" as FabricType) : state.fabric,
     });
   }
 

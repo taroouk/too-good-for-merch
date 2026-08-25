@@ -7,6 +7,7 @@ import {
   updateOrderStatusAction,
 } from "src/actions/admin-order-actions";
 import AdminToast from "src/components/admin/AdminToast";
+import { formatExchangeRate, formatMoney, isNewPricingModel, itemDisplayCurrency } from "src/lib/orders/display";
 
 type AdminOrderDetailsPageProps = {
   params: Promise<{
@@ -23,9 +24,7 @@ const allowedStatusFlow: Record<OrderStatus, OrderStatus[]> = {
   CANCELLED: [OrderStatus.NEW],
 };
 
-function money(cents: number, currency: string): string {
-  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
-}
+const money = formatMoney;
 
 function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -107,10 +106,23 @@ export default async function AdminOrderDetailsPage({
           phone: true,
         },
       },
-      build: true,
+      build: {
+        include: {
+          draft: {
+            include: {
+              printMockup: { select: { id: true, mimeType: true, createdAt: true } },
+              aiMockup: { select: { id: true, mimeType: true, createdAt: true } },
+            },
+          },
+        },
+      },
       items: {
         include: {
-          asset: true,
+          // Only url/fileName/mimeType are read below -- the full row also
+          // carries artworkData (up to 10MB of raw artwork bytes per item),
+          // which this page never renders and which would otherwise be
+          // pulled into the RSC payload on every order-detail view.
+          asset: { select: { url: true, fileName: true, mimeType: true } },
         },
       },
       notes: {
@@ -138,6 +150,10 @@ export default async function AdminOrderDetailsPage({
   }
 
   const nextStatuses = allowedStatusFlow[order.status];
+
+  // See src/lib/orders/display.ts for the reasoning behind these two.
+  const isNewOrder = isNewPricingModel(order);
+  const itemCurrency = itemDisplayCurrency(order);
 
   return (
     <main className="px-4 py-10">
@@ -193,6 +209,9 @@ export default async function AdminOrderDetailsPage({
           <section className="space-y-6">
             <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
               <h2 className="text-lg font-semibold">Order items</h2>
+              {isNewOrder ? (
+                <p className="mt-1 text-xs text-black/40">Item prices are shown in USD, the canonical pricing currency.</p>
+              ) : null}
 
               <div className="mt-5 space-y-4">
                 {order.items.length > 0 ? (
@@ -227,7 +246,7 @@ export default async function AdminOrderDetailsPage({
                             </div>
 
                             <p className="text-xl font-semibold text-[#a56a2a]">
-                              {money(item.totalCents, order.currency)}
+                              {money(item.totalCents, itemCurrency)}
                             </p>
                           </div>
 
@@ -246,7 +265,7 @@ export default async function AdminOrderDetailsPage({
                                 Unit price
                               </p>
                               <p className="mt-1 font-semibold">
-                                {money(item.unitPriceCents, order.currency)}
+                                {money(item.unitPriceCents, itemCurrency)}
                               </p>
                             </div>
 
@@ -298,6 +317,55 @@ export default async function AdminOrderDetailsPage({
                 )}
               </div>
             </div>
+
+            {order.build?.draft?.printMockup || order.build?.draft?.aiMockup ? (
+              <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
+                <h2 className="text-lg font-semibold">Mockups</h2>
+                <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                  {order.build.draft.printMockup ? (
+                    <div className="overflow-hidden rounded-3xl border border-black/10">
+                      <a
+                        href={`/api/mockups/${order.build.draft.printMockup.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex h-56 items-center justify-center bg-[#faf8f6]"
+                      >
+                        <img
+                          src={`/api/mockups/${order.build.draft.printMockup.id}/file`}
+                          alt="Print mockup"
+                          className="h-full w-full object-contain"
+                        />
+                      </a>
+                      <div className="p-4 text-xs">
+                        <p className="font-semibold text-black/80">Print mockup</p>
+                        <p className="mt-1 text-black/40">Deterministic compositor output, used for production.</p>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {order.build.draft.aiMockup ? (
+                    <div className="overflow-hidden rounded-3xl border border-black/10">
+                      <a
+                        href={`/api/mockups/${order.build.draft.aiMockup.id}/file`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex h-56 items-center justify-center bg-[#faf8f6]"
+                      >
+                        <img
+                          src={`/api/mockups/${order.build.draft.aiMockup.id}/file`}
+                          alt="AI mockup"
+                          className="h-full w-full object-contain"
+                        />
+                      </a>
+                      <div className="p-4 text-xs">
+                        <p className="font-semibold text-black/80">AI mockup</p>
+                        <p className="mt-1 text-black/40">AI-enhanced preview shown to the customer.</p>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
               <h2 className="text-lg font-semibold">Internal admin notes</h2>
@@ -394,6 +462,59 @@ export default async function AdminOrderDetailsPage({
             </div>
 
             <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
+              <h2 className="text-lg font-semibold">Financial summary</h2>
+
+              <div className="mt-5 space-y-3 text-sm">
+                {isNewOrder ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-black/50">Canonical order total</span>
+                      <span className="text-lg font-semibold text-[#a56a2a]">
+                        {money(order.canonicalTotalUsdCents as number, "USD")}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-black/50">Payment amount</span>
+                      <span className="font-medium">{money(order.totalCents, order.currency)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-black/50">Payment currency</span>
+                      <span className="font-medium">{order.currency}</span>
+                    </div>
+                    {order.exchangeRateUsed != null ? (
+                      <div className="flex justify-between">
+                        <span className="text-black/50">Exchange rate</span>
+                        <span className="font-medium">1 USD = {formatExchangeRate(order.exchangeRateUsed)} {order.currency}</span>
+                      </div>
+                    ) : null}
+                    {order.exchangeRateAt != null ? (
+                      <div className="flex justify-between">
+                        <span className="text-black/50">Rate applied</span>
+                        <span className="font-medium">{formatDateTime(order.exchangeRateAt)}</span>
+                      </div>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-black/50">Payment amount</span>
+                      <span className="text-lg font-semibold text-[#a56a2a]">
+                        {money(order.totalCents, order.currency)}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-black/50">Payment currency</span>
+                      <span className="font-medium">{order.currency}</span>
+                    </div>
+                    <p className="pt-1 text-xs text-black/40">
+                      Canonical USD pricing was not recorded for this order.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-[32px] bg-white p-6 shadow-[0_18px_60px_rgba(0,0,0,0.06)]">
               <h2 className="text-lg font-semibold">Order summary</h2>
 
               <div className="mt-5 space-y-3 text-sm">
@@ -457,6 +578,20 @@ export default async function AdminOrderDetailsPage({
               <h2 className="text-lg font-semibold">Payment details</h2>
 
               <div className="mt-5 space-y-4 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-black/40">
+                    Payment amount
+                  </p>
+                  <p className="mt-1 font-semibold">{money(order.totalCents, order.currency)}</p>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-black/40">
+                    Payment currency
+                  </p>
+                  <p className="mt-1 font-semibold">{order.currency}</p>
+                </div>
+
                 <div>
                   <p className="text-xs uppercase tracking-wide text-black/40">
                     Payment status

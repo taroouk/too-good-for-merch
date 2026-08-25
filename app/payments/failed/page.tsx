@@ -1,8 +1,8 @@
-export default function FailedPage() {
-  return (
-    <div style={{ padding: 40, color: "red" }}>
-      <h1>Payment Failed ❌</h1>
-      <p>Please try again</p>
-    </div>
-  );
+import { redirect } from "next/navigation";
+
+// This route is not part of the verified payment flow. Real payment status
+// is only ever shown from /orders/[orderId], which reflects the
+// server-verified PaymentStatus in the database.
+export default function LegacyPaymentsFailedPage() {
+  redirect("/orders");
 }

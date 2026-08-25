@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "resolveJsonModule": true,
+    "outDir": "../.payments-test-build",
+    "rootDir": "../src",
+    "types": ["node"]
+  },
+  "include": [
+    "../src/pricing/placements.ts",
+    "../src/pricing/currency.ts",
+    "../src/pricing/__tests__/**/*.ts",
+    "../src/lib/payments/paymob.ts",
+    "../src/lib/payments/__tests__/**/*.ts",
+    "../src/lib/orders/display.ts",
+    "../src/lib/orders/__tests__/**/*.ts",
+    "../src/testing/**/*.ts"
+  ]
+}

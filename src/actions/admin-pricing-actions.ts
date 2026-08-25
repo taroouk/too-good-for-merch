@@ -1,6 +1,6 @@
 "use server";
 
-import { FabricType, Prisma, ProductType } from "@prisma/client";
+import { FabricType, PlacementType, Prisma, ProductType } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "src/lib/admin/auth";
@@ -50,4 +50,37 @@ export async function deletePricingRuleAction(formData: FormData) {
   ]);
   revalidatePath("/admin/pricing");
   redirect(`/admin/pricing?notice=${encodeURIComponent("Pricing rule deleted.")}`);
+}
+
+export async function upsertPlacementPricingRuleAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const placement = readString(formData, "placement");
+  const unitPrice = readNumber(formData, "unitPrice");
+  if (!Object.values(PlacementType).includes(placement as PlacementType) || unitPrice <= 0) {
+    throw new Error("Invalid placement pricing rule.");
+  }
+  await prisma.$transaction([
+    prisma.placementPricingRule.upsert({
+      where: { placement: placement as PlacementType },
+      update: { unitPrice },
+      create: { placement: placement as PlacementType, unitPrice },
+    }),
+    prisma.adminAuditLog.create({ data: { adminId: admin.id, action: "PLACEMENT_PRICING_RULE_SAVED", metadata: { placement, unitPrice } as Prisma.InputJsonValue } }),
+  ]);
+  revalidatePath("/admin/pricing");
+  redirect(`/admin/pricing?notice=${encodeURIComponent("Placement pricing saved.")}`);
+}
+
+export async function deletePlacementPricingRuleAction(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = readString(formData, "id");
+  if (!id) throw new Error("Missing placement pricing rule id.");
+  const rule = await prisma.placementPricingRule.findUnique({ where: { id } });
+  if (!rule) throw new Error("Placement pricing rule not found.");
+  await prisma.$transaction([
+    prisma.placementPricingRule.delete({ where: { id } }),
+    prisma.adminAuditLog.create({ data: { adminId: admin.id, action: "PLACEMENT_PRICING_RULE_DELETED", metadata: { ruleId: id, placement: rule.placement } as Prisma.InputJsonValue } }),
+  ]);
+  revalidatePath("/admin/pricing");
+  redirect(`/admin/pricing?notice=${encodeURIComponent("Placement pricing rule deleted.")}`);
 }

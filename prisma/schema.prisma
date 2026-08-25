@@ -160,6 +160,13 @@ model Order {
   refundedAt           DateTime?
   subtotalCents        Int
   totalCents           Int
+  // Canonical pricing snapshot, distinct from totalCents/currency above
+  // (which are, and remain, the actual payment amount/currency sent to
+  // Paymob). Null on every order created before this model existed --
+  // never backfilled, never guessed. See src/lib/orders/checkout.ts.
+  canonicalTotalUsdCents Int?
+  exchangeRateUsed       Float?
+  exchangeRateAt         DateTime?
   status               OrderStatus      @default(NEW)
   notes                AdminNote[]
   build                Build?           @relation(fields: [buildId], references: [id])
@@ -291,6 +298,11 @@ model StoreSetting {
   currency      String   @default("USD")
   taxRateBps    Int      @default(0)
   shippingCents Int      @default(0)
+  // EGP per 1 USD, admin-configured. Null means "not configured yet" --
+  // checkout must fail closed, never guess a rate. Only affects orders
+  // created after it's set; existing orders keep their own frozen
+  // Order.exchangeRateUsed regardless of later changes here.
+  usdToEgpRate  Float?
   updatedAt     DateTime @updatedAt
 }
 

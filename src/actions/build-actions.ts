@@ -80,10 +80,11 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
   const fabric = asEnum(formData.get("fabric"), FABRIC);
 
   const quantityRaw = formData.get("quantity");
-  const quantity =
-    typeof quantityRaw === "string" && quantityRaw.trim()
-      ? Math.max(1, Math.min(9999, Number(quantityRaw)))
-      : 1;
+  const quantityParsed =
+    typeof quantityRaw === "string" && quantityRaw.trim() ? Number(quantityRaw) : NaN;
+  const quantity = Number.isFinite(quantityParsed)
+    ? Math.max(1, Math.min(9999, Math.round(quantityParsed)))
+    : 1;
 
   const customNotesRaw = formData.get("customNotes");
   const customNotes =
@@ -106,7 +107,7 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
       product: product ?? null,
       color: color ?? null,
       fabric: fabric ?? null,
-      quantity: Number.isFinite(quantity) ? quantity : 1,
+      quantity,
       customNotes: customNotes.length ? customNotes : null,
       primaryAssetId: await validPrimaryAssetId(buildId, primaryAssetId),
     },

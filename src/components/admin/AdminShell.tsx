@@ -5,7 +5,9 @@ const NAV = [
   ["/admin", "Overview", "⌂"],
   ["/admin/orders", "Orders", "▤"],
   ["/admin/payments", "Payments", "↔"],
-  ["/admin/pricing", "Products & pricing", "◇"],
+  ["/admin/products", "Products", "▣"],
+  ["/admin/pricing", "Pricing", "◇"],
+  ["/admin/files", "Files", "🗀"],
   ["/admin/users", "Customers", "♙"],
   ["/admin/settings", "Settings", "⚙"],
 ] as const;

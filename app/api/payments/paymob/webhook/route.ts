@@ -2,7 +2,14 @@ import { OrderStatus, PaymentAttemptStatus, PaymentStatus, Prisma } from "@prism
 import { NextResponse } from "next/server";
 import { apiError } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
-import { paymentFailureReason, verifyPaymobHmac, webhookEventKey } from "src/lib/payments/paymob";
+import {
+  classifyTransaction,
+  paymentFailureReason,
+  transactionMatchesOrder,
+  verifyPaymobHmac,
+  webhookEventKey,
+} from "src/lib/payments/paymob";
+import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
 
 export const runtime = "nodejs";
 const MAX_WEBHOOK_BYTES = 256 * 1024;
@@ -17,6 +24,11 @@ function safePayload(value: unknown): Prisma.InputJsonValue {
 }
 
 export async function POST(req: Request) {
+  const limit = rateLimit(req, "paymob:webhook", 60, 60 * 1000);
+  if (!limit.ok) {
+    return apiError("Too many webhook requests.", 429, rateLimitHeaders(limit));
+  }
+
   const raw = await req.text();
   if (Buffer.byteLength(raw, "utf8") > MAX_WEBHOOK_BYTES) {
     return apiError("Webhook payload is too large.", 413);
@@ -77,19 +89,25 @@ export async function POST(req: Request) {
     return apiError("Order not found.", 404);
   }
 
-  const amountMatches = Number(object.amount_cents) === order.totalCents;
-  const currencyMatches = String(object.currency ?? "").toUpperCase() === order.currency.toUpperCase();
-  if (!amountMatches || !currencyMatches) {
+  const knownIntegrationIds = [process.env.PAYMOB_INTEGRATION_ID, process.env.PAYMOB_WALLET_INTEGRATION_ID]
+    .map((v) => v?.trim())
+    .filter((v): v is string => Boolean(v));
+  const match = transactionMatchesOrder(object, order, knownIntegrationIds);
+  if (!match.allMatch) {
     await prisma.webhookEvent.update({
       where: { eventKey },
-      data: { orderId: order.id, errorMessage: "Payment amount or currency mismatch", processedAt: new Date() },
+      data: {
+        orderId: order.id,
+        errorMessage: !match.integrationIdMatches
+          ? "Unrecognized integration_id"
+          : "Payment amount or currency mismatch",
+        processedAt: new Date(),
+      },
     });
     return apiError("Payment data mismatch.", 422);
   }
 
-  const succeeded = object.success === true && object.pending !== true && object.error_occured !== true;
-  const refunded = object.is_refunded === true;
-  const failed = !succeeded && object.pending !== true;
+  const { succeeded, refunded, failed } = classifyTransaction(object);
 
   await prisma.$transaction(async (tx) => {
     if (refunded) {
@@ -98,16 +116,40 @@ export async function POST(req: Request) {
         data: { paymentStatus: PaymentStatus.REFUNDED, refundedAt: new Date(), paymobTransactionId: transactionId },
       });
     } else if (succeeded) {
-      await tx.order.update({
-        where: { id: order.id },
-        data: {
-          paymentStatus: PaymentStatus.PAID,
-          status: order.status === OrderStatus.NEW ? OrderStatus.PAID : order.status,
-          paidAt: order.paidAt ?? new Date(),
-          paymobTransactionId: transactionId,
-          paymentFailureReason: null,
-        },
-      });
+      const isDuplicateCharge =
+        order.paymentStatus === PaymentStatus.PAID &&
+        order.paymobTransactionId != null &&
+        transactionId != null &&
+        order.paymobTransactionId !== transactionId;
+
+      if (isDuplicateCharge) {
+        console.warn("PAYMOB_POSSIBLE_DOUBLE_CHARGE", {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          existingTransactionId: order.paymobTransactionId,
+          newTransactionId: transactionId,
+        });
+        await tx.adminAuditLog.create({
+          data: {
+            orderId: order.id,
+            action: "PAYMOB_POSSIBLE_DOUBLE_CHARGE",
+            previousValue: order.paymobTransactionId,
+            newValue: transactionId,
+            metadata: { note: "A second successful Paymob transaction arrived for an order already marked PAID. Review for a duplicate customer charge." } as Prisma.InputJsonValue,
+          },
+        });
+      } else {
+        await tx.order.update({
+          where: { id: order.id },
+          data: {
+            paymentStatus: PaymentStatus.PAID,
+            status: order.status === OrderStatus.NEW ? OrderStatus.PAID : order.status,
+            paidAt: order.paidAt ?? new Date(),
+            paymobTransactionId: transactionId,
+            paymentFailureReason: null,
+          },
+        });
+      }
     } else if (failed && order.paymentStatus !== PaymentStatus.PAID && order.paymentStatus !== PaymentStatus.REFUNDED) {
       await tx.order.update({
         where: { id: order.id },

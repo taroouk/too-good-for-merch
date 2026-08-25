@@ -53,3 +53,4 @@ next-env.d.ts
 # test harness scratch output
 tmp/
 .render-test-build/
+.payments-test-build/

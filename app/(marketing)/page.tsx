@@ -15,14 +15,40 @@ const HERO_VIDEO_MOBILE = "/videos/hero-mobile.mp4";
 
 function HeroFigma() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const [videoSrc, setVideoSrc] = useState(HERO_VIDEO_DESKTOP);
+  // Which breakpoint the currently-loaded <source> was picked for. Starts
+  // null so the first matchMedia resolve is recorded WITHOUT calling
+  // load(): the browser has already selected and started fetching the
+  // right <source> straight from the markup below, and load() would abort
+  // that in-flight request and start it over.
+  const loadedIsMobile = useRef<boolean | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
     const mq = window.matchMedia("(max-width: 980px)");
     const syncVideoSource = () => {
-      setVideoSrc(mq.matches ? HERO_VIDEO_MOBILE : HERO_VIDEO_DESKTOP);
+      const video = videoRef.current;
+      if (!video) return;
+
+      video.muted = true;
+      video.defaultMuted = true;
+
+      // First run: adopt whatever the markup already chose, don't reload.
+      if (loadedIsMobile.current === null) {
+        loadedIsMobile.current = mq.matches;
+        void video.play().catch(() => {});
+        return;
+      }
+
+      // Still on the same side of the breakpoint -- nothing to swap.
+      if (loadedIsMobile.current === mq.matches) return;
+
+      // Actually crossed the breakpoint (resize / orientation change):
+      // re-run source selection so the media attributes below pick the
+      // other file, exactly as the previous key-remount did.
+      loadedIsMobile.current = mq.matches;
+      video.load();
+      void video.play().catch(() => {});
     };
 
     syncVideoSource();
@@ -36,24 +62,22 @@ function HeroFigma() {
     };
   }, []);
 
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    video.muted = true;
-    video.defaultMuted = true;
-    video.load();
-    void video.play().catch(() => {});
-  }, [videoSrc]);
-
   return (
     <section className="section hero" id="hero">
       <div className="videoArea">
+        {/*
+          Source selection lives in markup rather than in state so the
+          browser's preload scanner fetches the correct file during HTML
+          parsing. Previously the element rendered with the desktop src and
+          swapped to mobile after hydration, so phones began downloading the
+          20MB landscape file before discarding it for the portrait one.
+          Desktop is listed first with a min-width query: a browser that
+          ignored `media` entirely would fall back to it, which is exactly
+          what this component used to render initially.
+        */}
         <video
-          key={videoSrc}
           ref={videoRef}
           className="heroVideo"
-          src={videoSrc}
           autoPlay
           loop
           muted
@@ -63,7 +87,11 @@ function HeroFigma() {
           onCanPlay={(event) => {
             void event.currentTarget.play().catch(() => {});
           }}
-        />
+        >
+          <source src={HERO_VIDEO_DESKTOP} media="(min-width: 981px)" type="video/mp4" />
+          <source src={HERO_VIDEO_MOBILE} media="(max-width: 980px)" type="video/mp4" />
+          <source src={HERO_VIDEO_DESKTOP} type="video/mp4" />
+        </video>
       </div>
     </section>
   );
@@ -259,7 +287,7 @@ function BoutiqueSection() {
                 </div>
 
                 <div className="boutiqueThumb" aria-hidden="true">
-                  <img src={item.imageSrc} alt="" />
+                  <img src={item.imageSrc} alt="" loading="lazy" decoding="async" />
                 </div>
               </button>
             ))}
@@ -467,7 +495,7 @@ export default function HomePage() {
       <a href="/studio" className="enterInner">
           <span className="enterWord">ENTER</span>
           <div className="enterPanel">
-            <img src="/images/enter.jpg" alt="Enter Studio" />
+            <img src="/images/enter.jpg" alt="Enter Studio" loading="lazy" decoding="async" />
           </div>
           <span className="enterWord">STUDIO</span>
         </a>
@@ -492,7 +520,7 @@ export default function HomePage() {
             {LARGE_PORTFOLIO_ITEMS.map((item: PortfolioItem) => (
             <article className="card" key={item.title}>
               <div className="cardMedia">
-                <img src={item.imageSrc} alt={item.imageAlt} />
+                <img src={item.imageSrc} alt={item.imageAlt} loading="lazy" decoding="async" />
               </div>
               <div>
                 <h2>{item.title}</h2>
@@ -529,7 +557,7 @@ export default function HomePage() {
         </div>
 
         <div className="contactFooterLogo" aria-hidden="true">
-          <img src="/logo2.svg" alt="" />
+          <img src="/logo2.svg" alt="" loading="lazy" decoding="async" />
         </div>
       </section>
     </main>

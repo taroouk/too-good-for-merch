@@ -3,24 +3,37 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
+// Matches the `expiration: 3600` set when creating the Paymob payment key
+// (see createPaymobPayment in src/lib/payments/paymob.ts) - the hosted
+// payment link itself stops working after this long.
+const PAYMENT_LINK_LIFETIME_MS = 60 * 60 * 1000;
+
 export default function PaymentStatusClient({
   orderId,
   initialStatus,
   retryEnabled,
+  latestAttemptAt,
 }: {
   orderId: string;
   initialStatus: string;
   retryEnabled: boolean;
+  latestAttemptAt: string | null;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(
+    () => Boolean(latestAttemptAt) && Date.now() - new Date(latestAttemptAt!).getTime() > PAYMENT_LINK_LIFETIME_MS,
+  );
 
   useEffect(() => {
     if (status === "PAID" || status === "REFUNDED" || status === "FAILED") return;
     let stopped = false;
     const poll = async () => {
+      if (latestAttemptAt && Date.now() - new Date(latestAttemptAt).getTime() > PAYMENT_LINK_LIFETIME_MS) {
+        setSessionExpired(true);
+      }
       const response = await fetch(`/api/payments/paymob/verify?orderId=${encodeURIComponent(orderId)}`, {
         cache: "no-store",
       });
@@ -36,7 +49,7 @@ export default function PaymentStatusClient({
       stopped = true;
       window.clearInterval(timer);
     };
-  }, [orderId, router, status]);
+  }, [latestAttemptAt, orderId, router, status]);
 
   async function retry() {
     setRetrying(true);
@@ -54,6 +67,7 @@ export default function PaymentStatusClient({
     }
   }
 
+  const showExpired = sessionExpired && (status === "PENDING" || status === "UNPAID");
   const copy =
     status === "PAID"
       ? ["Payment confirmed", "Your order is paid and ready for production.", "bg-emerald-50 text-emerald-800"]
@@ -61,24 +75,30 @@ export default function PaymentStatusClient({
         ? ["Payment failed", "Paymob could not complete this payment. Your order is still safe.", "bg-red-50 text-red-800"]
         : status === "REFUNDED"
           ? ["Payment refunded", "This payment has been refunded.", "bg-blue-50 text-blue-800"]
-          : [
-              "Waiting for confirmation",
-              "We are waiting for Paymob's secure webhook. This page updates automatically.",
-              "bg-amber-50 text-amber-800",
-            ];
+          : showExpired
+            ? [
+                "Payment session expired",
+                "Your secure payment link has expired. Start a new payment to complete your order.",
+                "bg-amber-50 text-amber-800",
+              ]
+            : [
+                "Waiting for confirmation",
+                "We are waiting for Paymob's secure webhook. This page updates automatically.",
+                "bg-amber-50 text-amber-800",
+              ];
 
   return (
     <div className="mt-6">
       <div className={`rounded-2xl p-5 ${copy[2]}`}>
         <div className="flex items-center gap-3">
-          {status === "PENDING" || status === "UNPAID" ? (
+          {(status === "PENDING" || status === "UNPAID") && !showExpired ? (
             <span className="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
           ) : null}
           <strong>{copy[0]}</strong>
         </div>
         <p className="mt-2 text-sm opacity-80">{copy[1]}</p>
       </div>
-      {retryEnabled && (status === "FAILED" || status === "UNPAID") ? (
+      {retryEnabled && (status === "FAILED" || status === "UNPAID" || showExpired) ? (
         <button
           onClick={retry}
           disabled={retrying}
