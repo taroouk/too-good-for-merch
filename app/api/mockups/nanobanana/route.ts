@@ -603,80 +603,121 @@ export async function POST(req: Request) {
       },
     });
 
-    let geminiRes: Response;
-    let responseBody: string;
-    for (let attempt = 1; ; attempt++) {
-      geminiRes = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-goog-api-key": apiKey,
-        },
-        body: geminiRequestBody,
-        signal: AbortSignal.timeout(120_000),
-      });
-      responseBody = await geminiRes.text();
+    let geminiImage: Buffer | null = null;
+    let geminiGarmentBBox: Awaited<ReturnType<typeof detectGarmentBBox>> | null = null;
 
-      if (geminiRes.ok) break;
+    // Outer loop: a Gemini generation can come back HTTP-ok but still land
+    // on an output the garment-bbox detector can't trust (see
+    // garment-bbox.ts's assertPlausibleBBox) -- e.g. an occasional
+    // rendering defect or an off-composition shot the prompt's COMPOSITION
+    // LOCK didn't fully prevent. That's a different failure from the
+    // request itself being wrong, so a fresh generation attempt (not just
+    // re-parsing the same response) is what actually has a chance of
+    // succeeding. Bounded the same way as the HTTP-level retry above, and
+    // deliberately independent of it: a generation can also be re-attempted
+    // here after MAX_GEMINI_ATTEMPTS HTTP retries were already spent
+    // landing the ok response being rejected now.
+    for (let generationAttempt = 1; ; generationAttempt++) {
+      let geminiRes: Response;
+      let responseBody: string;
+      for (let attempt = 1; ; attempt++) {
+        geminiRes = await fetch(GEMINI_INTERACTIONS_ENDPOINT, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-goog-api-key": apiKey,
+          },
+          body: geminiRequestBody,
+          signal: AbortSignal.timeout(60_000),
+        });
+        responseBody = await geminiRes.text();
 
-      const retryable = isRetryableGeminiFailure(geminiRes.status, responseBody);
-      if (!retryable || attempt >= MAX_GEMINI_ATTEMPTS) {
+        if (geminiRes.ok) break;
+
+        const retryable = isRetryableGeminiFailure(geminiRes.status, responseBody);
+        if (!retryable || attempt >= MAX_GEMINI_ATTEMPTS) {
+          logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
+          return apiError(geminiFailureMessage(responseBody, geminiRes.statusText), geminiRes.status);
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, GEMINI_RETRY_DELAY_MS));
+      }
+
+      const data = parseGeminiJson(responseBody);
+      const generated = generatedImageFromResponse(data);
+
+      if (!generated) {
         logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
-        return apiError(geminiFailureMessage(responseBody, geminiRes.statusText), geminiRes.status);
+        return apiError(geminiNoImageMessage(data), 500);
       }
 
-      await new Promise((resolve) => setTimeout(resolve, GEMINI_RETRY_DELAY_MS));
-    }
+      logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
 
-    const data = parseGeminiJson(responseBody);
-    const generated = generatedImageFromResponse(data);
-
-    if (!generated) {
-      logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
-      return apiError(geminiNoImageMessage(data), 500);
-    }
-
-    logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
-
-    let geminiImage: Buffer;
-    if (generated.url) {
-      const remoteRes = await fetch(generated.url);
-      if (!remoteRes.ok) {
-        return apiError("Could not download the generated garment image.", 502);
+      let candidateImage: Buffer;
+      if (generated.url) {
+        const remoteRes = await fetch(generated.url);
+        if (!remoteRes.ok) {
+          return apiError("Could not download the generated garment image.", 502);
+        }
+        const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
+        candidateImage = Buffer.from(remoteBytes);
+      } else if (generated.data) {
+        candidateImage = Buffer.from(generated.data, "base64");
+      } else {
+        return apiError(geminiNoImageMessage(data), 500);
       }
-      const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
-      geminiImage = Buffer.from(remoteBytes);
-    } else if (generated.data) {
-      geminiImage = Buffer.from(generated.data, "base64");
-    } else {
-      return apiError(geminiNoImageMessage(data), 500);
+
+      // --- Deterministic post-compositor: geometry is guaranteed by code,
+      // not by Gemini. Gemini's image is used purely as a background layer.
+      //
+      // Both the metadata/dimension check and the bbox detection below are
+      // validating the SAME thing -- whether this particular generated
+      // image is usable -- so both share one retry-eligible catch. An
+      // unreadable/dimension-less image is exactly as much "this generation
+      // was bad, try again" as an implausible bbox is; splitting them into
+      // separate catches previously meant a corrupt image failed the whole
+      // request immediately while a bad-composition image got retried, even
+      // though neither indicates a problem with our own request.
+      try {
+        let candidateMeta: sharp.Metadata;
+        try {
+          candidateMeta = await sharp(candidateImage).metadata();
+        } catch {
+          throw new RendererError("Gemini's garment image could not be read.", 500);
+        }
+        if (!candidateMeta.width || !candidateMeta.height) {
+          throw new RendererError("Gemini's garment image is missing dimensions.", 500);
+        }
+
+        // Gemini is not guaranteed to preserve the template's framing -- it
+        // can return the same output dimensions while still cropping/
+        // zooming/repositioning the garment within them (proven by
+        // repeated-generation testing, see scripts/investigate-geometry.mjs).
+        // Remapping by full canvas dimensions alone (the old
+        // remapResolvedPlacement) silently ignores exactly that. Detect
+        // where the garment actually landed in THIS response and remap
+        // relative to it instead.
+        geminiGarmentBBox = await detectGarmentBBox(candidateImage, {
+          role: "gemini-output",
+          product,
+          color,
+          placement,
+        });
+      } catch (bboxErr) {
+        if (bboxErr instanceof RendererError && generationAttempt < MAX_GEMINI_ATTEMPTS) {
+          console.warn("Nano Banana generation produced an unusable image, retrying:", {
+            generationAttempt,
+            message: bboxErr.message,
+          });
+          continue;
+        }
+        throw bboxErr;
+      }
+
+      geminiImage = candidateImage;
+      break;
     }
 
-    // --- Deterministic post-compositor: geometry is guaranteed by code,
-    // not by Gemini. Gemini's image is used purely as a background layer.
-    let geminiMeta: sharp.Metadata;
-    try {
-      geminiMeta = await sharp(geminiImage).metadata();
-    } catch {
-      throw new RendererError("Gemini's garment image could not be read.", 500);
-    }
-    if (!geminiMeta.width || !geminiMeta.height) {
-      throw new RendererError("Gemini's garment image is missing dimensions.", 500);
-    }
-
-    // Gemini is not guaranteed to preserve the template's framing -- it can
-    // return the same output dimensions while still cropping/zooming/
-    // repositioning the garment within them (proven by repeated-generation
-    // testing, see scripts/investigate-geometry.mjs). Remapping by full
-    // canvas dimensions alone (the old remapResolvedPlacement) silently
-    // ignores exactly that. Detect where the garment actually landed in
-    // THIS response and remap relative to it instead.
-    const geminiGarmentBBox = await detectGarmentBBox(geminiImage, {
-      role: "gemini-output",
-      product,
-      color,
-      placement,
-    });
     const remapped = remapResolvedPlacementToGarmentBBox(
       resolved,
       templateGarmentBBox,

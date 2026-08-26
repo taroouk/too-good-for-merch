@@ -42,6 +42,39 @@ async function transparentCanvasWithOpaqueRect(
     .toBuffer();
 }
 
+// Builds a genuinely transparent canvas with a real opaque subject rect,
+// plus an independent 1px-wide full-height alpha stripe down one edge
+// column -- modelled directly on the "TGFM Black Back.png" defect that
+// motivated hasAboveThresholdNeighbor: a PNG export artifact carrying a
+// faint but above-ALPHA_SUBJECT_THRESHOLD alpha in column 0 for the whole
+// image height, while column 1 is alpha=0 throughout (no 2D extent, unlike
+// the real subject).
+async function transparentCanvasWithRectAndEdgeStripe(
+  canvasSize: number,
+  rect: { left: number; top: number; width: number; height: number },
+  stripeAlpha: number,
+) {
+  const channels = 4;
+  const raw = Buffer.alloc(canvasSize * canvasSize * channels, 0);
+  for (let y = 0; y < canvasSize; y++) {
+    const idx = (y * canvasSize + 0) * channels;
+    raw[idx] = 40;
+    raw[idx + 1] = 40;
+    raw[idx + 2] = 40;
+    raw[idx + 3] = stripeAlpha;
+  }
+  for (let y = rect.top; y < rect.top + rect.height; y++) {
+    for (let x = rect.left; x < rect.left + rect.width; x++) {
+      const idx = (y * canvasSize + x) * channels;
+      raw[idx] = 255;
+      raw[idx + 1] = 0;
+      raw[idx + 2] = 0;
+      raw[idx + 3] = 255;
+    }
+  }
+  return sharp(raw, { raw: { width: canvasSize, height: canvasSize, channels } }).png().toBuffer();
+}
+
 async function opaqueCanvasWithRect(
   canvasSize: number,
   rect: { left: number; top: number; width: number; height: number },
@@ -107,6 +140,71 @@ export async function runAll() {
       assert.equal(bbox.top, rect.top);
       assert.equal(bbox.width, rect.width);
       assert.equal(bbox.height, rect.height);
+    },
+
+    // REGRESSION: the exact "TGFM Black Back.png" failure that motivated
+    // hasAboveThresholdNeighbor. Without it, the edge stripe's alpha (above
+    // ALPHA_SUBJECT_THRESHOLD) pulls minX/minY to 0 and, since the stripe
+    // runs the full image height, inflates heightFrac to 1.0 -- past
+    // MAX_BBOX_FRACTION -- rejecting every generation for this template.
+    async "ignores a 1px-wide full-height alpha stripe artifact and detects the real subject instead"() {
+      const rect = { left: 150, top: 100, width: 120, height: 220 };
+      const image = await transparentCanvasWithRectAndEdgeStripe(400, rect, 48);
+      const bbox = await detectGarmentBBox(image);
+      assert.equal(bbox.method, "alpha-scan");
+      assert.equal(bbox.left, rect.left);
+      assert.equal(bbox.top, rect.top);
+      assert.equal(bbox.width, rect.width);
+      assert.equal(bbox.height, rect.height);
+    },
+
+    // Confirms the fix doesn't just get lucky on one alpha value -- the
+    // whole plausible range above ALPHA_SUBJECT_THRESHOLD (10) should be
+    // excluded identically, since the defect is about the stripe's missing
+    // 2D extent, not its exact alpha value.
+    async "ignores an edge alpha stripe regardless of its exact above-threshold alpha value"() {
+      const rect = { left: 150, top: 100, width: 120, height: 220 };
+      for (const stripeAlpha of [11, 52, 200]) {
+        const image = await transparentCanvasWithRectAndEdgeStripe(400, rect, stripeAlpha);
+        const bbox = await detectGarmentBBox(image);
+        assert.equal(bbox.left, rect.left, `left mismatch for stripeAlpha=${stripeAlpha}`);
+        assert.equal(bbox.top, rect.top, `top mismatch for stripeAlpha=${stripeAlpha}`);
+        assert.equal(bbox.width, rect.width, `width mismatch for stripeAlpha=${stripeAlpha}`);
+        assert.equal(bbox.height, rect.height, `height mismatch for stripeAlpha=${stripeAlpha}`);
+      }
+    },
+
+    // A legitimate thin (2px-wide) feature -- e.g. a drawstring or strap --
+    // has real 2D extent (multiple rows), unlike the 1px-wide/full-height
+    // defect stripe above, so hasAboveThresholdNeighbor must NOT reject it.
+    // Paired with a wider torso (as in the disconnected-fragments test
+    // below) purely so the overall union bbox clears MIN_BBOX_FRACTION --
+    // that plausibility gate is orthogonal to what this test is checking.
+    async "still counts a legitimate 2px-wide disconnected feature toward the bbox (not just the 4px+ case covered elsewhere)"() {
+      const canvasSize = 400;
+      const torso = { left: 140, top: 200, width: 160, height: 180 };
+      const strand = { left: 220, top: 20, width: 2, height: 60 };
+      const overlays = await Promise.all(
+        [torso, strand].map(async (r) => ({
+          input: await sharp({
+            create: { width: r.width, height: r.height, channels: 4, background: { r: 20, g: 20, b: 20, alpha: 1 } },
+          })
+            .png()
+            .toBuffer(),
+          left: r.left,
+          top: r.top,
+        })),
+      );
+      const image = await sharp({
+        create: { width: canvasSize, height: canvasSize, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
+      })
+        .composite(overlays)
+        .png()
+        .toBuffer();
+
+      const bbox = await detectGarmentBBox(image);
+      assert.equal(bbox.top, strand.top, "the 2px-wide strand's rows should count toward the bbox");
+      assert.equal(bbox.top + bbox.height, torso.top + torso.height);
     },
 
     async "detects an exact bbox via border-flood-fill for an opaque image with a uniform background"() {

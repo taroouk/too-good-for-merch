@@ -100,6 +100,54 @@ function assertPlausibleBBox(
 // directly for the bbox of non-transparent pixels. Exact -- no
 // thresholding/guessing needed, since we control how these templates are
 // authored.
+//
+// One real-world exception found via "TGFM Black Back.png": the entire
+// left edge column (x=0, all 1536 rows) carries a faint alpha of ~45-52 (a
+// PNG export artifact -- a 1px-wide vertical stripe), while the very next
+// column (x=1) is alpha=0 for its whole height. That stripe exceeded
+// ALPHA_SUBJECT_THRESHOLD and got counted as "subject", pulling minX to 0
+// AND minY to 0 (since the stripe runs the full height, it touches row 0
+// too), pushing this template's bbox to heightFrac 1.0000 -- past
+// MAX_BBOX_FRACTION -- and failing assertPlausibleBBox on every single
+// request for this garment/side, not just occasionally. A 4-connected
+// neighbour check alone doesn't catch this: every pixel in that column has
+// an above-threshold neighbour directly above/below it in the SAME column.
+// What a real subject edge has that a 1px-wide line artifact does not is
+// actual 2D extent -- it's a few pixels wide in both axes, not a hairline.
+// Requiring at least one DIAGONAL neighbour above threshold as well
+// enforces that: the defect column's neighbouring column is uniformly zero,
+// so every pixel in it has zero diagonal neighbours above threshold and
+// gets excluded, while a genuine (curved, multi-pixel) garment/hair edge
+// has diagonal continuity and is unaffected.
+function hasAboveThresholdNeighbor(
+  data: Buffer,
+  width: number,
+  height: number,
+  channels: number,
+  x: number,
+  y: number,
+): boolean {
+  const orthogonal: Array<[number, number]> = [
+    [x - 1, y],
+    [x + 1, y],
+    [x, y - 1],
+    [x, y + 1],
+  ];
+  const diagonal: Array<[number, number]> = [
+    [x - 1, y - 1],
+    [x + 1, y - 1],
+    [x - 1, y + 1],
+    [x + 1, y + 1],
+  ];
+
+  const above = (nx: number, ny: number) =>
+    nx >= 0 && nx < width && ny >= 0 && ny < height && data[(ny * width + nx) * channels + 3] > ALPHA_SUBJECT_THRESHOLD;
+
+  const hasOrthogonal = orthogonal.some(([nx, ny]) => above(nx, ny));
+  const hasDiagonal = diagonal.some(([nx, ny]) => above(nx, ny));
+  return hasOrthogonal && hasDiagonal;
+}
+
 async function alphaScanBBox(
   buffer: Buffer,
   imageWidth: number,
@@ -119,7 +167,7 @@ async function alphaScanBBox(
     for (let x = 0; x < width; x++) {
       const alpha = data[(y * width + x) * channels + 3];
       if (alpha < ALPHA_TRANSPARENCY_PRESENT_THRESHOLD) sawRealTransparency = true;
-      if (alpha > ALPHA_SUBJECT_THRESHOLD) {
+      if (alpha > ALPHA_SUBJECT_THRESHOLD && hasAboveThresholdNeighbor(data, width, height, channels, x, y)) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
