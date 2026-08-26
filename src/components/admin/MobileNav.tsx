@@ -42,7 +42,7 @@ export default function MobileNav({
           />
           <div className="absolute inset-y-0 left-0 flex w-72 max-w-[85vw] flex-col bg-admin-ink text-white shadow-2xl">
             <div className="flex items-center justify-between border-b border-white/10 px-5 py-5">
-              <span className="text-lg font-semibold">Commerce Admin</span>
+              <span className="whitespace-nowrap text-base font-semibold">TOO GOOD FOR MERCH</span>
               <button
                 type="button"
                 onClick={() => onOpenChange(false)}

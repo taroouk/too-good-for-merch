@@ -23,14 +23,15 @@ export default function SidebarNav({
         collapsed ? "w-[76px]" : "w-64"
       }`}
     >
-      <Link href="/admin" className="flex items-center justify-between border-b border-white/10 px-5 py-6">
+      <Link href="/admin" className="flex items-center border-b border-white/10 px-4 py-6">
         {collapsed ? (
           <span className="block text-lg font-semibold">TG</span>
         ) : (
-          <span>
-            <span className="block text-xs font-semibold uppercase tracking-[.22em] text-white/45">Too Good</span>
-            <span className="mt-1 block text-xl font-semibold">Commerce Admin</span>
-          </span>
+          // whitespace-nowrap + a tracking/size pairing sized to fit the
+          // full brand name in the 256px rail (minus this link's own
+          // padding) on one line -- verified against the actual rendered
+          // width in the browser, not just estimated from font metrics.
+          <span className="block whitespace-nowrap text-base font-semibold tracking-wide">TOO GOOD FOR MERCH</span>
         )}
       </Link>
 

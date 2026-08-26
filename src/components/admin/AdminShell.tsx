@@ -17,8 +17,8 @@ export default function AdminShell({ children, email }: { children: React.ReactN
 
       <div className={`transition-[padding] duration-150 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-admin-border bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-          <Link href="/admin" className="font-semibold text-admin-ink">
-            Commerce Admin
+          <Link href="/admin" className="whitespace-nowrap text-sm font-semibold text-admin-ink">
+            TOO GOOD FOR MERCH
           </Link>
           <button
             type="button"
