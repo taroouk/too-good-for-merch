@@ -36,7 +36,12 @@ yarn-error.log*
 node_modules
 out
 dist
-build
+# NOTE: do not add a bare "build" pattern here -- it previously matched
+# app/api/build/ (real route source, not build output) at any depth with no
+# leading/trailing slash, silently keeping app/api/build/[id]/route.ts and
+# app/api/build/create/route.ts out of every commit ever pushed. The
+# root-level build-output folder this was meant to ignore is already
+# covered by the anchored "/build" pattern above.
 # vercel
 .vercel
 
