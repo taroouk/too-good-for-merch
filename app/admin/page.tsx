@@ -1,7 +1,17 @@
 import Link from "next/link";
-import { PaymentStatus } from "@prisma/client";
+import { OrderStatus, PaymentStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import RevenueChart from "src/components/admin/RevenueChart";
+import PageHeader from "src/components/admin/ui/PageHeader";
+import StatCard from "src/components/admin/ui/StatCard";
+import Card from "src/components/admin/ui/Card";
+import Badge from "src/components/admin/ui/Badge";
+import { buttonClass } from "src/components/admin/ui/Button";
+import EmptyState from "src/components/admin/ui/EmptyState";
+import { AlertIcon } from "src/components/admin/ui/icons";
+import { ORDER_STATUS_LABELS, orderStatusTone, paymentStatusTone } from "src/components/admin/ui/status";
+import { getPricingHealth } from "src/lib/admin/pricing-health";
+import { getPaymobHealth } from "src/lib/admin/paymob-health";
 
 type Range = "daily" | "weekly" | "monthly";
 
@@ -34,50 +44,179 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
   const query = await searchParams;
   const range: Range = ["daily", "weekly", "monthly"].includes(query.range ?? "") ? query.range as Range : "daily";
   const buckets = chartBuckets(range);
-  const [recentOrders, totalOrders, paidOrders, pendingOrders, failedOrders, revenue, paidForChart] = await Promise.all([
+  const [
+    recentOrders,
+    recentPayments,
+    totalOrders,
+    paidOrders,
+    pendingOrders,
+    failedOrders,
+    revenue,
+    paidForChart,
+    orderStatusCounts,
+    pricingHealth,
+  ] = await Promise.all([
     prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 7, include: { items: true } }),
+    prisma.paymentAttempt.findMany({ orderBy: { createdAt: "desc" }, take: 6, include: { order: { select: { id: true, orderNumber: true, customerName: true } } } }),
     prisma.order.count(),
     prisma.order.count({ where: { paymentStatus: PaymentStatus.PAID } }),
     prisma.order.count({ where: { paymentStatus: { in: [PaymentStatus.UNPAID, PaymentStatus.PENDING] } } }),
     prisma.order.count({ where: { paymentStatus: PaymentStatus.FAILED } }),
     prisma.order.aggregate({ where: { paymentStatus: PaymentStatus.PAID }, _sum: { totalCents: true } }),
     prisma.order.findMany({ where: { paymentStatus: PaymentStatus.PAID, paidAt: { gte: buckets[0].start } }, select: { paidAt: true, createdAt: true, totalCents: true, currency: true } }),
+    prisma.order.groupBy({ by: ["status"], _count: true }),
+    getPricingHealth(),
   ]);
+  const paymobHealth = getPaymobHealth();
   for (const order of paidForChart) {
     const date = order.paidAt ?? order.createdAt;
     const bucket = buckets.find((item) => date >= item.start && date < item.end);
     if (bucket) bucket.value += order.totalCents;
   }
   const currency = recentOrders[0]?.currency ?? process.env.STORE_CURRENCY ?? "USD";
-  const cards = [
-    ["Total sales", money(revenue._sum.totalCents ?? 0, currency), "Confirmed revenue", "bg-[#111827] text-white"],
-    ["Total orders", String(totalOrders), "All time", "bg-white"],
-    ["Paid orders", String(paidOrders), "Webhook confirmed", "bg-white"],
-    ["Pending", String(pendingOrders), "Awaiting payment", "bg-amber-50"],
-    ["Failed", String(failedOrders), "Needs attention", "bg-red-50"],
-  ];
+  const countByOrderStatus = new Map(orderStatusCounts.map((row) => [row.status, row._count]));
+  const totalOrderStatusCount = orderStatusCounts.reduce((sum, row) => sum + row._count, 0);
+
+  const alerts: Array<{ message: string; href: string; cta: string }> = [];
+  if (pricingHealth.usdToEgpRate == null) {
+    alerts.push({ message: "USD → EGP exchange rate is not configured — checkout will fail.", href: "/admin/settings", cta: "Set rate" });
+  }
+  if (!paymobHealth.allConfigured) {
+    alerts.push({ message: `${paymobHealth.missingRequired.length} required Paymob credential(s) missing.`, href: "/admin/settings", cta: "Review" });
+  }
+  if (pricingHealth.missingCombos.length > 0) {
+    alerts.push({ message: `${pricingHealth.missingCombos.length} product/fabric combination(s) have no price configured.`, href: "/admin/products", cta: "Review" });
+  }
+  if (failedOrders > 0) {
+    alerts.push({ message: `${failedOrders} order(s) have a failed payment and may need a retry link.`, href: "/admin/payments", cta: "Review" });
+  }
 
   return (
     <main className="p-4 sm:p-7 xl:p-9">
       <div className="mx-auto max-w-7xl">
-        <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div><p className="text-xs font-semibold uppercase tracking-[.18em] text-black/35">Commerce overview</p><h1 className="mt-2 text-3xl font-semibold tracking-tight sm:text-4xl">Good morning.</h1><p className="mt-2 text-sm text-black/45">Here’s what is happening with your store.</p></div>
-          <Link href="/admin/orders" className="inline-flex h-11 items-center justify-center rounded-xl bg-[#111827] px-5 text-sm font-semibold text-white">Manage orders</Link>
-        </div>
+        <PageHeader
+          eyebrow="Commerce overview"
+          title="Good morning."
+          subtitle="Here's what is happening with your store."
+          actions={
+            <Link href="/admin/orders" className={buttonClass()}>
+              Manage orders
+            </Link>
+          }
+        />
 
         <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          {cards.map(([label, value, hint, style]) => <div key={label} className={`rounded-2xl border border-black/5 p-5 shadow-sm ${style}`}><p className="text-sm opacity-55">{label}</p><p className="mt-3 text-3xl font-semibold tracking-tight">{value}</p><p className="mt-3 text-xs opacity-40">{hint}</p></div>)}
+          <StatCard label="Total sales" value={money(revenue._sum.totalCents ?? 0, currency)} hint="Confirmed revenue" tone="dark" />
+          <StatCard label="Total orders" value={totalOrders} hint="All time" />
+          <StatCard label="Paid orders" value={paidOrders} hint="Webhook confirmed" tone="success" />
+          <StatCard label="Pending" value={pendingOrders} hint="Awaiting payment" tone="warning" />
+          <StatCard label="Failed" value={failedOrders} hint="Needs attention" tone="danger" />
         </section>
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_.8fr]">
-          <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center"><div><h2 className="text-lg font-semibold">Revenue</h2><p className="mt-1 text-xs text-black/40">Paid orders only</p></div><div className="flex rounded-xl bg-black/5 p-1">{(["daily", "weekly", "monthly"] as const).map((value) => <Link key={value} href={`/admin?range=${value}`} className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize ${range === value ? "bg-white shadow-sm" : "text-black/45"}`}>{value}</Link>)}</div></div>
-            <div className="mt-6"><RevenueChart data={buckets.map(({ label, value }) => ({ label, value }))} currency={currency} /></div>
-          </div>
-          <div className="rounded-2xl border border-black/5 bg-white p-5 shadow-sm sm:p-6">
-            <div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Recent orders</h2><Link href="/admin/orders" className="text-xs font-semibold text-black/45">View all →</Link></div>
-            <div className="mt-4 divide-y divide-black/5">{recentOrders.map((order) => <Link key={order.id} href={`/admin/orders/${order.id}`} className="flex items-center justify-between gap-4 py-4"><div className="min-w-0"><p className="truncate text-sm font-semibold">{order.orderNumber}</p><p className="mt-1 text-xs text-black/35">{order.customerName ?? "Customer"} · {order.items.length} item{order.items.length === 1 ? "" : "s"}</p></div><div className="text-right"><p className="text-sm font-semibold">{money(order.totalCents, order.currency)}</p><p className="mt-1 text-[10px] font-semibold text-black/35">{order.paymentStatus}</p></div></Link>)}</div>
-          </div>
+          <Card
+            title="Revenue"
+            subtitle="Paid orders only"
+            actions={
+              <div className="flex rounded-xl bg-black/5 p-1">
+                {(["daily", "weekly", "monthly"] as const).map((value) => (
+                  <Link
+                    key={value}
+                    href={`/admin?range=${value}`}
+                    className={`rounded-lg px-3 py-2 text-xs font-semibold capitalize ${range === value ? "bg-white shadow-sm" : "text-admin-faint"}`}
+                  >
+                    {value}
+                  </Link>
+                ))}
+              </div>
+            }
+          >
+            <RevenueChart data={buckets.map(({ label, value }) => ({ label, value }))} currency={currency} />
+          </Card>
+
+          <Card title="Recent orders" actions={<Link href="/admin/orders" className="text-xs font-semibold text-admin-faint hover:text-admin-ink">View all →</Link>}>
+            {recentOrders.length > 0 ? (
+              <div className="divide-y divide-admin-border">
+                {recentOrders.map((order) => (
+                  <Link key={order.id} href={`/admin/orders/${order.id}`} className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-admin-ink">{order.orderNumber}</p>
+                      <p className="mt-1 text-xs text-admin-faint">{order.customerName ?? "Customer"} · {order.items.length} item{order.items.length === 1 ? "" : "s"}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-admin-ink">{money(order.totalCents, order.currency)}</p>
+                      <div className="mt-1"><Badge tone={paymentStatusTone(order.paymentStatus)}>{order.paymentStatus}</Badge></div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="No orders yet" description="Orders will show up here as customers check out." />
+            )}
+          </Card>
+        </section>
+
+        <section className="mt-6 grid gap-6 lg:grid-cols-2">
+          <Card title="Order status overview" subtitle="Fulfillment breakdown across every order">
+            <div className="space-y-3">
+              {Object.values(OrderStatus).map((status) => {
+                const count = countByOrderStatus.get(status) ?? 0;
+                const pct = totalOrderStatusCount ? Math.round((count / totalOrderStatusCount) * 100) : 0;
+                return (
+                  <div key={status} className="flex items-center gap-3">
+                    <Badge tone={orderStatusTone(status)}>{ORDER_STATUS_LABELS[status]}</Badge>
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/5">
+                      <div className="h-full rounded-full bg-admin-ink" style={{ width: `${pct}%` }} />
+                    </div>
+                    <span className="w-10 shrink-0 text-right text-sm font-semibold text-admin-ink">{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <Card title="Recent payments" actions={<Link href="/admin/payments" className="text-xs font-semibold text-admin-faint hover:text-admin-ink">View all →</Link>}>
+            {recentPayments.length > 0 ? (
+              <div className="divide-y divide-admin-border">
+                {recentPayments.map((attempt) => (
+                  <Link key={attempt.id} href={`/admin/orders/${attempt.order.id}`} className="flex items-center justify-between gap-4 py-3.5 first:pt-0 last:pb-0">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-admin-ink">{attempt.order.orderNumber}</p>
+                      <p className="mt-1 text-xs text-admin-faint">{attempt.method} · {attempt.createdAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short" })}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-sm font-semibold text-admin-ink">{money(attempt.amountCents, attempt.currency)}</p>
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-wide text-admin-faint">{attempt.status}</p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="No payment activity yet" />
+            )}
+          </Card>
+        </section>
+
+        <section className="mt-6">
+          <Card title="Operational alerts" subtitle="Real signals pulled from pricing, payment, and order configuration">
+            {alerts.length > 0 ? (
+              <ul className="space-y-3">
+                {alerts.map((alert) => (
+                  <li key={alert.message} className="flex items-center justify-between gap-4 rounded-xl bg-amber-50 px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <AlertIcon className="h-5 w-5 shrink-0 text-amber-700" />
+                      <p className="text-sm font-medium text-amber-900">{alert.message}</p>
+                    </div>
+                    <Link href={alert.href} className="shrink-0 text-xs font-semibold text-amber-800 underline">
+                      {alert.cta}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <EmptyState title="All clear" description="Pricing, payment configuration, and orders all look healthy." />
+            )}
+          </Card>
         </section>
       </div>
     </main>

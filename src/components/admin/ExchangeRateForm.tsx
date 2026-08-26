@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { buttonClass } from "src/components/admin/ui/Button";
 
 // Confirmation only gates a genuine rate change (a financially significant,
 // forward-only edit per src/lib/orders/checkout.ts) -- never blocks saving
@@ -44,10 +45,10 @@ export default function ExchangeRateForm({
       <input type="hidden" name="currency" value={currency} />
       <input type="hidden" name="taxRate" value={taxRate} />
       <input type="hidden" name="shipping" value={shipping} />
-      <label className="block text-sm font-medium">
+      <label className="block text-sm font-medium text-admin-ink">
         USD → EGP exchange rate
         <div className="mt-2 flex items-center gap-2">
-          <span className="whitespace-nowrap text-sm text-black/45">1 USD =</span>
+          <span className="whitespace-nowrap text-sm text-admin-muted">1 USD =</span>
           <input
             ref={inputRef}
             name="usdToEgpRate"
@@ -56,16 +57,16 @@ export default function ExchangeRateForm({
             min="0"
             defaultValue={currentRate ?? ""}
             placeholder="e.g. 50.00"
-            className="h-11 w-full rounded-xl border border-black/10 px-4 outline-none focus:border-black"
+            className="h-11 w-full rounded-xl border border-admin-border-strong px-4 text-admin-ink outline-none focus:border-admin-ink"
           />
-          <span className="whitespace-nowrap text-sm text-black/45">EGP</span>
+          <span className="whitespace-nowrap text-sm text-admin-muted">EGP</span>
         </div>
       </label>
-      <p className="text-xs leading-5 text-black/45">
+      <p className="text-xs leading-5 text-admin-muted">
         Used to convert the final USD order price into EGP for Paymob payments. Changing this affects future
         checkouts only — existing orders keep their original exchange rate.
       </p>
-      <button className="h-11 w-full rounded-xl bg-[#111827] text-sm font-semibold text-white">Save changes</button>
+      <button className={buttonClass({ className: "w-full" })}>Save changes</button>
     </form>
   );
 }

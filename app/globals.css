@@ -117,6 +117,67 @@ h6,
   border:0;
 }
 
+/* ===== Admin table/card container queries ===== */
+/* Used by src/components/admin/ui/TableCardSwitch.tsx to pick a real
+   desktop <table> vs. a stacked mobile card list based on the *actual*
+   width available to the component (a CSS container query, keyed off this
+   element's own content box) -- not `window.innerWidth`, which can't see
+   that the admin sidebar (256px expanded, 76px collapsed) already ate part
+   of the viewport. A viewport media query would show a table at, say, a
+   1024px window even though only ~710px is actually free next to the
+   sidebar; a container query only switches once the table's own column is
+   wide enough, whatever caused that width. Six fixed thresholds cover every
+   minWidth currently used by an admin table -- add one here if a future
+   table needs a width not already listed. */
+.admin-table-cq {
+  container-type: inline-size;
+}
+
+.admin-table-cq .admin-table-cq-table {
+  display: none;
+}
+
+.admin-table-cq .admin-table-cq-cards {
+  display: block;
+}
+
+.admin-table-cq-520 { container-name: admin-table-cq-520; }
+.admin-table-cq-760 { container-name: admin-table-cq-760; }
+.admin-table-cq-850 { container-name: admin-table-cq-850; }
+.admin-table-cq-900 { container-name: admin-table-cq-900; }
+.admin-table-cq-1050 { container-name: admin-table-cq-1050; }
+.admin-table-cq-1080 { container-name: admin-table-cq-1080; }
+
+@container admin-table-cq-520 (min-width: 520px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
+@container admin-table-cq-760 (min-width: 760px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
+@container admin-table-cq-850 (min-width: 850px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
+@container admin-table-cq-900 (min-width: 900px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
+@container admin-table-cq-1050 (min-width: 1050px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
+@container admin-table-cq-1080 (min-width: 1080px) {
+  .admin-table-cq .admin-table-cq-table { display: block; }
+  .admin-table-cq .admin-table-cq-cards { display: none; }
+}
+
 /* ===== Auth UI ===== */
 
 .authPage {

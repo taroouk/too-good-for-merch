@@ -11,5 +11,5 @@ export default function AdminToast({ message }: { message?: string }) {
     return () => window.clearTimeout(timer);
   }, [message]);
   if (!visible || !message) return null;
-  return <div role="status" className="fixed inset-x-4 bottom-5 z-50 mx-auto max-w-sm rounded-xl bg-[#111827] px-5 py-3 text-sm font-medium text-white shadow-2xl sm:inset-x-auto sm:right-5">{message}</div>;
+  return <div role="status" className="fixed inset-x-4 bottom-5 z-50 mx-auto max-w-sm rounded-xl bg-admin-ink px-5 py-3 text-sm font-medium text-white shadow-2xl sm:inset-x-auto sm:right-5">{message}</div>;
 }

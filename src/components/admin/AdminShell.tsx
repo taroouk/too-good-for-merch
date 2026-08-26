@@ -1,41 +1,33 @@
-import Link from "next/link";
-import AuthAction from "src/components/AuthAction";
+"use client";
 
-const NAV = [
-  ["/admin", "Overview", "⌂"],
-  ["/admin/orders", "Orders", "▤"],
-  ["/admin/payments", "Payments", "↔"],
-  ["/admin/products", "Products", "▣"],
-  ["/admin/pricing", "Pricing", "◇"],
-  ["/admin/files", "Files", "🗀"],
-  ["/admin/users", "Customers", "♙"],
-  ["/admin/settings", "Settings", "⚙"],
-] as const;
+import { useState } from "react";
+import Link from "next/link";
+import SidebarNav from "src/components/admin/SidebarNav";
+import MobileNav from "src/components/admin/MobileNav";
+import { MenuIcon } from "src/components/admin/ui/icons";
 
 export default function AdminShell({ children, email }: { children: React.ReactNode; email?: string | null }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
   return (
-    <div className="min-h-screen bg-[#f3f4f6] text-[#121826]">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col bg-[#111827] text-white lg:flex">
-        <Link href="/admin" className="border-b border-white/10 px-6 py-7">
-          <span className="block text-xs font-semibold uppercase tracking-[.22em] text-white/45">Too Good</span>
-          <span className="mt-1 block text-xl font-semibold">Commerce Admin</span>
-        </Link>
-        <nav className="flex-1 space-y-1 px-3 py-5">
-          {NAV.map(([href, label, icon]) => (
-            <Link key={href} href={href} className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-white/65 transition hover:bg-white/10 hover:text-white">
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/8 text-base">{icon}</span>{label}
-            </Link>
-          ))}
-        </nav>
-        <div className="border-t border-white/10 p-4">
-          <p className="truncate px-2 text-xs text-white/45">{email ?? "Administrator"}</p>
-          <div className="mt-3 flex items-center justify-between px-2 text-sm"><Link href="/" className="text-white/70 hover:text-white">View store</Link><AuthAction className="authActionReset text-white/70 hover:text-white" /></div>
-        </div>
-      </aside>
-      <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 border-b border-black/5 bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-          <div className="flex items-center justify-between"><Link href="/admin" className="font-semibold">Commerce Admin</Link><div className="flex items-center gap-4"><Link href="/" className="text-sm text-black/50">Store ↗</Link><AuthAction className="authActionReset text-sm text-black/50" /></div></div>
-          <nav className="mt-3 flex gap-2 overflow-x-auto pb-1">{NAV.map(([href, label]) => <Link key={href} href={href} className="whitespace-nowrap rounded-lg bg-black/5 px-3 py-2 text-xs font-semibold">{label}</Link>)}</nav>
+    <div className="min-h-screen bg-admin-canvas text-admin-ink">
+      <SidebarNav email={email} collapsed={collapsed} onToggleCollapse={() => setCollapsed((value) => !value)} />
+      <MobileNav email={email} open={mobileOpen} onOpenChange={setMobileOpen} />
+
+      <div className={`transition-[padding] duration-150 ${collapsed ? "lg:pl-[76px]" : "lg:pl-64"}`}>
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-admin-border bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
+          <Link href="/admin" className="font-semibold text-admin-ink">
+            Commerce Admin
+          </Link>
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="flex h-9 w-9 items-center justify-center rounded-lg text-admin-ink hover:bg-black/5"
+            aria-label="Open menu"
+          >
+            <MenuIcon />
+          </button>
         </header>
         {children}
       </div>
