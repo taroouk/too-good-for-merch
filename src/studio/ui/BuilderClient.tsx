@@ -44,7 +44,6 @@ import QuantitySelector from "src/studio/ui/components/QuantitySelector";
 import ArtworkModal from "src/studio/ui/modals/ArtworkModal";
 import AuthModal from "src/studio/ui/modals/AuthModal";
 import BespokeModal from "src/studio/ui/modals/BespokeModal";
-import CheckoutModal from "src/studio/ui/modals/CheckoutModal";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
 type PriceResult =
@@ -82,7 +81,6 @@ type BuilderClientProps = {
   initialMockupFingerprint?: string | null;
   initialAiMockupUrl?: string | null;
   initialAiMockupFingerprint?: string | null;
-  walletEnabled?: boolean;
 };
 
 type SizeOption = "S" | "M" | "L" | "XL";
@@ -96,6 +94,12 @@ type ArtworkTransform = {
 const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
 const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1 };
 const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
+// A pricing-quote failure is either the rate limit (429) or a transient
+// server error (5xx/network) -- both are worth exactly one retry, not an
+// unbounded loop. Kept small and bounded per the reliability fix for the
+// Checkout button: see the pricing-quote effect below.
+const PRICE_QUOTE_MAX_ATTEMPTS = 2;
+const PRICE_QUOTE_RETRY_DELAY_MS = 1200;
 const ALLOWED_ARTWORK_MIME_TYPES = new Set([
   "image/png",
   "image/jpeg",
@@ -149,10 +153,9 @@ export default function BuilderClient({
   initialMockupFingerprint = null,
   initialAiMockupUrl = null,
   initialAiMockupFingerprint = null,
-  walletEnabled = false,
 }: BuilderClientProps) {
   const router = useRouter();
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [mounted, setMounted] = useState(false);
   const [isPending, startTransition] = useTransition();
 
@@ -206,15 +209,16 @@ export default function BuilderClient({
   const [fabricOpen, setFabricOpen] = useState(false);
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
-  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
-  const [showCheckout, setShowCheckout] = useState(false);
+  // Set only when /api/pricing/quote itself failed (non-2xx, or the fetch
+  // rejected outright) -- distinct from price.message, which carries a
+  // legitimate "no pricing configured"/"bulk quote" reason from a normal
+  // 200 response. Keeping them separate means a transient failure never
+  // gets mistaken for (or masks) a real pricing-unavailable state.
+  const [priceError, setPriceError] = useState<string | null>(null);
+  // Bumped by the "Retry pricing" affordance to re-run the pricing effect
+  // on demand, independent of any product/fabric/quantity/placement change.
+  const [pricingRetryToken, setPricingRetryToken] = useState(0);
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(false);
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<"CARD" | "WALLET">("CARD");
-  const [checkoutError, setCheckoutError] = useState<string | null>(null);
-  const [checkoutOrderId, setCheckoutOrderId] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fabricMenuRef = useRef<HTMLDivElement | null>(null);
@@ -384,50 +388,90 @@ export default function BuilderClient({
 
     async function loadPrice() {
       setLoadingPrice(true);
+      setPriceError(null);
 
-      try {
-        const res = await fetch("/api/pricing/quote", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            product: state.product,
-            fabric: state.fabric,
-            quantity: qty,
-            placements: pricingPlacements,
-          }),
-        });
-
-        const data = (await res.json()) as PriceResult;
-        if (!cancelled) {
-          setPrice(data);
-        }
-      } catch {
-        if (!cancelled) {
-          setPrice({
-            mode: "custom",
-            unit: null,
-            total: null,
-            currency: "USD",
-            message: "Pricing unavailable",
+      // Bounded: attempt 1 plus (at most) one retry for a transient
+      // failure. A genuine non-transient failure (4xx, or retries
+      // exhausted) breaks out and surfaces the real message instead of
+      // looping.
+      for (let attempt = 1; ; attempt++) {
+        let res: Response;
+        try {
+          res = await fetch("/api/pricing/quote", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              product: state.product,
+              fabric: state.fabric,
+              quantity: qty,
+              placements: pricingPlacements,
+            }),
           });
+        } catch {
+          // fetch() itself rejected (offline, DNS failure, connection
+          // reset) -- as transient as a 429/5xx response, so it gets the
+          // same bounded retry rather than immediately disabling checkout.
+          if (attempt < PRICE_QUOTE_MAX_ATTEMPTS) {
+            await new Promise((resolve) => setTimeout(resolve, PRICE_QUOTE_RETRY_DELAY_MS));
+            if (cancelled) return;
+            continue;
+          }
+          if (!cancelled) {
+            setPrice(null);
+            setPriceError("Could not reach the pricing service. Check your connection and try again.");
+          }
+          break;
         }
-      } finally {
+
+        if (res.ok) {
+          const data = (await res.json().catch(() => null)) as PriceResult | null;
+          if (!cancelled) {
+            if (data) {
+              setPrice(data);
+            } else {
+              setPrice(null);
+              setPriceError("Pricing is temporarily unavailable.");
+            }
+          }
+          break;
+        }
+
+        // Never store the API's error body ({ ok: false, error }) as a
+        // PriceResult -- it doesn't have a `mode`, so price?.mode ===
+        // "standard" would correctly stay false, but priceText's fallback
+        // would silently show a generic message instead of the real,
+        // often-actionable one below.
+        const errorData = await res.json().catch(() => null);
+        const retryable = res.status === 429 || res.status >= 500;
+        if (retryable && attempt < PRICE_QUOTE_MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, PRICE_QUOTE_RETRY_DELAY_MS));
+          if (cancelled) return;
+          continue;
+        }
+
         if (!cancelled) {
-          setLoadingPrice(false);
+          setPrice(null);
+          setPriceError(
+            typeof errorData?.error === "string" ? errorData.error : "Pricing is temporarily unavailable.",
+          );
         }
+        break;
       }
+
+      if (!cancelled) setLoadingPrice(false);
     }
 
     if (state.product && state.fabric) {
       void loadPrice();
     } else {
       setPrice(null);
+      setPriceError(null);
     }
 
     return () => {
       cancelled = true;
     };
-  }, [pricingPlacements, qty, state.fabric, state.product]);
+  }, [pricingPlacements, qty, state.fabric, state.product, pricingRetryToken]);
 
   useEffect(() => {
     if (status !== "authenticated" || !showAuthModal) return;
@@ -436,16 +480,11 @@ export default function BuilderClient({
     setAuthPassword("");
     if (checkoutAfterAuth) {
       setCheckoutAfterAuth(false);
-      setCustomerEmail(session?.user?.email ?? authEmail);
-      setShowCheckout(true);
+      router.push(`/checkout?buildId=${buildId}`);
     } else {
       setShowBespokeModal(true);
     }
-  }, [authEmail, checkoutAfterAuth, session?.user?.email, showAuthModal, status]);
-
-  useEffect(() => {
-    setCheckoutOrderId(null);
-  }, [pricingPlacements, qty, state.color, state.fabric, state.product]);
+  }, [buildId, checkoutAfterAuth, router, showAuthModal, status]);
 
   function save(next: DraftDTO) {
     setState(next);
@@ -653,51 +692,19 @@ export default function BuilderClient({
     }
 
     if (status !== "authenticated") {
+      // Remembered so the post-login effect (and handleAuthSubmit below)
+      // know to continue on to checkout instead of opening the Bespoke
+      // modal, which is what this same auth modal is used for elsewhere.
+      setCheckoutAfterAuth(true);
       setShowAuthModal(true);
       return;
     }
 
-    // ✅ بدل popup القديم → redirect مباشر
+    // Final pricing/geometry are resolved server-side by /checkout itself
+    // (via /api/build/[id] -> computePrice) -- this redirect is just
+    // navigation, not a second source of truth.
     router.push(`/checkout?buildId=${buildId}`);
   }
-
-async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
-  event.preventDefault();
-  if (!price || price.mode !== "standard" || !state.product || !state.fabric || !state.color) return;
-
-  setIsCreatingOrder(true);
-  setCheckoutError(null);
-
-  try {
-    const paymobRes = await fetch("/api/payments/paymob/create-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(checkoutOrderId
-          ? { orderId: checkoutOrderId }
-          : { buildId, customer: { name: customerName, email: customerEmail, phone: customerPhone } }),
-        method: paymentMethod,
-        size: selectedSize,
-        placements:
-          selectedPlacements.length > 0
-            ? selectedPlacements
-            : ["CENTER_FRONT"],
-      }),
-    });
-    const paymobData = await paymobRes.json();
-
-    if (!paymobRes.ok || !paymobData?.paymentUrl) {
-      if (typeof paymobData?.orderId === "string") setCheckoutOrderId(paymobData.orderId);
-      throw new Error(paymobData?.error || "Payment initialization failed");
-    }
-    window.location.replace(paymobData.paymentUrl);
-  } catch (error) {
-    console.error(error);
-    setCheckoutError(error instanceof Error ? error.message : "Something went wrong");
-  } finally {
-    setIsCreatingOrder(false);
-  }
-}
 
   function openCustomRequestPopup() {
     setShowCustomPopup(true);
@@ -763,8 +770,13 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
 
       setShowAuthModal(false);
       setAuthPassword("");
-      setShowBespokeModal(true);
-      router.refresh();
+      if (checkoutAfterAuth) {
+        setCheckoutAfterAuth(false);
+        router.push(`/checkout?buildId=${buildId}`);
+      } else {
+        setShowBespokeModal(true);
+        router.refresh();
+      }
     } catch (error) {
       setAuthError(error instanceof Error ? error.message : "Something went wrong.");
     } finally {
@@ -865,18 +877,6 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
     switchAuthMode(authMode === "login" ? "signup" : "login");
   }
 
-  function closeCheckoutModal() {
-    if (!isCreatingOrder) setShowCheckout(false);
-  }
-
-  function selectCardPayment() {
-    setPaymentMethod("CARD");
-  }
-
-  function selectWalletPayment() {
-    setPaymentMethod("WALLET");
-  }
-
   function handleArtworkScaleChange(event: ChangeEvent<HTMLInputElement>) {
     changeArtworkScale(Number(event.target.value));
   }
@@ -905,7 +905,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
       ? "Custom garments require a tailored quote."
       : price?.mode === "standard"
         ? `${price.currency} ${price.total.toFixed(2)}`
-        : price?.message ?? "Pricing unavailable";
+        : (priceError ?? price?.message ?? "Pricing unavailable");
 
   const selectionSummary = [
     state.product === "FITTED"
@@ -1105,30 +1105,6 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
         )
       : null;
 
-  const checkoutPopup =
-    mounted && showCheckout
-      ? createPortal(
-          <CheckoutModal
-            customerName={customerName}
-            customerEmail={customerEmail}
-            customerPhone={customerPhone}
-            paymentMethod={paymentMethod}
-            walletEnabled={walletEnabled}
-            estimatedTotalText={price?.mode === "standard" ? `${price.currency} ${price.total.toFixed(2)}` : "—"}
-            checkoutError={checkoutError}
-            isCreatingOrder={isCreatingOrder}
-            onClose={closeCheckoutModal}
-            onSubmit={handleCheckoutSubmit}
-            onCustomerNameChange={(event) => setCustomerName(event.target.value)}
-            onCustomerEmailChange={(event) => setCustomerEmail(event.target.value)}
-            onCustomerPhoneChange={(event) => setCustomerPhone(event.target.value)}
-            onSelectCardPayment={selectCardPayment}
-            onSelectWalletPayment={selectWalletPayment}
-          />,
-          document.body,
-        )
-      : null;
-
   const customPopup =
     mounted && showCustomPopup
       ? createPortal(
@@ -1185,7 +1161,6 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
   return (
     <>
       {authPopup}
-      {checkoutPopup}
       {customPopup}
       {bespokeModal}
 
@@ -1271,7 +1246,10 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
 
             <section className="studio-right-panel" aria-label="Order controls">
               <div className="studio-right-sticky">
-                <PriceCard priceText={priceText} />
+                <PriceCard
+                  priceText={priceText}
+                  onRetry={priceError ? () => setPricingRetryToken((token) => token + 1) : undefined}
+                />
 
                 <div className="studio-right-divider" />
 
@@ -1319,7 +1297,7 @@ async function handleCheckoutSubmit(event: React.FormEvent<HTMLFormElement>) {
                 <div className="studio-action-row">
 <CheckoutButton
   onCheckout={openCheckout}
-  disabled={!isStandardCheckout || isCreatingOrder}
+  disabled={!isStandardCheckout}
 />
 
                   <button type="button" className="studio-wishlist-button">

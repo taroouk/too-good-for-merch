@@ -99,7 +99,6 @@ export default async function BuilderPage({
       initialMockupFingerprint={initialMockupFingerprint}
       initialAiMockupUrl={initialAiMockupUrl ?? null}
       initialAiMockupFingerprint={initialAiMockupFingerprint}
-      walletEnabled={Boolean(process.env.PAYMOB_WALLET_INTEGRATION_ID?.trim())}
     />
   );
 }

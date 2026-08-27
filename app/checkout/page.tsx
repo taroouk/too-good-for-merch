@@ -106,34 +106,58 @@ function CheckoutContent() {
     setSubmitting(true);
     setError(null);
 
-    // Reuse the order created by a previous attempt (if any) instead of
-    // creating a new one on every retry - the server only creates a fresh
-    // order when no orderId is provided.
-    const response = await fetch("/api/payments/paymob/create-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId: orderId ?? undefined,
-        buildId,
-        method,
-        customer: {
-          name: customerName,
-          email: customerEmail,
-          phone: customerPhone,
-        },
-      }),
-    });
-    const data = await response.json().catch(() => null);
+    try {
+      // Reuse the order created by a previous attempt (if any) instead of
+      // creating a new one on every retry - the server only creates a fresh
+      // order when no orderId is provided.
+      const response = await fetch("/api/payments/paymob/create-intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: orderId ?? undefined,
+          buildId,
+          method,
+          customer: {
+            name: customerName,
+            email: customerEmail,
+            phone: customerPhone,
+          },
+        }),
+      });
+      const data = await response.json().catch(() => null);
 
-    if (typeof data?.orderId === "string") setOrderId(data.orderId);
+      if (typeof data?.orderId === "string") setOrderId(data.orderId);
 
-    if (response.ok && data?.paymentUrl) {
-      window.location.assign(data.paymentUrl);
-      return;
+      if (response.ok && data?.paymentUrl) {
+        window.location.assign(data.paymentUrl);
+        // Intentionally leave submitting=true -- the page is navigating
+        // away to Paymob, so the button should stay disabled through that
+        // transition rather than flash usable again beforehand.
+        return;
+      }
+
+      // A stale/terminal order (already paid, or its currency gone stale
+      // relative to current settings - create-intent's own 409 checks)
+      // can never succeed by resubmitting the SAME orderId, so drop it for
+      // a fresh attempt next time. Excludes PAYMENT_ALREADY_IN_PROGRESS,
+      // which is also a 409 but means a sibling request (double click, a
+      // second tab) is already mid-flight for this exact order - clearing
+      // orderId there would abandon it and risk creating a second,
+      // duplicate order instead of waiting for/reusing the first.
+      if (response.status === 409 && data?.code !== "PAYMENT_ALREADY_IN_PROGRESS") {
+        setOrderId(null);
+      }
+
+      setSubmitting(false);
+      setError(data?.error ?? "Could not start payment.");
+    } catch {
+      // fetch() itself rejected (offline, DNS failure, connection reset) -
+      // as opposed to the API responding with an HTTP error, handled above.
+      // Without this catch, submitting never resets and the button is
+      // stuck disabled/"Connecting to Paymob..." until a page reload.
+      setSubmitting(false);
+      setError("Could not reach the payment service. Check your connection and try again.");
     }
-
-    setSubmitting(false);
-    setError(data?.error ?? "Could not start payment.");
   }
 
   if (loading) {
