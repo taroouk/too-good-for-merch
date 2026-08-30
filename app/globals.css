@@ -2335,13 +2335,21 @@ h6,
     overscroll-behavior: contain;
   }
 
-  /* Bespoke: tighter gutters and a pinned, legible Save action. */
+  /* Bespoke: tighter gutters and a pinned, legible Save action. The
+     stacked (1fr) grid children get min-width:0 so they can never
+     establish a min-content floor wider than the column. preview's
+     padding-top clears the 44px absolute close button (top:4px). */
   .studio-bespoke-modal {
     min-height: 0;
   }
 
+  .studio-bespoke-preview,
+  .studio-bespoke-controls {
+    min-width: 0;
+  }
+
   .studio-bespoke-preview {
-    padding: 44px 14px 14px;
+    padding: 52px 14px 14px;
   }
 
   .studio-bespoke-controls {
