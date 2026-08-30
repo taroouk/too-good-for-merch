@@ -2308,9 +2308,9 @@ h6,
     overflow-y: auto !important;
   }
 
+  /* Auth + custom-request stay centered cards (small equal margins). */
   .studio-auth-modal,
-  .studio-custom-request-modal,
-  .studio-bespoke-modal {
+  .studio-custom-request-modal {
     width: 100%;
     max-width: 100%;
     max-height: calc(100vh - 20px) !important;
@@ -2325,49 +2325,15 @@ h6,
     padding: 46px 16px 20px;
   }
 
-  /* The inner body is the only scroll region. */
-  .studio-modal-scroll,
-  .studio-bespoke-scroll {
+  /* Inner body = the only scroll region (auth/custom-request cards). The
+     bespoke full-screen treatment lives in its own OR-query block below
+     so it applies identically in portrait and landscape phones. */
+  .studio-modal-scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
     overscroll-behavior: contain;
-  }
-
-  /* Bespoke: tighter gutters and a pinned, legible Save action. The
-     stacked (1fr) grid children get min-width:0 so they can never
-     establish a min-content floor wider than the column. preview's
-     padding-top clears the 44px absolute close button (top:4px). */
-  .studio-bespoke-modal {
-    min-height: 0;
-  }
-
-  .studio-bespoke-preview,
-  .studio-bespoke-controls {
-    min-width: 0;
-  }
-
-  .studio-bespoke-preview {
-    padding: 52px 14px 14px;
-  }
-
-  .studio-bespoke-controls {
-    padding: 18px 14px 16px;
-  }
-
-  .studio-bespoke-save-button {
-    position: sticky;
-    bottom: 0;
-    z-index: 5;
-    margin-top: 16px;
-    box-shadow: 0 -10px 14px 6px #ffffff;
-  }
-
-  /* Keep the close affordance readable over scrolled content. */
-  .studio-modal-close {
-    background: rgba(255, 255, 255, 0.92);
-    border-radius: 999px;
   }
 
   .studio-preview-side-switch {
@@ -2447,6 +2413,121 @@ h6,
     bottom: 0;
     z-index: 5;
     box-shadow: 0 -10px 14px 6px #ffffff;
+  }
+}
+
+/* ============================================================
+   BESPOKE MODAL — TRUE FULL-SCREEN on any phone-sized viewport
+   Matches:  portrait phones (width <= 640)
+        OR   landscape phones (width <= 932 AND height <= 560)
+   Never matches a real desktop: 1280/1440 fail both arms; the
+   768x800 tablet fails both (800 > 560). Only BespokeModal carries
+   .studio-modal-overlay-soft, so Auth / custom-request cards and
+   desktop are completely untouched.
+
+   How it works:
+   - The overlay stops being a scroll + flex-centering container (that
+     was inducing a scrollbar which shrank + offset the modal into a
+     small floating box). It becomes a plain clipped block, and the
+     modal is `position: absolute; inset: 0` so it fills the fixed,
+     inset:0 overlay EXACTLY == the viewport: edge-to-edge, no margin,
+     radius, border, or scrollbar-induced shrink, portrait OR landscape.
+   - All scrolling happens inside .studio-bespoke-scroll (a flex
+     column). It scrolls ONLY when preview + controls exceed the
+     viewport height.
+   - Save T-Shirt is a `position: fixed` full-bleed bar pinned to the
+     viewport bottom edge, so it stays fully visible at every scroll
+     position with zero white strip beneath it (it is out of flow, so
+     no container padding can ever render below it). .studio-bespoke-
+     controls carries a matching bottom padding so the last control row
+     can scroll clear of the bar instead of being clipped by it.
+
+   Placed after the max-width:640 and max-height:560 blocks so it
+   authoritatively overrides both for phone viewports.
+   ============================================================ */
+@media (max-width: 640px), (max-width: 932px) and (max-height: 560px) {
+  .studio-modal-overlay-soft {
+    display: block;
+    padding: 0;
+    /* beats the shared `.studio-modal-overlay { overflow-y: auto !important }` */
+    overflow: hidden !important;
+  }
+
+  .studio-bespoke-modal {
+    position: absolute;
+    inset: 0;
+    width: auto;
+    max-width: none;
+    height: auto;
+    /* base + max-height:560 both cap this with !important; release it
+       so inset:0 owns the height. */
+    max-height: none !important;
+    min-height: 0;
+    border: 0;
+    /* beats the shared `border-radius: 12px !important`. */
+    border-radius: 0 !important;
+  }
+
+  .studio-bespoke-scroll {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    /* scrolls only when the content is taller than the viewport */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .studio-bespoke-preview,
+  .studio-bespoke-controls {
+    min-width: 0;
+  }
+
+  .studio-bespoke-preview {
+    flex: 0 0 auto;
+    /* padding-top clears the absolute close button (44px + top:4px in
+       portrait, 36px + top:4px in landscape) so X never covers the art. */
+    padding: 52px 14px 14px;
+  }
+
+  /* Cap the 1:1 preview so it can't dominate a short (landscape)
+     viewport and push the controls + Save far below the fold. On
+     portrait phones the square is narrower than this cap, so this is a
+     no-op there; in landscape the garment letterboxes (object-fit:
+     contain) and the controls stay reachable. */
+  .studio-bespoke-canvas {
+    max-height: 58vh;
+    max-height: 58dvh;
+  }
+
+  .studio-bespoke-controls {
+    display: flex;
+    flex-direction: column;
+    flex: 1 0 auto;
+    /* bottom padding = clearance for the fixed Save bar below; it lets
+       the last row scroll fully above the bar and is the ONLY thing
+       between the last content and the viewport edge. */
+    padding: 18px 14px 56px;
+  }
+
+  .studio-bespoke-save-button {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    /* out of flow -> no container padding can render beneath it, so
+       there is never a white strip under Save. */
+    margin: 0;
+    /* full-bleed action bar flush to the viewport edge */
+    border-radius: 0;
+    box-shadow: 0 -10px 14px 6px #ffffff;
+  }
+
+  .studio-modal-close {
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 999px;
   }
 }
 
