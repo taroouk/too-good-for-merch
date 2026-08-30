@@ -18,6 +18,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/orders", label: "Orders", icon: OrdersIcon },
       { href: "/admin/payments", label: "Payments", icon: PaymentsIcon },
+      { href: "/admin/bespoke", label: "Bespoke Requests", icon: ProductsIcon },
     ],
   },
   {

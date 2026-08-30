@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { FabricType, GarmentColor, PaymentStatus, Prisma, ProductType } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
-import { computePrice } from "src/pricing/engine";
+import { computePrice, customQuotePriceResult } from "src/pricing/engine";
 import { convertUsdCentsToPaymentCents, isValidExchangeRate } from "src/pricing/currency";
 import {
   placementsFromCustomNotes,
@@ -9,6 +9,8 @@ import {
   normalizePlacements,
 } from "src/pricing/placements";
 import { canAccessBuild } from "src/studio/permissions";
+import { cleanText, validateCustomer, CustomerValidationError } from "src/lib/orders/customer";
+import { isPaymobEligible } from "src/lib/bespoke/eligibility";
 
 export class CheckoutError extends Error {
   constructor(message: string, public status = 400) {
@@ -23,24 +25,16 @@ export type CheckoutInput = {
   size?: unknown;
 };
 
-function cleanText(value: unknown, max: number) {
-  return typeof value === "string" ? value.trim().slice(0, max) : "";
-}
-
-function validateCustomer(customer: CheckoutInput["customer"]) {
-  const name = cleanText(customer?.name, 120);
-  const email = cleanText(customer?.email, 254).toLowerCase();
-  const phone = cleanText(customer?.phone, 30).replace(/[()\s-]/g, "");
-  if (name.length < 2) throw new CheckoutError("Enter your full name.");
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new CheckoutError("Enter a valid email address.");
-  if (!/^\+?[0-9]{8,15}$/.test(phone)) throw new CheckoutError("Enter a valid phone number including country code.");
-  return { name, email, phone };
-}
-
 export async function createCheckoutOrder(userId: string, input: CheckoutInput) {
   const buildId = cleanText(input?.buildId, 128);
   if (!buildId) throw new CheckoutError("A build is required.");
-  const customer = validateCustomer(input.customer);
+  let customer;
+  try {
+    customer = validateCustomer(input.customer);
+  } catch (error) {
+    if (error instanceof CustomerValidationError) throw new CheckoutError(error.message, 400);
+    throw error;
+  }
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
@@ -51,8 +45,20 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     throw new CheckoutError("You cannot checkout this build.", 403);
   }
 
-  const { product, fabric, color, quantity, primaryAssetId, customNotes } = build.draft;
+  const { product, fabric, color, quantity, primaryAssetId, customNotes, customQuoteUsdCents } = build.draft;
   if (!product || !fabric || !color) throw new CheckoutError("Complete the product selection before checkout.");
+
+  // Explicit guard: a Bespoke/Custom build must be submitted through the
+  // no-payment request intake (src/actions/bespoke-actions.ts), not paid
+  // directly. The one sanctioned exception is the admin-quoted "pay later"
+  // path -- gated on customQuoteUsdCents, which an admin sets only after
+  // pricing the request by hand (see src/actions/admin-bespoke-actions.ts).
+  if (!isPaymobEligible(product) && customQuoteUsdCents == null) {
+    throw new CheckoutError(
+      "Bespoke builds are submitted as a request for a tailored quote, not paid directly.",
+      400,
+    );
+  }
 
   const requestedPlacements = normalizePlacements(input.placements);
   const draftPlacements = placementsFromCustomNotes(customNotes);
@@ -60,7 +66,14 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     requestedPlacements.length ? requestedPlacements : draftPlacements,
   );
 
-  const quote = await computePrice({ product, fabric, quantity, placements: safePlacements });
+  // Bespoke/Custom builds never get a computePrice() result (always
+  // mode:"custom" by design -- see src/pricing/engine.ts). An admin-set
+  // quote is the only way one becomes checkout-eligible; everything else
+  // (FITTED/OVERSIZED) is priced exactly as before.
+  const quote =
+    product === "CUSTOM" && customQuoteUsdCents != null
+      ? customQuotePriceResult(customQuoteUsdCents, quantity, safePlacements)
+      : await computePrice({ product, fabric, quantity, placements: safePlacements });
   if (quote.mode !== "standard") throw new CheckoutError(quote.message);
   // quote.currency is always PRICING_CURRENCY ("USD") -- see src/pricing/engine.ts.
 

@@ -16,6 +16,8 @@ import type {
 } from "@prisma/client";
 
 import { actionUpdateDraft } from "src/actions/build-actions";
+import { actionSaveArtwork } from "src/actions/artwork-actions";
+import { actionAddToWishlist } from "src/actions/wishlist-actions";
 import {
   actionAttachExistingAsset,
   actionCreateAssetForBuilder,
@@ -81,6 +83,30 @@ type BuilderClientProps = {
   initialMockupFingerprint?: string | null;
   initialAiMockupUrl?: string | null;
   initialAiMockupFingerprint?: string | null;
+  // Admin-set Bespoke/Custom quote (src/actions/admin-bespoke-actions.ts).
+  // When set, a product==="CUSTOM" build switches from "Request a Quote"
+  // (no-payment intake) to the normal Paymob checkout -- see canCheckout /
+  // priceText below. Cleared server-side the moment the draft materially
+  // changes (src/actions/build-actions.ts's actionUpdateDraft), so a page
+  // refresh always reflects whether it's still valid.
+  initialCustomQuoteUsdCents?: number | null;
+  initialCustomQuoteNote?: string | null;
+  // Canonical persisted artwork the user explicitly SAVEd (Artwork model,
+  // src/actions/artwork-actions.ts). URL points at /api/artworks/<id>/file.
+  // Survives refresh independent of the Build-scoped aiMockup row.
+  initialSavedArtworkUrl?: string | null;
+  // Persisted canvas transform { placement, x, y, scale, rotation } from
+  // BuildDraft.artworkPlacement -- so the canvas position survives a
+  // refresh, not just the image.
+  initialArtworkPlacement?: {
+    placement?: string | null;
+    x?: number;
+    y?: number;
+    scale?: number;
+    rotation?: number;
+  } | null;
+  // Whether this build is already in the signed-in user's wishlist.
+  initialInWishlist?: boolean;
 };
 
 type SizeOption = "S" | "M" | "L" | "XL";
@@ -142,6 +168,22 @@ function getBespokeShirtImage(
   return isBlack ? "/images/TGFM Black.png" : "/images/TGFM White.png";
 }
 
+// Bespoke ("CUSTOM") has no product/colour of its own yet -- that's the
+// whole point of it being a tailored request. The print/AI mockup routes
+// only know the FITTED/OVERSIZED templates in BLACK/WHITE (their own
+// PRODUCTS/COLORS enums reject anything else), so a Bespoke mockup needs
+// *some* concrete template to render onto. Reuses the exact same fallback
+// getBespokeShirtImage above already uses for the on-screen canvas preview
+// (anything not literally "OVERSIZED"/"BLACK" renders as FITTED/WHITE), so
+// the generated mockup always matches what the user has already been
+// looking at on the canvas -- never a silent, different guess.
+function resolveMockupProduct(product: ProductType | null): "FITTED" | "OVERSIZED" {
+  return product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
+}
+
+function resolveMockupColor(color: GarmentColor | null): "BLACK" | "WHITE" {
+  return color === "BLACK" ? "BLACK" : "WHITE";
+}
 
 export default function BuilderClient({
   buildId,
@@ -153,6 +195,11 @@ export default function BuilderClient({
   initialMockupFingerprint = null,
   initialAiMockupUrl = null,
   initialAiMockupFingerprint = null,
+  initialCustomQuoteUsdCents = null,
+  initialCustomQuoteNote = null,
+  initialSavedArtworkUrl = null,
+  initialArtworkPlacement = null,
+  initialInWishlist = false,
 }: BuilderClientProps) {
   const router = useRouter();
   const { status } = useSession();
@@ -170,13 +217,31 @@ export default function BuilderClient({
   const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(() =>
     placementsFromCustomNotes(draft.customNotes),
   );
-  const [activePlacement, setActivePlacement] = useState<PlacementKey>("CENTER_FRONT");
+  const [activePlacement, setActivePlacement] = useState<PlacementKey>(
+    (typeof initialArtworkPlacement?.placement === "string" && initialArtworkPlacement.placement
+      ? (initialArtworkPlacement.placement as PlacementKey)
+      : "CENTER_FRONT"),
+  );
   const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
   const [, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
-  const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(
-    DEFAULT_ARTWORK_TRANSFORM,
-  );
+  const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(() => {
+    const p = initialArtworkPlacement;
+    if (!p) return DEFAULT_ARTWORK_TRANSFORM;
+    return {
+      x: typeof p.x === "number" && Number.isFinite(p.x) ? p.x : 0,
+      y: typeof p.y === "number" && Number.isFinite(p.y) ? p.y : 0,
+      scale: clampArtworkScale(typeof p.scale === "number" ? p.scale : 1),
+    };
+  });
+  // Canonical saved-artwork URL (Artwork model). Set on "Save T-Shirt" and
+  // seeded from the persisted value on load so a refresh/re-open shows the
+  // exact saved image without regenerating anything.
+  const [savedArtworkUrl, setSavedArtworkUrl] = useState<string | null>(initialSavedArtworkUrl);
+  const [savePending, setSavePending] = useState(false);
+  const [inWishlist, setInWishlist] = useState(initialInWishlist);
+  const [wishlistPending, setWishlistPending] = useState(false);
+  const [wishlistError, setWishlistError] = useState<string | null>(null);
   // printMockupUrl/printMockupFingerprint hold the deterministic compositor
   // result (POST /api/mockups/print, persisted as Mockup(kind="PRINT")).
   // aiMockupUrl/aiMockupFingerprint hold the Gemini result (POST
@@ -190,7 +255,12 @@ export default function BuilderClient({
   const [printMockupFingerprint, setPrintMockupFingerprint] = useState<string | null>(
     initialMockupFingerprint,
   );
-  const [aiMockupUrl, setAiMockupUrl] = useState<string | null>(initialAiMockupUrl ?? null);
+  // Falls back to the canonical saved-artwork URL so the preview still
+  // shows the exact saved image if the Build-scoped aiMockup row is ever
+  // pruned. The AI generator overwrites this with a fresh Gemini result.
+  const [aiMockupUrl, setAiMockupUrl] = useState<string | null>(
+    initialAiMockupUrl ?? initialSavedArtworkUrl ?? null,
+  );
   const [aiMockupFingerprint, setAiMockupFingerprint] = useState<string | null>(
     initialAiMockupFingerprint ?? null,
   );
@@ -219,6 +289,15 @@ export default function BuilderClient({
   // on demand, independent of any product/fabric/quantity/placement change.
   const [pricingRetryToken, setPricingRetryToken] = useState(0);
   const [checkoutAfterAuth, setCheckoutAfterAuth] = useState(false);
+  // Admin-set Bespoke/Custom quote -- see BuilderClientProps above. Cleared
+  // optimistically the instant save() sends a materially different draft
+  // (mirroring the server-side invalidation in actionUpdateDraft) so a
+  // stale "quoted" price/enabled Checkout never lingers client-side after
+  // a local edit the server has already invalidated.
+  const [customQuoteUsdCents, setCustomQuoteUsdCents] = useState<number | null>(
+    initialCustomQuoteUsdCents,
+  );
+  const [customQuoteNote, setCustomQuoteNote] = useState<string | null>(initialCustomQuoteNote);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const fabricMenuRef = useRef<HTMLDivElement | null>(null);
@@ -315,8 +394,14 @@ export default function BuilderClient({
         x: artworkTransform.x,
         y: artworkTransform.y,
         scale: artworkTransform.scale,
-        product: state.product ?? null,
-        color: state.color ?? null,
+        // Resolved (never "CUSTOM") -- matches what generatePrintMockup/
+        // generateNanoBananaMockup below actually send for Bespoke, so this
+        // fingerprint is byte-for-byte what the server computes and a
+        // freshly-generated Bespoke mockup is never immediately marked
+        // stale against its own fingerprint. Identity for FITTED/OVERSIZED,
+        // so no behavior change for any non-Bespoke build.
+        product: resolveMockupProduct(state.product),
+        color: resolveMockupColor(state.color),
         rotation: 0,
         dpi: BASELINE_RENDER_DPI,
       }),
@@ -334,6 +419,11 @@ export default function BuilderClient({
   }, [aiMockupFingerprint, livePrintFingerprint]);
 
   const shouldShowGenerateAiButton = useMemo(() => {
+    // Bespoke (state.product === "CUSTOM") is a legitimate case now too --
+    // generatePrintMockup/generateNanoBananaMockup below resolve it onto
+    // the FITTED/OVERSIZED template it's already being previewed against
+    // (see resolveMockupProduct/resolveMockupColor), so this button is not
+    // gated on product type.
     if (!state.primaryAssetId || !activeArtworkAsset) return false;
     if (!aiMockupUrl) return true;
     return isAiMockupStale;
@@ -480,13 +570,38 @@ export default function BuilderClient({
     setAuthPassword("");
     if (checkoutAfterAuth) {
       setCheckoutAfterAuth(false);
-      router.push(`/checkout?buildId=${buildId}`);
+      // An un-quoted Bespoke ("CUSTOM") build opens the no-payment request
+      // intake; a quoted Bespoke build and every standard product go to the
+      // Paymob checkout, unchanged.
+      const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
+      router.push(
+        isBespokeRequest
+          ? `/bespoke/new?buildId=${buildId}`
+          : `/checkout?buildId=${buildId}`,
+      );
     } else {
       setShowBespokeModal(true);
     }
-  }, [buildId, checkoutAfterAuth, router, showAuthModal, status]);
+  }, [buildId, checkoutAfterAuth, router, showAuthModal, status, state.product, customQuoteUsdCents]);
 
   function save(next: DraftDTO) {
+    // Mirrors actionUpdateDraft's server-side quote invalidation
+    // (src/actions/build-actions.ts) so the UI never shows a stale
+    // "quoted" price/enabled Checkout for even one render after a local
+    // edit the server is about to invalidate anyway.
+    const changedFromQuotedState =
+      state.product !== next.product ||
+      state.color !== next.color ||
+      state.fabric !== next.fabric ||
+      state.quantity !== next.quantity ||
+      (state.customNotes ?? null) !== (next.customNotes ?? null) ||
+      (state.primaryAssetId ?? null) !== (next.primaryAssetId ?? null);
+
+    if (changedFromQuotedState && customQuoteUsdCents != null) {
+      setCustomQuoteUsdCents(null);
+      setCustomQuoteNote(null);
+    }
+
     setState(next);
 
     const fd = new FormData();
@@ -681,29 +796,41 @@ export default function BuilderClient({
 
 
   function openCheckout() {
-    if (!price || price.mode !== "standard") {
-      alert("Pricing not ready");
+    if (!state.product || !state.color || !state.fabric) {
+      alert("Please complete selection");
       return;
     }
 
-    if (!state.product || !state.fabric || !state.color) {
-      alert("Please complete selection");
+    // An un-quoted BESPOKE ("CUSTOM") build: no price, no payment. The CTA
+    // submits a no-payment request (Builder -> BESPOKE -> Checkout ->
+    // Create Bespoke Request); the tailored quote comes later. Once the
+    // team has set a quote (customQuoteUsdCents), the same build instead
+    // uses the normal Paymob checkout -- the "pay later" path, unchanged.
+    const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
+    const hasReadyPrice = isBespokeRequest
+      ? true
+      : state.product === "CUSTOM"
+        ? customQuoteUsdCents != null
+        : price?.mode === "standard";
+    if (!hasReadyPrice) {
+      alert("Pricing not ready");
       return;
     }
 
     if (status !== "authenticated") {
       // Remembered so the post-login effect (and handleAuthSubmit below)
-      // know to continue on to checkout instead of opening the Bespoke
-      // modal, which is what this same auth modal is used for elsewhere.
+      // know to continue instead of opening the Bespoke editor modal, which
+      // is what this same auth modal is used for elsewhere.
       setCheckoutAfterAuth(true);
       setShowAuthModal(true);
       return;
     }
 
-    // Final pricing/geometry are resolved server-side by /checkout itself
-    // (via /api/build/[id] -> computePrice) -- this redirect is just
-    // navigation, not a second source of truth.
-    router.push(`/checkout?buildId=${buildId}`);
+    router.push(
+      isBespokeRequest
+        ? `/bespoke/new?buildId=${buildId}`
+        : `/checkout?buildId=${buildId}`,
+    );
   }
 
   function openCustomRequestPopup() {
@@ -772,7 +899,12 @@ export default function BuilderClient({
       setAuthPassword("");
       if (checkoutAfterAuth) {
         setCheckoutAfterAuth(false);
-        router.push(`/checkout?buildId=${buildId}`);
+        const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
+        router.push(
+          isBespokeRequest
+            ? `/bespoke/new?buildId=${buildId}`
+            : `/checkout?buildId=${buildId}`,
+        );
       } else {
         setShowBespokeModal(true);
         router.refresh();
@@ -894,18 +1026,75 @@ export default function BuilderClient({
   // which then failed generatePrintMockup's product check on the next
   // "Generate AI Mockup" click even though the user never touched product.
   // continueCustomRequest() above is the only place that should set CUSTOM.
-  function saveBespokeTShirt() {
+  async function saveBespokeTShirt() {
     save({ ...state });
+
+    // Persist the EXACT generated artwork + the current canvas transform as
+    // a stable, owner-scoped Artwork (src/actions/artwork-actions.ts) so it
+    // survives navigation/refresh and can be referenced by Wishlist /
+    // Bespoke / Admin. Upserts on the source mockup -- a repeat save never
+    // creates a second record. Silently a no-op if nothing is generated yet.
+    if (aiMockupUrl && state.primaryAssetId) {
+      setSavePending(true);
+      try {
+        const result = await actionSaveArtwork(buildId, {
+          placement: activePlacement,
+          x: artworkTransform.x,
+          y: artworkTransform.y,
+          scale: artworkTransform.scale,
+          rotation: 0,
+        });
+        setSavedArtworkUrl(result.url);
+      } catch (error) {
+        setMockupError(error instanceof Error ? error.message : "Could not save your artwork.");
+      } finally {
+        setSavePending(false);
+      }
+    }
+
     setShowBespokeModal(false);
+  }
+
+  async function handleAddToWishlist() {
+    if (status !== "authenticated") {
+      requestAuth("login");
+      return;
+    }
+    setWishlistPending(true);
+    setWishlistError(null);
+    try {
+      const result = await actionAddToWishlist(buildId);
+      if (result.ok) {
+        setInWishlist(true);
+      } else {
+        setWishlistError(result.error);
+      }
+    } catch {
+      setWishlistError("Could not update your wishlist. Please try again.");
+    } finally {
+      setWishlistPending(false);
+    }
   }
 
   const priceText = loadingPrice
     ? "Calculating..."
     : state.product === "CUSTOM"
-      ? "Custom garments require a tailored quote."
+      ? customQuoteUsdCents != null
+        ? `USD ${(customQuoteUsdCents / 100).toFixed(2)}`
+        : "Custom garments require a tailored quote."
       : price?.mode === "standard"
         ? `${price.currency} ${price.total.toFixed(2)}`
         : (priceError ?? price?.message ?? "Pricing unavailable");
+
+  // Shown in PriceCard's secondary-line slot only once quoted -- surfaces
+  // the admin's note (if any) and always warns that further edits clear
+  // the quote (matches actionUpdateDraft's invalidation rule exactly).
+  const quotedSecondaryNote =
+    state.product === "CUSTOM" && customQuoteUsdCents != null
+      ? [customQuoteNote, "Quoted by our team. Changing your selection will require a new quote."]
+          .filter(Boolean)
+          .join(" ")
+      : undefined;
 
   const selectionSummary = [
     state.product === "FITTED"
@@ -918,10 +1107,15 @@ export default function BuilderClient({
   ].join(" / ");
 
 
-  const isStandardCheckout =
+  // The CTA is enabled when the selection is complete AND either: a paid
+  // product has a ready price, a Bespoke build has an admin quote, or a
+  // Bespoke build has no quote yet (the CTA then opens a no-payment
+  // request -- no price required).
+  const isBespokeRequestCta = state.product === "CUSTOM" && customQuoteUsdCents == null;
+  const canCheckout =
     Boolean(state.product && state.color && state.fabric) &&
-    price?.mode === "standard" &&
-    state.product !== "CUSTOM";
+    (isBespokeRequestCta ||
+      (state.product === "CUSTOM" ? customQuoteUsdCents != null : price?.mode === "standard"));
 
   // Canonical placement geometry -- the same shared config the server
   // compositor and TryOn3DPreview use (src/studio/render/placement-config.ts
@@ -993,8 +1187,12 @@ export default function BuilderClient({
           x: artworkTransform.x,
           y: artworkTransform.y,
           scale: artworkTransform.scale,
-          product: state.product,
-          color: state.color,
+          // Resolved -- see resolveMockupProduct/resolveMockupColor and
+          // generatePrintMockup below. Bespoke sends the same template
+          // choice it's already being previewed against, never "CUSTOM"
+          // (which this route's own PRODUCTS/COLORS enums would reject).
+          product: resolveMockupProduct(state.product),
+          color: resolveMockupColor(state.color),
         }),
       });
 
@@ -1036,12 +1234,16 @@ export default function BuilderClient({
     if (!state.primaryAssetId || !activeArtworkAsset) {
       return { ok: false, error: "Select artwork first." };
     }
-    if (state.product !== "FITTED" && state.product !== "OVERSIZED") {
-      return { ok: false, error: "Select Fitted or Oversized before generating a mockup." };
-    }
-    if (state.color !== "BLACK" && state.color !== "WHITE") {
-      return { ok: false, error: "Select Black or White before generating a mockup." };
-    }
+
+    // Bespoke (state.product === "CUSTOM", or a "Request custom colour"
+    // state.color === "CUSTOM") has no template of its own to render onto
+    // -- resolveMockupProduct/resolveMockupColor map it onto the exact same
+    // FITTED/OVERSIZED + BLACK/WHITE template the canvas is already
+    // previewing (getBespokeShirtImage uses the identical fallback), so
+    // this always has a valid, already-seen-on-screen template rather than
+    // rejecting Bespoke outright.
+    const mockupProduct = resolveMockupProduct(state.product);
+    const mockupColor = resolveMockupColor(state.color);
 
     try {
       const response = await fetch("/api/mockups/print", {
@@ -1055,8 +1257,8 @@ export default function BuilderClient({
           x: artworkTransform.x,
           y: artworkTransform.y,
           scale: artworkTransform.scale,
-          product: state.product,
-          color: state.color,
+          product: mockupProduct,
+          color: mockupColor,
         }),
       });
 
@@ -1120,7 +1322,7 @@ export default function BuilderClient({
     mounted && showBespokeModal
       ? createPortal(
           <BespokeModal
-            generatedMockupUrl={aiMockupUrl}
+            generatedMockupUrl={aiMockupUrl ?? savedArtworkUrl}
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
             color={state.color}
@@ -1249,6 +1451,7 @@ export default function BuilderClient({
                 <PriceCard
                   priceText={priceText}
                   onRetry={priceError ? () => setPricingRetryToken((token) => token + 1) : undefined}
+                  secondaryNote={quotedSecondaryNote}
                 />
 
                 <div className="studio-right-divider" />
@@ -1297,13 +1500,26 @@ export default function BuilderClient({
                 <div className="studio-action-row">
 <CheckoutButton
   onCheckout={openCheckout}
-  disabled={!isStandardCheckout}
+  disabled={!canCheckout || savePending}
+  label={isBespokeRequestCta ? "Request a Quote" : "Checkout"}
 />
 
-                  <button type="button" className="studio-wishlist-button">
-                    Add To Wishlist
+                  <button
+                    type="button"
+                    className="studio-wishlist-button"
+                    onClick={() => void handleAddToWishlist()}
+                    disabled={wishlistPending || inWishlist}
+                  >
+                    {inWishlist
+                      ? "In Your Wishlist"
+                      : wishlistPending
+                        ? "Adding..."
+                        : "Add To Wishlist"}
                   </button>
                 </div>
+                {wishlistError ? (
+                  <p className="mt-2 text-xs text-red-600">{wishlistError}</p>
+                ) : null}
 
                 <div className="studio-right-divider" />
 

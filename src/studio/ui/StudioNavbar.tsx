@@ -22,6 +22,8 @@ export default function StudioNavbar({
       name: "Builder",
       href: `/studio/projects/${projectId}/builder`,
     },
+    { name: "Wishlist", href: "/wishlist" },
+    { name: "Bespoke", href: "/bespoke" },
   ];
 
   return (

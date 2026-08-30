@@ -5,9 +5,13 @@ type PriceCardProps = {
   // renders a retry affordance instead of the shipping note so a transient
   // failure is recoverable without changing product/fabric/quantity.
   onRetry?: () => void;
+  // Overrides the default "Incl. VAT..." shipping note -- used for the
+  // Bespoke/Custom quoted-price caveat (see BuilderClient.tsx). Ignored
+  // while onRetry is present; a pricing failure takes priority.
+  secondaryNote?: string;
 };
 
-export default function PriceCard({ priceText, onRetry }: PriceCardProps) {
+export default function PriceCard({ priceText, onRetry, secondaryNote }: PriceCardProps) {
   return (
     <div className="studio-right-top">
       <div className="studio-price-stack">
@@ -22,7 +26,7 @@ export default function PriceCard({ priceText, onRetry }: PriceCardProps) {
           </button>
         ) : (
           <div className="studio-shipping-note">
-            Incl. VAT. Ships in 3-5 business days.
+            {secondaryNote ?? "Incl. VAT. Ships in 3-5 business days."}
           </div>
         )}
       </div>

@@ -22,6 +22,10 @@ model User {
   orders       Order[]
   sessions     Session[]
   auditLogs    AdminAuditLog[]
+  artworks            Artwork[]
+  wishlistItems       WishlistItem[]
+  bespokeRequests     BespokeRequest[]
+  bespokeRequestNotes BespokeRequestNote[]
 }
 
 model Build {
@@ -37,6 +41,9 @@ model Build {
   designs   Design[]
   orders    Order[]
   mockups   Mockup[]
+  artworks        Artwork[]
+  wishlistItems   WishlistItem[]
+  bespokeRequests BespokeRequest[]
 
   @@index([userId])
   @@index([status])
@@ -66,6 +73,37 @@ model BuildDraft {
   aiMockupFingerprint     String?       @map("aiMockupFingerprint")
   aiMockupGeneratedAt    DateTime?     @map("aiMockupGeneratedAt")
   aiMockup                Mockup?       @relation("AiMockup", fields: [aiMockupId], references: [id])
+
+  // The canonical, owner-scoped generated artwork the customer explicitly
+  // SAVEd in the Studio model (src/actions/artwork-actions.ts). Distinct
+  // from aiMockupId above: aiMockup is a Build-scoped, cascade-deleted
+  // preview row; savedArtwork owns its own copy of the exact generated
+  // bytes and is what Wishlist / BespokeRequest / Admin reference. Null
+  // until the user hits "Save T-Shirt".
+  savedArtworkId String?
+  savedArtwork   Artwork? @relation("DraftSavedArtwork", fields: [savedArtworkId], references: [id])
+
+  // Canvas placement/config snapshot: { placement, x, y, scale, rotation }.
+  // The placement *key* is also in customNotes JSON (legacy, used by
+  // pricing); this additionally persists the x/y/scale transform so the
+  // Studio canvas survives a refresh and so Wishlist/BespokeRequest can
+  // snapshot it. Never baked into the Artwork bytes -- see the Sharp
+  // compositor, which still receives transform numbers per-request.
+  artworkPlacement Json?
+
+  // Admin-set price for a Bespoke/Custom (product == CUSTOM) build -- the
+  // only way a CUSTOM product ever gets a real price, since computePrice()
+  // always returns mode:"custom" for it (see src/pricing/engine.ts). Valid
+  // only for the exact draft state it was quoted against: actionUpdateDraft
+  // (src/actions/build-actions.ts) clears all four fields the moment
+  // product/color/fabric/quantity/customNotes/primaryAssetId change, so a
+  // stale quote can never be silently reused for a materially different
+  // request. Denormalized quoter email (no User relation) is enough of an
+  // audit trail without the extra relation/migration complexity.
+  customQuoteUsdCents  Int?
+  customQuoteNote      String?
+  customQuotedAt       DateTime?
+  customQuotedByEmail  String?
 }
 
 model Mockup {
@@ -280,16 +318,133 @@ model AdminAuditLog {
   createdAt     DateTime @default(now())
   adminId       String?
   orderId       String?
+  bespokeRequestId String?
   action        String
   previousValue String?
   newValue      String?
   metadata      Json?
   admin         User?    @relation(fields: [adminId], references: [id], onDelete: SetNull)
   order         Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  bespokeRequest BespokeRequest? @relation(fields: [bespokeRequestId], references: [id], onDelete: SetNull)
 
   @@index([adminId])
   @@index([orderId])
+  @@index([bespokeRequestId])
   @@index([createdAt])
+}
+
+// Canonical, owner-scoped persistent generated artwork -- the single
+// source of truth referenced by the Builder, Wishlist, BespokeRequest,
+// Admin, and rendering. Owns its OWN copy of the exact generated image
+// bytes (copied verbatim from the source Mockup at SAVE time) so it
+// survives the source Build/Mockup being deleted. Holds ONLY the asset;
+// placement/transform lives on BuildDraft.artworkPlacement and is
+// snapshotted onto WishlistItem/BespokeRequest.
+model Artwork {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  userId         String?
+  buildId        String?
+  // The Mockup(kind="AI") row these bytes were copied from. Unique so
+  // re-saving the same generated mockup UPSERTs one Artwork instead of
+  // creating a duplicate every time the user re-opens the model.
+  sourceMockupId String?  @unique
+  mimeType       String
+  data           Bytes
+  sha256         String   @db.VarChar(64)
+  model          String?
+  prompt         String?
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  build Build? @relation(fields: [buildId], references: [id], onDelete: SetNull)
+
+  draftsUsingAsSaved BuildDraft[]     @relation("DraftSavedArtwork")
+  wishlistItems      WishlistItem[]
+  bespokeRequests    BespokeRequest[]
+
+  @@index([userId])
+  @@index([buildId])
+}
+
+model WishlistItem {
+  id         String        @id @default(cuid())
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  userId     String
+  buildId    String
+  artworkId  String?
+  product    ProductType?
+  color      GarmentColor?
+  fabric     FabricType?
+  quantity   Int           @default(1)
+  size       String?
+  placements Json
+  transform  Json?
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  build   Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
+  artwork Artwork? @relation(fields: [artworkId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, buildId])
+  @@index([userId])
+}
+
+// A no-payment "please quote this for me" intake for a Bespoke/Custom
+// build. Never touches Paymob. Captures an immutable snapshot of the
+// Builder state at request time; the tailored quote is filled in later by
+// an admin (mirrors BuildDraft.customQuote*).
+model BespokeRequest {
+  id            String               @id @default(cuid())
+  requestNumber String               @unique
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  userId        String?
+  buildId       String?
+  artworkId     String?
+  status        BespokeRequestStatus @default(NEW)
+
+  product     ProductType?
+  color       GarmentColor?
+  fabric      FabricType?
+  quantity    Int           @default(1)
+  size        String?
+  placements  Json
+  transform   Json?
+  customNotes String?
+
+  customerName  String
+  customerEmail String
+  customerPhone String
+
+  quoteUsdCents Int?
+  quoteNote     String?
+  quotedAt      DateTime?
+  quotedByEmail String?
+
+  emailNotifiedAt    DateTime?
+  whatsappNotifiedAt DateTime?
+  notifyError        String?
+
+  user      User?                @relation(fields: [userId], references: [id], onDelete: SetNull)
+  build     Build?               @relation(fields: [buildId], references: [id], onDelete: SetNull)
+  artwork   Artwork?             @relation(fields: [artworkId], references: [id], onDelete: SetNull)
+  notes     BespokeRequestNote[]
+  auditLogs AdminAuditLog[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model BespokeRequestNote {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  requestId String
+  authorId  String?
+  body      String
+  request BespokeRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  author  User?          @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([requestId])
 }
 
 model StoreSetting {
@@ -408,4 +563,13 @@ enum PaymentAttemptStatus {
   PENDING
   SUCCEEDED
   FAILED
+}
+
+enum BespokeRequestStatus {
+  NEW
+  CONTACTED
+  QUOTED
+  ACCEPTED
+  DECLINED
+  CLOSED
 }

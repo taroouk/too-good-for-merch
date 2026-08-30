@@ -1,11 +1,15 @@
 type CheckoutButtonProps = {
   disabled: boolean;
   onCheckout: () => void;
+  // "Checkout" for standard products; the Bespoke flow passes its own
+  // label since it opens a no-payment request, not a payment.
+  label?: string;
 };
 
 export default function CheckoutButton({
   disabled,
   onCheckout,
+  label = "Checkout",
 }: CheckoutButtonProps) {
   return (
     <button
@@ -16,7 +20,7 @@ export default function CheckoutButton({
   "
     >
       <span className="flex items-center justify-center gap-2">
-        Checkout
+        {label}
         <span className="transition-transform duration-300 group-hover:translate-x-1">
           →
         </span>

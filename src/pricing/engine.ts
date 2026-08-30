@@ -143,3 +143,35 @@ export async function computePrice({
     placements: normalizedPlacements,
   };
 }
+
+// The one and only path a Bespoke/Custom (product === "CUSTOM") build ever
+// gets a real price: computePrice() above always returns mode:"custom" for
+// it, by design -- custom work needs a human quote, not a catalog rule.
+// Once an admin sets one (BuildDraft.customQuoteUsdCents, see
+// src/actions/admin-bespoke-actions.ts), callers that know about it build
+// this in place of calling computePrice, so every downstream consumer
+// (the /checkout page, createCheckoutOrder) needs zero special-casing
+// beyond "is this a quote-based result" -- shaped identically to a real
+// computePrice() standard result. unit is derived (total / quantity) purely
+// for display parity with the standard case; the quote itself is a total,
+// not a rate, since a one-off bespoke price rarely divides cleanly.
+export function customQuotePriceResult(
+  quoteUsdCents: number,
+  quantity: number,
+  placements: PlacementKey[],
+): PriceResult {
+  const qty = Math.max(1, Math.floor(quantity) || 1);
+  const total = quoteUsdCents / 100;
+  const unit = total / qty;
+
+  return {
+    mode: "standard",
+    unit: Number(unit.toFixed(2)),
+    total: Number(total.toFixed(2)),
+    currency: PRICING_CURRENCY,
+    baseUnit: Number(unit.toFixed(2)),
+    placementUnit: 0,
+    placementTotal: 0,
+    placements,
+  };
+}

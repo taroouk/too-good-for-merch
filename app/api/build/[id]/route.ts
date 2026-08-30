@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { apiError, NO_STORE_HEADERS } from "src/lib/api/responses";
-import { computePrice } from "src/pricing/engine";
+import { computePrice, customQuotePriceResult } from "src/pricing/engine";
 import {
   normalizePlacements,
   placementsFromCustomNotes,
@@ -33,6 +33,10 @@ export async function GET(
             fabric: true,
             quantity: true,
             customNotes: true,
+            customQuoteUsdCents: true,
+            customQuoteNote: true,
+            savedArtworkId: true,
+            aiMockupId: true,
           },
         },
       },
@@ -53,12 +57,20 @@ export async function GET(
       requestedPlacements.length ? requestedPlacements : draftPlacements,
     );
 
-    const price = await computePrice({
-      product: build.draft.product,
-      fabric: build.draft.fabric,
-      quantity: build.draft.quantity,
-      placements,
-    });
+    // Bespoke/Custom builds never get a computePrice() result (see
+    // src/pricing/engine.ts -- it always returns mode:"custom" for
+    // product===CUSTOM by design). If an admin has since set a quote on
+    // this build's draft, use that instead -- the one path a CUSTOM build
+    // can reach a real, checkout-eligible price.
+    const price =
+      build.draft.product === "CUSTOM" && build.draft.customQuoteUsdCents != null
+        ? customQuotePriceResult(build.draft.customQuoteUsdCents, build.draft.quantity, placements)
+        : await computePrice({
+            product: build.draft.product,
+            fabric: build.draft.fabric,
+            quantity: build.draft.quantity,
+            placements,
+          });
 
     return NextResponse.json(
       {
@@ -71,10 +83,20 @@ export async function GET(
             fabric: build.draft.fabric,
             quantity: build.draft.quantity,
             customNotes: build.draft.customNotes,
+            customQuoteNote: build.draft.customQuoteNote,
           },
         },
         price,
         placements,
+        // Stable saved-artwork reference, if the customer has hit "Save
+        // T-Shirt". Falls back to the live AI-mockup preview so the
+        // checkout / bespoke-intake summary always shows *something* the
+        // customer recognises.
+        artworkUrl: build.draft.savedArtworkId
+          ? `/api/artworks/${build.draft.savedArtworkId}/file`
+          : build.draft.aiMockupId
+            ? `/api/mockups/${build.draft.aiMockupId}/file`
+            : null,
         walletEnabled: Boolean(process.env.PAYMOB_WALLET_INTEGRATION_ID?.trim()),
       },
       { headers: NO_STORE_HEADERS },

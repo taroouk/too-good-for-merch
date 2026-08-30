@@ -96,20 +96,58 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
-    select: { draft: { select: { id: true } } },
+    select: {
+      draft: {
+        select: {
+          id: true,
+          product: true,
+          color: true,
+          fabric: true,
+          quantity: true,
+          customNotes: true,
+          primaryAssetId: true,
+          customQuoteUsdCents: true,
+        },
+      },
+    },
   });
 
   if (!build?.draft?.id) throw new Error("Draft not found");
 
+  const draft = build.draft;
+  const nextCustomNotes = customNotes.length ? customNotes : null;
+  const nextPrimaryAssetId = await validPrimaryAssetId(buildId, primaryAssetId);
+
+  // An admin-set Bespoke/Custom quote (see src/actions/admin-bespoke-actions.ts)
+  // is only valid for the exact draft state it was quoted against -- if
+  // anything the admin actually priced has changed, drop it so a stale
+  // price can never be reused for a materially different request. No-op
+  // when there was no active quote to begin with.
+  const changed =
+    draft.product !== (product ?? null) ||
+    draft.color !== (color ?? null) ||
+    draft.fabric !== (fabric ?? null) ||
+    draft.quantity !== quantity ||
+    draft.customNotes !== nextCustomNotes ||
+    draft.primaryAssetId !== nextPrimaryAssetId;
+
   await prisma.buildDraft.update({
-    where: { id: build.draft.id },
+    where: { id: draft.id },
     data: {
       product: product ?? null,
       color: color ?? null,
       fabric: fabric ?? null,
       quantity,
-      customNotes: customNotes.length ? customNotes : null,
-      primaryAssetId: await validPrimaryAssetId(buildId, primaryAssetId),
+      customNotes: nextCustomNotes,
+      primaryAssetId: nextPrimaryAssetId,
+      ...(changed && draft.customQuoteUsdCents != null
+        ? {
+            customQuoteUsdCents: null,
+            customQuoteNote: null,
+            customQuotedAt: null,
+            customQuotedByEmail: null,
+          }
+        : {}),
     },
   });
 }

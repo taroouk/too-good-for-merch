@@ -27,6 +27,10 @@ export default async function BuilderPage({
           quantity: true,
           customNotes: true,
           primaryAssetId: true,
+          customQuoteUsdCents: true,
+          customQuoteNote: true,
+          savedArtworkId: true,
+          artworkPlacement: true,
           printMockupId: true,
           printMockupFingerprint: true,
           printMockup: { select: { id: true, mimeType: true } },
@@ -87,6 +91,29 @@ export default async function BuilderPage({
       : null;
   const initialAiMockupFingerprint = build.draft.aiMockupFingerprint ?? null;
 
+  const initialSavedArtworkUrl = build.draft.savedArtworkId
+    ? `/api/artworks/${build.draft.savedArtworkId}/file`
+    : null;
+  const initialArtworkPlacement =
+    build.draft.artworkPlacement && typeof build.draft.artworkPlacement === "object"
+      ? (build.draft.artworkPlacement as {
+          placement?: string | null;
+          x?: number;
+          y?: number;
+          scale?: number;
+          rotation?: number;
+        })
+      : null;
+
+  const initialInWishlist = userId
+    ? Boolean(
+        await prisma.wishlistItem.findUnique({
+          where: { userId_buildId: { userId, buildId } },
+          select: { id: true },
+        }),
+      )
+    : false;
+
   return (
     <BuilderClient
       buildId={build.id}
@@ -99,6 +126,11 @@ export default async function BuilderPage({
       initialMockupFingerprint={initialMockupFingerprint}
       initialAiMockupUrl={initialAiMockupUrl ?? null}
       initialAiMockupFingerprint={initialAiMockupFingerprint}
+      initialCustomQuoteUsdCents={build.draft.customQuoteUsdCents ?? null}
+      initialCustomQuoteNote={build.draft.customQuoteNote ?? null}
+      initialSavedArtworkUrl={initialSavedArtworkUrl}
+      initialArtworkPlacement={initialArtworkPlacement}
+      initialInWishlist={initialInWishlist}
     />
   );
 }

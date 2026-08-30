@@ -55,7 +55,15 @@ const RETRY_DELAY_MS = 200;
 // promise does reject with this error class, so it's catchable here.
 // Neon's wake-from-suspend latency runs a few seconds, not milliseconds,
 // so this gets its own slower backoff rather than reusing RETRY_DELAY_MS.
-const INIT_RETRY_DELAYS_MS = [500, 1500, 3000];
+// The previous budget here ([500, 1500, 3000], ~5s total across 4
+// attempts) was sized for a typical wake, but a fully cold compute has
+// been observed in practice to take 20+ seconds -- longer than that
+// budget covered. When retries ran out before the compute finished
+// waking, the PrismaClientInitializationError propagated uncaught out of
+// whatever called it (e.g. src/studio/authz.ts's getUserId during SSR),
+// crashing the page instead of quietly recovering. Extended to comfortably
+// cover the observed worst case.
+const INIT_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 6000, 8000];
 
 function isPrismaInitializationError(error: unknown): boolean {
   return Boolean(error) && (error as { name?: string }).name === "PrismaClientInitializationError";

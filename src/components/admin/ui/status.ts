@@ -1,4 +1,4 @@
-import { OrderStatus, PaymentAttemptStatus, PaymentStatus } from "@prisma/client";
+import { BespokeRequestStatus, OrderStatus, PaymentAttemptStatus, PaymentStatus } from "@prisma/client";
 import type { BadgeTone } from "src/components/admin/ui/Badge";
 
 export function paymentStatusTone(status: PaymentStatus): BadgeTone {
@@ -29,3 +29,32 @@ export function attemptStatusTone(status: PaymentAttemptStatus): BadgeTone {
   if (status === PaymentAttemptStatus.FAILED) return "danger";
   return "warning";
 }
+
+export const BESPOKE_STATUS_LABELS: Record<BespokeRequestStatus, string> = {
+  NEW: "New",
+  CONTACTED: "Contacted",
+  QUOTED: "Quoted",
+  ACCEPTED: "Accepted",
+  DECLINED: "Declined",
+  CLOSED: "Closed",
+};
+
+export function bespokeStatusTone(status: BespokeRequestStatus): BadgeTone {
+  if (status === BespokeRequestStatus.ACCEPTED) return "success";
+  if (status === BespokeRequestStatus.QUOTED) return "info";
+  if (status === BespokeRequestStatus.CONTACTED) return "warning";
+  if (status === BespokeRequestStatus.DECLINED) return "danger";
+  if (status === BespokeRequestStatus.CLOSED) return "dark";
+  return "neutral";
+}
+
+// Allowed manual transitions, mirroring allowedStatusFlow in
+// src/actions/admin-order-actions.ts.
+export const BESPOKE_STATUS_FLOW: Record<BespokeRequestStatus, BespokeRequestStatus[]> = {
+  NEW: [BespokeRequestStatus.CONTACTED, BespokeRequestStatus.DECLINED],
+  CONTACTED: [BespokeRequestStatus.QUOTED, BespokeRequestStatus.DECLINED],
+  QUOTED: [BespokeRequestStatus.ACCEPTED, BespokeRequestStatus.DECLINED],
+  ACCEPTED: [BespokeRequestStatus.CLOSED],
+  DECLINED: [BespokeRequestStatus.NEW],
+  CLOSED: [],
+};

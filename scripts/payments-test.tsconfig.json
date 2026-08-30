@@ -18,7 +18,15 @@
     "../src/lib/payments/paymob.ts",
     "../src/lib/payments/__tests__/**/*.ts",
     "../src/lib/orders/display.ts",
+    "../src/lib/orders/customer.ts",
     "../src/lib/orders/__tests__/**/*.ts",
+    "../src/lib/bespoke/eligibility.ts",
+    "../src/lib/bespoke/snapshot.ts",
+    "../src/lib/bespoke/__tests__/**/*.ts",
+    "../src/lib/artwork/save.ts",
+    "../src/lib/artwork/__tests__/**/*.ts",
+    "../src/lib/notify/bespoke-content.ts",
+    "../src/lib/notify/__tests__/**/*.ts",
     "../src/testing/**/*.ts"
   ]
 }
