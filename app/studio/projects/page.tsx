@@ -24,10 +24,10 @@ export default async function ProjectsPage({
     const showGuestMsg = searchParams?.guest === "1";
 
     return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
+      <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-8">
+        <div className="flex items-center justify-between gap-3">
           <h1 className="text-xl font-semibold">Studio</h1>
-          <Link className="text-sm underline" href="/">
+          <Link className="shrink-0 text-sm underline" href="/">
             Home
           </Link>
         </div>
@@ -51,17 +51,17 @@ export default async function ProjectsPage({
             New Project
           </Link>
         </div>
-      </div>
+      </main>
     );
   }
 
   const builds = (await listBuildsByUser(userId)) as BuildRow[];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
+    <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-8">
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">Projects</h1>
-        <Link className="text-sm underline" href="/studio/projects/new">
+        <Link className="shrink-0 text-sm underline" href="/studio/projects/new">
           New Project
         </Link>
       </div>
@@ -87,6 +87,6 @@ export default async function ProjectsPage({
           ))}
         </div>
       )}
-    </div>
+    </main>
   );
 }

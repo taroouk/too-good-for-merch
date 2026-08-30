@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -16,6 +17,7 @@ export default function StudioNavbar({
   projectName: string;
 }) {
   const pathname = usePathname();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const tabs = [
     {
@@ -76,7 +78,42 @@ export default function StudioNavbar({
           })}
           <AuthAction className="studio-navbar-tab studio-navbar-tab-idle authActionReset" />
         </nav>
+
+        {/* Mobile trigger -- hidden on desktop via CSS (globals.css). */}
+        <button
+          type="button"
+          className="studio-navbar-burger"
+          aria-label={menuOpen ? "Close menu" : "Open menu"}
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen((value) => !value)}
+        >
+          <span />
+          <span />
+          <span />
+        </button>
       </div>
+
+      {menuOpen ? (
+        <div className="studio-navbar-mobile-menu" id="studio-navbar-mobile-menu">
+          {tabs.map((tab) => (
+            <Link
+              key={tab.name}
+              href={tab.href}
+              onClick={() => setMenuOpen(false)}
+              className={cn(
+                "studio-navbar-mobile-link",
+                pathname === tab.href && "is-active",
+              )}
+            >
+              {tab.name}
+            </Link>
+          ))}
+          <AuthAction
+            className="studio-navbar-mobile-link authActionReset"
+            onAction={() => setMenuOpen(false)}
+          />
+        </div>
+      ) : null}
     </header>
   );
 }

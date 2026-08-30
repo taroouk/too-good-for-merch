@@ -128,14 +128,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <Card title="Paymob configuration" subtitle="Secrets are read from server environment variables and are never displayed.">
             <div className="space-y-3">
               {paymobHealth.items.map((item) => (
-                <div key={item.envVar} className="flex items-center justify-between rounded-xl bg-admin-canvas p-4">
-                  <div>
+                <div key={item.envVar} className="flex items-center justify-between gap-3 rounded-xl bg-admin-canvas p-4">
+                  <div className="min-w-0">
                     <p className="text-sm font-semibold text-admin-ink">{item.label}</p>
-                    <p className="mt-1 font-mono text-[10px] text-admin-faint">{item.envVar}</p>
+                    <p className="mt-1 break-all font-mono text-[10px] text-admin-faint">{item.envVar}</p>
                   </div>
-                  <Badge tone={item.configured ? "success" : item.required ? "danger" : "neutral"}>
-                    {item.configured ? "Configured" : item.required ? "Missing" : "Optional"}
-                  </Badge>
+                  <div className="shrink-0">
+                    <Badge tone={item.configured ? "success" : item.required ? "danger" : "neutral"}>
+                      {item.configured ? "Configured" : item.required ? "Missing" : "Optional"}
+                    </Badge>
+                  </div>
                 </div>
               ))}
             </div>
@@ -146,12 +148,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         </div>
 
         <Card className="mt-6" title="Admin" subtitle="Signed in as">
-          <div className="flex items-center justify-between rounded-xl bg-admin-canvas p-4">
-            <div>
-              <p className="text-sm font-semibold text-admin-ink">{admin.email}</p>
+          <div className="flex items-center justify-between gap-3 rounded-xl bg-admin-canvas p-4">
+            <div className="min-w-0">
+              <p className="break-all text-sm font-semibold text-admin-ink">{admin.email}</p>
               <p className="mt-1 text-xs text-admin-faint">Admin accounts are managed via the <code className="font-mono">db:seed:admins</code> script, not from this page.</p>
             </div>
-            <Badge tone="dark">Admin</Badge>
+            <div className="shrink-0">
+              <Badge tone="dark">Admin</Badge>
+            </div>
           </div>
         </Card>
       </div>

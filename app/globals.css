@@ -2297,12 +2297,69 @@ h6,
     border-radius: 12px !important;
   }
 
+  /* --- Modal responsiveness (mobile) --------------------------------
+     Panels fill the viewport with small, equal margins; never overflow
+     horizontally; cap at the visible viewport height; and scroll only
+     their inner body. The close button and primary action stay visible.
+     Desktop/tablet rules above are unchanged. */
+  .studio-modal-overlay {
+    padding: 10px;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+  }
+
+  .studio-auth-modal,
+  .studio-custom-request-modal,
+  .studio-bespoke-modal {
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100vh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+  }
+
   .studio-auth-modal {
-    padding: 42px 20px 28px;
+    padding: 46px 16px 16px;
   }
 
   .studio-custom-request-modal {
-    padding: 42px 20px 28px;
+    padding: 46px 16px 20px;
+  }
+
+  /* The inner body is the only scroll region. */
+  .studio-modal-scroll,
+  .studio-bespoke-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* Bespoke: tighter gutters and a pinned, legible Save action. */
+  .studio-bespoke-modal {
+    min-height: 0;
+  }
+
+  .studio-bespoke-preview {
+    padding: 44px 14px 14px;
+  }
+
+  .studio-bespoke-controls {
+    padding: 18px 14px 16px;
+  }
+
+  .studio-bespoke-save-button {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    margin-top: 16px;
+    box-shadow: 0 -10px 14px 6px #ffffff;
+  }
+
+  /* Keep the close affordance readable over scrolled content. */
+  .studio-modal-close {
+    background: rgba(255, 255, 255, 0.92);
+    border-radius: 999px;
   }
 
   .studio-preview-side-switch {
@@ -2310,11 +2367,78 @@ h6,
   }
 
   .studio-placement-grid {
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  .studio-selected-artwork-grid {
-    grid-template-columns: repeat(2, 1fr);
+  .studio-selected-artwork-grid,
+  .studio-upload-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Short viewports (landscape phones, resized desktop windows): a
+   height-only concern -- cap every modal at the visible viewport height,
+   let only the inner body scroll, trim vertical chrome, and pin the
+   primary action so it never sits below the fold. Width is left to the
+   <=640px block above, so a short *wide* window keeps its normal panel
+   width. */
+@media (max-height: 560px) {
+  .studio-modal-overlay {
+    padding-top: 10px;
+    padding-bottom: 10px;
+    overflow-y: auto !important;
+  }
+
+  .studio-auth-modal,
+  .studio-custom-request-modal,
+  .studio-bespoke-modal {
+    max-height: calc(100vh - 20px) !important;
+    max-height: calc(100dvh - 20px) !important;
+    min-height: 0 !important;
+  }
+
+  .studio-modal-scroll,
+  .studio-bespoke-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .studio-modal-close {
+    height: 36px;
+    width: 36px;
+    top: 4px;
+    right: 6px;
+  }
+
+  .studio-auth-modal {
+    padding-top: 40px;
+    padding-bottom: 12px;
+  }
+
+  .studio-custom-request-modal {
+    padding-top: 40px;
+    padding-bottom: 14px;
+  }
+
+  .studio-bespoke-preview {
+    padding-top: 40px;
+  }
+
+  .studio-auth-copy,
+  .studio-custom-request-copy {
+    margin-top: 12px;
+  }
+
+  .studio-auth-submit,
+  .studio-modal-primary-button,
+  .studio-bespoke-save-button {
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
+    box-shadow: 0 -10px 14px 6px #ffffff;
   }
 }
 
@@ -4412,5 +4536,125 @@ h6,
   .payment-footer {
     flex-direction: column;
     gap: 12px;
+  }
+}
+
+/* ============================================================
+   MOBILE RESPONSIVE — final authoritative layer
+   The studio CSS above is a deep stack of iterative overrides
+   (many unconditional `!important` FIGMA rules that outrank the
+   earlier mobile media queries by source order). Rather than
+   untangle every layer, this trailing block sets the definitive
+   mobile layout for the Studio navbar + builder shell. Desktop
+   (>=721px / the >=1025px builder grid) is untouched.
+   ============================================================ */
+
+/* Studio navbar: hamburger below 720px (matches the marketing
+   site's breakpoint); the inline tab row + breadcrumb collapse
+   into a dropdown so nothing is pushed off-screen. */
+.studio-navbar-burger {
+  display: none;
+}
+.studio-navbar-mobile-menu {
+  display: none;
+}
+
+@media (max-width: 720px) {
+  .studio-navbar {
+    height: auto;
+    min-height: 64px;
+  }
+
+  .studio-navbar-inner {
+    width: 100%;
+    min-height: 64px;
+    padding: 0 14px;
+    gap: 12px;
+  }
+
+  .studio-navbar-logo {
+    height: 32px;
+  }
+
+  .studio-breadcrumb,
+  .studio-navbar-tabs {
+    display: none;
+  }
+
+  .studio-navbar-burger {
+    display: inline-flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 9px 7px;
+    border: 0;
+    background: transparent;
+  }
+
+  .studio-navbar-burger span {
+    display: block;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: #000000;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  .studio-navbar-burger[aria-expanded="true"] span:nth-child(1) {
+    transform: translateY(6px) rotate(45deg);
+  }
+  .studio-navbar-burger[aria-expanded="true"] span:nth-child(2) {
+    opacity: 0;
+  }
+  .studio-navbar-burger[aria-expanded="true"] span:nth-child(3) {
+    transform: translateY(-6px) rotate(-45deg);
+  }
+
+  .studio-navbar-mobile-menu {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 14px 12px;
+    border-top: 1px solid rgba(0, 0, 0, 0.12);
+    background: #ffffff;
+  }
+
+  .studio-navbar-mobile-link {
+    display: block;
+    width: 100%;
+    padding: 13px 4px;
+    border: 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    background: transparent;
+    text-align: left;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: #7f8794;
+  }
+  .studio-navbar-mobile-link.is-active {
+    color: #000000;
+  }
+  .studio-navbar-mobile-link:last-child {
+    border-bottom: 0;
+  }
+}
+
+/* Studio builder shell: stop grid children from establishing a
+   min-content floor wider than the (stacked, 1fr) column, and
+   give the side panels sane phone gutters. */
+@media (max-width: 640px) {
+  .studio-builder-grid > *,
+  .studio-left-panel,
+  .studio-right-panel,
+  .studio-preview-panel {
+    min-width: 0 !important;
+  }
+
+  .studio-left-panel,
+  .studio-right-panel {
+    padding: 20px 16px !important;
   }
 }
