@@ -148,6 +148,50 @@ function hasAboveThresholdNeighbor(
   return hasOrthogonal && hasDiagonal;
 }
 
+// Shared scanning core behind both garment detection (alphaScanBBox below)
+// and artwork-bounds trimming (trimToVisibleBounds below). Both agree on
+// what counts as "visible" (ALPHA_SUBJECT_THRESHOLD), but NOT on the
+// neighbor-connectivity requirement: requireNeighbor exists specifically
+// for the 1px-wide PNG-export-artifact defect documented on
+// hasAboveThresholdNeighbor -- appropriate for a photographed GARMENT,
+// which always has substantial real 2D extent, so a hairline with no
+// neighbors is provably a defect, not the subject. That assumption is
+// false for arbitrary uploaded ARTWORK: a deliberately tiny logo, a 1px
+// hairline stroke, or even a legitimate 1x1 image has no 2D neighbors
+// either, but IS the real content, not an artifact -- requiring
+// neighbors there would incorrectly treat it as "fully transparent" and
+// reject it outright. trimToVisibleBounds passes requireNeighbor=false for
+// exactly this reason; alphaScanBBox keeps the existing true, unchanged.
+function scanAboveThresholdBBox(
+  data: Buffer,
+  width: number,
+  height: number,
+  channels: number,
+  requireNeighbor: boolean,
+): { minX: number; minY: number; maxX: number; maxY: number } {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const alpha = data[(y * width + x) * channels + 3];
+      const isVisible =
+        alpha > ALPHA_SUBJECT_THRESHOLD &&
+        (!requireNeighbor || hasAboveThresholdNeighbor(data, width, height, channels, x, y));
+      if (isVisible) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+
+  return { minX, minY, maxX, maxY };
+}
+
 async function alphaScanBBox(
   buffer: Buffer,
   imageWidth: number,
@@ -157,24 +201,16 @@ async function alphaScanBBox(
   const { data, info } = await sharp(buffer).raw().ensureAlpha().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
 
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
   let sawRealTransparency = false;
-
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const alpha = data[(y * width + x) * channels + 3];
-      if (alpha < ALPHA_TRANSPARENCY_PRESENT_THRESHOLD) sawRealTransparency = true;
-      if (alpha > ALPHA_SUBJECT_THRESHOLD && hasAboveThresholdNeighbor(data, width, height, channels, x, y)) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
+      if (data[(y * width + x) * channels + 3] < ALPHA_TRANSPARENCY_PRESENT_THRESHOLD) {
+        sawRealTransparency = true;
       }
     }
   }
+
+  const { minX, minY, maxX, maxY } = scanAboveThresholdBBox(data, width, height, channels, true);
 
   if (!sawRealTransparency || maxX < minX) return null;
 
@@ -187,6 +223,58 @@ async function alphaScanBBox(
   };
   assertPlausibleBBox(bbox, imageWidth, imageHeight, context);
   return bbox;
+}
+
+// Trims an artwork buffer to the tight bounding box of its actual visible
+// content, so a user-uploaded image with transparent padding around a
+// smaller logo doesn't have that padding silently stretched into the
+// placement box by compositeArtworkOntoBase's fit:"fill" resize -- without
+// this, the artwork's own reported width/height (and therefore the user's
+// configured scale) describes the padded canvas, not the visible artwork.
+//
+// Reuses the same "visible content" ALPHA_SUBJECT_THRESHOLD detectGarmentBBox
+// already uses (via scanAboveThresholdBBox above) -- semi-transparent
+// shadow/glow edges above that threshold are preserved untouched; only
+// near-fully-transparent padding gets trimmed. Never re-crops WITHIN the
+// detected bounds, so aspect ratio and visible content are always fully
+// preserved. Deliberately does NOT require neighbor-connectivity
+// (scanAboveThresholdBBox's requireNeighbor=false) -- that check exists to
+// filter a defect specific to photographed garments (see its own comment);
+// a deliberately tiny/thin piece of artwork, including a legitimate 1x1
+// image, is real content here, not an artifact to discard.
+//
+// An image with no alpha channel at all (JPEG, or a PNG/WebP that happens
+// to be fully opaque) has no padding concept to trim -- returned unchanged.
+// An image that's alpha-bearing but has NOTHING above threshold anywhere
+// (a fully transparent upload) has no visible content to derive a bbox
+// from -- fails closed with a RendererError rather than producing a
+// zero-size or NaN placement downstream.
+export async function trimToVisibleBounds(buffer: Buffer): Promise<Buffer> {
+  const meta = await sharp(buffer).metadata();
+  if (!meta.hasAlpha) return buffer;
+
+  const { data, info } = await sharp(buffer).raw().ensureAlpha().toBuffer({ resolveWithObject: true });
+  const { width, height, channels } = info;
+  const { minX, minY, maxX, maxY } = scanAboveThresholdBBox(data, width, height, channels, false);
+
+  if (maxX < minX) {
+    throw new RendererError(
+      "This artwork appears to be fully transparent -- there is no visible content to place.",
+      400,
+    );
+  }
+
+  // No-op fast path: the visible content already fills the whole canvas
+  // (a tightly-cropped upload) -- skip the extract entirely rather than
+  // re-encoding a buffer that would come out identical.
+  if (minX === 0 && minY === 0 && maxX === width - 1 && maxY === height - 1) {
+    return buffer;
+  }
+
+  return sharp(buffer)
+    .extract({ left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 })
+    .png()
+    .toBuffer();
 }
 
 // Opaque photoreal image (Gemini's output -- observed to carry hasAlpha

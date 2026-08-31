@@ -2,9 +2,14 @@
 //
 // Pure prompt-text builder for the Gemini "blank garment" re-render request
 // (used by app/api/mockups/nanobanana/route.ts). Extracted out of the route
-// file so it has zero server-only imports (no sharp, no prisma, no
+// file so it has zero server-only imports (no sharp, no prisma runtime, no
 // next-auth) and can be unit-tested by the same plain-tsc/node harness as
-// the rest of this module -- see __tests__/gemini-prompt.test.ts.
+// the rest of this module -- see __tests__/gemini-prompt.test.ts. The
+// `PlacementType` import below is type-only (erased at compile time, same
+// as placement-config.ts's own imports) so this stays true.
+import type { PlacementType } from "@prisma/client";
+import { getPlacementSide } from "./placement-config";
+
 function labelFromEnum(value: string | null, fallback: string) {
   if (!value) return fallback;
   return value
@@ -37,7 +42,12 @@ export function blankGarmentPrompt({
 }): string {
   const productLabel = labelFromEnum(product, "T-shirt");
   const colorLabel = labelFromEnum(color, "White");
-  const view = placement.includes("BACK") ? "back" : "front";
+  // Canonical side lookup (placement-config.ts's getPlacementSide), not a
+  // second, independent ".includes(\"BACK\")" inference -- both happened to
+  // agree today only by coincidence of every *_BACK key genuinely being a
+  // back placement. Guarded to "front" for anything getPlacementSide
+  // doesn't recognize, matching the old fallback's behavior exactly.
+  const view = getPlacementSide(placement as PlacementType) === "back" ? "back" : "front";
 
   return `
 CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC GARMENT PHOTOGRAPHY ENGINE, NOT A CREATIVE DESIGNER.

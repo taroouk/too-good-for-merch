@@ -4,9 +4,15 @@ import type {
   ChangeEventHandler,
   PointerEventHandler,
 } from "react";
-import type { GarmentColor } from "@prisma/client";
+import type { GarmentColor, ProductType } from "@prisma/client";
 
 import type { PlacementKey } from "src/pricing/placements";
+// Both zero server-only imports (no node:fs, no sharp) -- safe to import
+// directly from a client component, same as TryOn3DPreview.tsx already
+// does. This is the canonical placement/template geometry the server
+// compositor also uses -- no local coordinate/aspect-ratio table here.
+import { getEffectiveScaleBounds } from "src/studio/render/transform";
+import { getPlacementSide, getTemplateAspectRatio } from "src/studio/render/placement-config";
 
 type ArtworkTransform = {
   x: number;
@@ -31,6 +37,7 @@ type BespokeModalProps = {
   generatedMockupUrl: string | null;
   bespokeShirtSrc: string;
   artworkUrl: string | null;
+  product: ProductType | null;
   color: GarmentColor | null;
   bespokeArtworkStyle: CSSProperties;
   bespokeArtworkTransform: string;
@@ -72,6 +79,7 @@ export default function BespokeModal({
   generatedMockupUrl,
   bespokeShirtSrc,
   artworkUrl,
+  product,
   color,
   bespokeArtworkStyle,
   bespokeArtworkTransform,
@@ -104,6 +112,21 @@ export default function BespokeModal({
   onSelectAsset,
   onSaveTShirt,
 }: BespokeModalProps) {
+  // Front templates are true 1:1 squares; back templates are a 1024x1536
+  // (2:3) portrait -- see getTemplateAspectRatio's own comment for the real
+  // measured dimensions. The canvas below used to be hardcoded to
+  // aspect-ratio 1/1 in globals.css for both sides, which silently
+  // pillarboxed the real back photo (object-fit: contain) and threw off
+  // the artwork overlay's percentage-based position, computed against the
+  // CONTAINER, not the image's actual displayed rectangle.
+  const previewAspectRatio = getTemplateAspectRatio(getPlacementSide(activePlacement));
+
+  // Same per-placement ceiling the server's resolvePlacement already
+  // enforces (getEffectiveScaleBounds) -- not a second, independently
+  // guessed range. Defaults mirror BuilderClient's own state defaults so
+  // this never diverges from what the parent actually resolved.
+  const scaleBounds = getEffectiveScaleBounds(product ?? "FITTED", color ?? "WHITE", activePlacement);
+
   return (
     <div className="studio-modal-overlay studio-modal-overlay-soft">
       <div className="studio-bespoke-modal studio-modal-panel">
@@ -123,7 +146,7 @@ export default function BespokeModal({
               Preview changed — AI mockup is outdated.
             </div>
           ) : null}
-          <div ref={previewRef} className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden" }}>
+          <div ref={previewRef} className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", aspectRatio: previewAspectRatio }}>
            {generatedMockupUrl && !isMockupStale ? (
              <img
                src={generatedMockupUrl}
@@ -244,8 +267,8 @@ export default function BespokeModal({
                   </button>
                   <input
                     type="range"
-                    min="0.4"
-                    max="2.4"
+                    min={scaleBounds.min}
+                    max={scaleBounds.max}
                     step="0.05"
                     value={artworkTransform.scale}
                     onChange={onArtworkScaleChange}

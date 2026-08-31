@@ -1738,22 +1738,28 @@ h6,
 .studio-bespoke-canvas {
   position: relative;
   width: 100%;
-  aspect-ratio: 1 / 1;
+  /* aspect-ratio is set per-instance via inline style in BespokeModal.tsx
+     (getTemplateAspectRatio(getPlacementSide(activePlacement))), NOT
+     hardcoded here -- front templates really are 1:1 squares, but back
+     templates are a 1024x1536 (2:3) portrait (see placement-config.ts's
+     own measured-dimensions comment). A single hardcoded 1/1 here silently
+     pillarboxed the real back photo (object-fit: contain below) and threw
+     off the artwork overlay's percentage-based box, which is computed
+     against THIS container, not the image's actual displayed rectangle. */
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* Garment templates are true 1:1 squares (see
-   src/studio/render/placement-config.ts), and the canvas above is now
-   forced to the same 1:1 aspect ratio, so the image fills it exactly with
-   no letterboxing -- the artwork overlay's percentage-based box (see
-   BuilderClient.tsx bespokeArtworkStyle, sourced from the same canonical
+/* Sets fit behavior only -- actual sizing is width:100%/height:100% plus
+   the per-instance aspect-ratio above, both via inline style in
+   BespokeModal.tsx, so the image now fills its (correctly side-aware)
+   container exactly with no letterboxing on either side. The artwork
+   overlay's percentage-based box (see BuilderClient.tsx
+   bespokeArtworkStyle, sourced from the same canonical
    placement-config.ts the Sharp renderer uses) lands in the same relative
-   position here as it does in the Print Mockup and TryOn3DPreview. Actual
-   sizing is width:100%/height:100% via inline style in BespokeModal.tsx;
-   this rule only governs fit behavior. */
+   position here as it does in the Print Mockup and TryOn3DPreview. */
 .studio-bespoke-shirt {
   object-fit: contain;
 }
@@ -2491,9 +2497,10 @@ h6,
     padding: 52px 14px 14px;
   }
 
-  /* Cap the 1:1 preview so it can't dominate a short (landscape)
-     viewport and push the controls + Save far below the fold. On
-     portrait phones the square is narrower than this cap, so this is a
+  /* Cap the preview (1:1 for front, 2:3 portrait for back -- see
+     BespokeModal.tsx's previewAspectRatio) so it can't dominate a short
+     (landscape) viewport and push the controls + Save far below the fold.
+     On portrait phones either ratio is narrower than this cap, so this is a
      no-op there; in landscape the garment letterboxes (object-fit:
      contain) and the controls stay reachable. */
   .studio-bespoke-canvas {

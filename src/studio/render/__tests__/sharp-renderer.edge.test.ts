@@ -33,11 +33,16 @@ export async function runAll() {
   const renderer = new SharpMockupRenderer();
 
   return runSuite("sharp-renderer.edge", {
-    async "handles fully transparent artwork without throwing"() {
+    // Was "handles fully transparent artwork without throwing" -- that
+    // silently produced a degenerate composite (nothing visible, stretched
+    // to fill the placement box). trimToVisibleBounds (composite.ts) now
+    // fails this closed instead: there is no visible content to derive a
+    // bbox from, so it throws a RendererError rather than composite
+    // invalid/meaningless geometry.
+    async "rejects fully transparent artwork with a RendererError, not a silent no-op composite"() {
       const artwork = await solidPng(200, 200, 0);
       const req = await baseRequest({ artwork });
-      const result = await renderer.render(req);
-      assert.ok(result.data.byteLength > 0);
+      await assert.rejects(() => renderer.render(req), RendererError);
     },
 
     async "handles a 1x1 tiny artwork"() {

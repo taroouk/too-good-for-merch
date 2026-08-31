@@ -120,3 +120,28 @@ export function getGarmentTemplate(
   }
   return { product, color, side, file };
 }
+
+// Real measured pixel dimensions of the template files above (verified via
+// `sharp(...).metadata()` against every file in TEMPLATE_FILES): every FRONT
+// template is a true 1:1 square (TGFM White/Oversized*.png are 1254x1254;
+// TGFM Black.png is a higher-res 2480x2480 re-export of the identical
+// framing -- same aspect ratio, just double the resolution). Every BACK
+// template (TGFM/Oversized *Back.png) is 1024x1536 -- a 2:3 portrait, NOT
+// square. This is the one fact the client preview got wrong: its container
+// was hardcoded to aspect-ratio 1/1 for both sides (see
+// TryOn3DPreview.tsx/BespokeModal.tsx), which silently pillarboxed the real
+// back photo inside object-fit:"contain" and threw off the artwork-overlay
+// percentages that assume the image fills the container exactly. Exporting
+// the real ratio here (not re-deriving it ad hoc per component) keeps this
+// file the single source of truth for anything template-geometry-shaped,
+// exactly like PlacementBox/getPlacementBox above -- it does not change
+// resolvePlacement()'s own math at all, which already reads each template's
+// actual width/height via sharp().metadata() and was never affected by this.
+const TEMPLATE_ASPECT_RATIO: Record<GarmentSide, number> = {
+  front: 1,
+  back: 1024 / 1536,
+};
+
+export function getTemplateAspectRatio(side: GarmentSide): number {
+  return TEMPLATE_ASPECT_RATIO[side];
+}

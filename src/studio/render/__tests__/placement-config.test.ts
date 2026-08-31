@@ -4,6 +4,7 @@ import {
   getGarmentTemplate,
   getPlacementBox,
   getPlacementSide,
+  getTemplateAspectRatio,
 } from "../placement-config";
 import { runSuite } from "./test-harness";
 
@@ -72,6 +73,29 @@ export async function runAll() {
         fitted.widthPct,
         oversized.widthPct,
         "expected FITTED and OVERSIZED to have distinct tuned placement boxes",
+      );
+    },
+
+    // REGRESSION: the preview container (TryOn3DPreview.tsx / BespokeModal.tsx)
+    // used to be hardcoded to aspect-ratio 1/1 for BOTH sides. Front
+    // templates really are 1:1 squares (1254x1254 / 2480x2480), but back
+    // templates are a 1024x1536 (2:3) portrait -- a hardcoded 1:1 container
+    // silently pillarboxed the real back photo (object-fit: contain),
+    // which threw off the artwork overlay's percentage-based position
+    // relative to the container vs. the image's actual displayed
+    // rectangle. This locks the real, measured ratios in place so the
+    // preview components' consumption of getTemplateAspectRatio can never
+    // silently drift back to "always square."
+    "getTemplateAspectRatio: front is a true 1:1 square, back is the real 1024x1536 portrait"() {
+      assert.equal(getTemplateAspectRatio("front"), 1, "front templates are square");
+      assert.equal(
+        getTemplateAspectRatio("back"),
+        1024 / 1536,
+        "back templates are the real measured 1024x1536 portrait ratio, not square",
+      );
+      assert.ok(
+        getTemplateAspectRatio("back") < 1,
+        "back's aspect ratio must be < 1 (portrait, narrower than tall) -- a value of 1 here would silently reintroduce the pillarboxing bug",
       );
     },
   });

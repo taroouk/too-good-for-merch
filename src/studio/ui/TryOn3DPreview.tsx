@@ -7,7 +7,7 @@ import type { GarmentColor, ProductType } from "@prisma/client";
 // placement geometry, the same one the server compositor uses (see
 // src/studio/render/placement-config.ts) -- do not add a local
 // placement-coordinate table here.
-import { getPlacementSide } from "src/studio/render/placement-config";
+import { getPlacementSide, getTemplateAspectRatio } from "src/studio/render/placement-config";
 import { getPlacementStyle } from "src/studio/render/placement-css";
 import { useContainerWidth } from "src/studio/ui/useContainerSize";
 
@@ -76,6 +76,15 @@ export default function TryOn3DPreview({
     }
   }, [activePlacement]);
 
+  // Front templates are true 1:1 squares; back templates are a 1024x1536
+  // (2:3) portrait -- see getTemplateAspectRatio's own comment for the real
+  // measured dimensions. The container below used to be hardcoded
+  // aspect-square for both sides, which silently let the real back photo
+  // render narrower than the container (height-driven sizing, width:auto)
+  // and threw off the artwork overlay's percentage-based position, which
+  // is computed against the CONTAINER, not the image's own rendered box.
+  const previewAspectRatio = useMemo(() => getTemplateAspectRatio(previewSide), [previewSide]);
+
   const frontImage = useMemo(() => getFrontModelImage(product, color), [color, product]);
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
   const generatedMockupSide = activePlacement ? getPlacementSide(activePlacement) : "front";
@@ -136,7 +145,8 @@ export default function TryOn3DPreview({
 
       <div
         ref={containerRef}
-        className="studio-preview-inner studio-preview-inner-clean flex items-center justify-center relative aspect-square w-full bg-white"
+        className="studio-preview-inner studio-preview-inner-clean flex items-center justify-center relative w-full bg-white"
+        style={{ aspectRatio: previewAspectRatio }}
       >
         
         {/* دي صورتك الأصلية زي ما هي */}

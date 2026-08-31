@@ -10,10 +10,21 @@
 // getPlacementBox() below), then `transform: translate(x*W, y*H)
 // scale(s)` with the browser's default transform-origin (50% 50%, i.e.
 // the box's own center) -- see BuilderClient.tsx's bespokeArtworkTransform
-// and TryOn3DPreview.tsx's artworkTransformStyle. Both containers are
-// forced to the template's own 1:1 aspect ratio (app/globals.css
-// .studio-bespoke-canvas; Tailwind aspect-square on .studio-preview-inner)
-// so a fraction of the container is the same fraction of the template.
+// and TryOn3DPreview.tsx's artworkTransformStyle. Both containers are now
+// set to the template's own REAL aspect ratio per side (getTemplateAspectRatio
+// in placement-config.ts -- front templates really are 1:1 squares, but
+// back templates are a 1024x1536, 2:3 portrait), so a fraction of the
+// container is the same fraction of the template on BOTH sides.
+//
+// This suite previously used one hardcoded 2000x2000 SQUARE for every
+// placement, front and back alike -- meaning it could never have caught a
+// divergence specific to the back template's real, non-square shape (the
+// exact bug BespokeModal.tsx/TryOn3DPreview.tsx's aspect-ratio fix
+// addresses: a forced-square container silently pillarboxing a portrait
+// photo). templateDimensionsFor() below derives each placement's template
+// height from the SAME getTemplateAspectRatio() the display-layer fix
+// consumes, so this test's "template" is proportioned like the real thing
+// on both sides, not just front.
 //
 // cssEquivalentBox() below reimplements exactly that CSS composition
 // (independently of transform.ts's scaleBoxAroundCenter) directly from
@@ -23,7 +34,7 @@
 // top-left-anchored scale on one side only), this test fails.
 import assert from "node:assert/strict";
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
-import { getPlacementBox } from "../placement-config";
+import { getPlacementBox, getPlacementSide, getTemplateAspectRatio } from "../placement-config";
 import { resolvePlacement } from "../transform";
 import { runSuite } from "./test-harness";
 
@@ -46,9 +57,19 @@ const OFFSETS = [
   { x: -0.12, y: 0.1 },
 ];
 
-const TEMPLATE_SIZE = 2000; // square, like the real templates (1254x1254 / 2480x2480)
+// Base width for the synthetic "template" this suite checks parity
+// against -- an arbitrary round number, not a real pixel count. The
+// PROPORTIONS that matter (square for front, 2:3 portrait for back) come
+// from getTemplateAspectRatio, not from this constant.
+const TEMPLATE_WIDTH = 2000;
 const ARTWORK_WIDTH = 400;
 const ARTWORK_HEIGHT = 240;
+
+function templateDimensionsFor(placement: PlacementType): { width: number; height: number } {
+  const side = getPlacementSide(placement);
+  const aspectRatio = getTemplateAspectRatio(side); // width / height
+  return { width: TEMPLATE_WIDTH, height: Math.round(TEMPLATE_WIDTH / aspectRatio) };
+}
 
 // Independent reimplementation of "top/left/width box, then CSS
 // `transform: translate(x*W, y*H) scale(s)` with default (center)
@@ -101,13 +122,14 @@ export async function runAll() {
         for (const { x, y } of OFFSETS) {
           const name = `${product}/${placement} scale=${scale} x=${x} y=${y} -- CSS box matches resolvePlacement`;
           tests[name] = () => {
+            const { width: templateWidth, height: templateHeight } = templateDimensionsFor(placement);
             const expected = cssEquivalentBox(
               product,
               COLOR,
               placement,
               { x, y, scale },
-              TEMPLATE_SIZE,
-              TEMPLATE_SIZE,
+              templateWidth,
+              templateHeight,
               ARTWORK_WIDTH,
               ARTWORK_HEIGHT,
             );
@@ -116,8 +138,8 @@ export async function runAll() {
               color: COLOR,
               placement,
               transform: { x, y, scale },
-              templateWidth: TEMPLATE_SIZE,
-              templateHeight: TEMPLATE_SIZE,
+              templateWidth,
+              templateHeight,
               artworkWidth: ARTWORK_WIDTH,
               artworkHeight: ARTWORK_HEIGHT,
             });

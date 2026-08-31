@@ -31,6 +31,7 @@ import { WHATSAPP_URL } from "src/lib/whatsapp";
 // node:fs/promises).
 import { BASELINE_RENDER_DPI, getEffectiveScaleBounds } from "src/studio/render/transform";
 import { getPlacementStyle } from "src/studio/render/placement-css";
+import { getBespokeShirtImage } from "src/studio/render/bespoke-shirt-image";
 import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
 import {
   placementsFromCustomNotes,
@@ -145,27 +146,14 @@ function clampQty(qty: number) {
   return Math.max(1, Math.min(9999, Math.floor(qty)));
 }
 
-function clampArtworkScale(scale: number) {
-  if (!Number.isFinite(scale)) return 1;
-  return Math.max(0.4, Math.min(2.4, scale));
-}
-
-function getBespokeShirtImage(
-  product: ProductType | null,
-  color: GarmentColor | null,
-  placement: PlacementKey,
-) {
-  const isBack = placement.includes("BACK");
-  const isOversized = product === "OVERSIZED";
-  const isBlack = color === "BLACK";
-
-  if (isOversized) {
-    if (isBack) return isBlack ? "/images/Oversized Black Back.png" : "/images/Oversized White Back.png";
-    return isBlack ? "/images/Oversized Black.png" : "/images/Oversized White.png";
-  }
-
-  if (isBack) return isBlack ? "/images/TGFM Black Back.png" : "/images/TGFM White Back.png";
-  return isBlack ? "/images/TGFM Black.png" : "/images/TGFM White.png";
+// bounds comes from transform.ts's getEffectiveScaleBounds(product, color,
+// placement) at every call site below -- never a hardcoded [0.4, 2.4]
+// here. That function already IS the server's own per-placement ceiling
+// (resolvePlacement calls it too), so the client can never offer a scale
+// the server would silently reduce.
+function clampArtworkScale(scale: number, bounds: { min: number; max: number }) {
+  if (!Number.isFinite(scale)) return Math.max(bounds.min, Math.min(bounds.max, 1));
+  return Math.max(bounds.min, Math.min(bounds.max, scale));
 }
 
 // Bespoke ("CUSTOM") has no product/colour of its own yet -- that's the
@@ -228,10 +216,11 @@ export default function BuilderClient({
   const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(() => {
     const p = initialArtworkPlacement;
     if (!p) return DEFAULT_ARTWORK_TRANSFORM;
+    const bounds = getEffectiveScaleBounds(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
     return {
       x: typeof p.x === "number" && Number.isFinite(p.x) ? p.x : 0,
       y: typeof p.y === "number" && Number.isFinite(p.y) ? p.y : 0,
-      scale: clampArtworkScale(typeof p.scale === "number" ? p.scale : 1),
+      scale: clampArtworkScale(typeof p.scale === "number" ? p.scale : 1, bounds),
     };
   });
   // Canonical saved-artwork URL (Artwork model). Set on "Save T-Shirt" and
@@ -450,6 +439,22 @@ export default function BuilderClient({
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Placement/product each carry their own scale ceiling
+  // (getEffectiveScaleBounds -- the same function the server's
+  // resolvePlacement uses). Switching to a placement with a tighter ceiling
+  // (e.g. from FULL_FRONT to LEFT_CHEST) must not leave an out-of-range
+  // scale sitting in state that the server would silently reduce on
+  // generation with no visual feedback -- re-clamp proactively instead.
+  // Uses the functional setState form (no artworkTransform in deps) so this
+  // can't loop, and only writes when the clamp actually changes something.
+  useEffect(() => {
+    const bounds = getEffectiveScaleBounds(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
+    setArtworkTransform((current) => {
+      const clamped = clampArtworkScale(current.scale, bounds);
+      return clamped === current.scale ? current : { ...current, scale: clamped };
+    });
+  }, [activePlacement, state.product, state.color]);
 
   useEffect(() => {
     if (artworkUrl || !state.primaryAssetId) return;
@@ -724,13 +729,14 @@ export default function BuilderClient({
   }
 
   function updateArtworkTransform(next: ArtworkTransform) {
+    const bounds = getEffectiveScaleBounds(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
     setArtworkTransform({
       // x/y are fractions of the preview container's own width (see
       // src/studio/render/transform.ts), not raw px -- round to decimal
       // precision like scale, not to the nearest integer.
       x: Math.round(next.x * 10000) / 10000,
       y: Math.round(next.y * 10000) / 10000,
-      scale: clampArtworkScale(next.scale),
+      scale: clampArtworkScale(next.scale, bounds),
     });
     discardMockups();
   }
@@ -1325,6 +1331,7 @@ export default function BuilderClient({
             generatedMockupUrl={aiMockupUrl ?? savedArtworkUrl}
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
+            product={state.product}
             color={state.color}
             bespokeArtworkStyle={bespokeArtworkStyle}
             bespokeArtworkTransform={bespokeArtworkTransform}

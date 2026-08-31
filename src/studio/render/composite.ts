@@ -1,6 +1,7 @@
 // file: src/studio/render/composite.ts
 import sharp from "sharp";
 import { RendererError } from "./errors";
+import { trimToVisibleBounds } from "./garment-bbox";
 import type { ResolvedPlacement } from "./types";
 
 // Shared by both the deterministic Print Mockup renderer (artwork onto the
@@ -17,9 +18,17 @@ export async function compositeArtworkOntoBase(
   artwork: Buffer,
   resolved: ResolvedPlacement,
 ): Promise<Buffer> {
+  // Trim to the artwork's own visible content FIRST, before anything below
+  // reads its dimensions -- so resolved.width/height (the user's configured
+  // scale) get applied to the visible artwork, not a transparent-padded
+  // canvas around it. Errors here (e.g. a fully-transparent upload) are
+  // already an actionable RendererError -- let them propagate as-is rather
+  // than being swallowed into the generic message in the catch block below.
+  const trimmedArtwork = await trimToVisibleBounds(artwork);
+
   let resizedArtwork: Buffer;
   try {
-    let pipeline = sharp(artwork)
+    let pipeline = sharp(trimmedArtwork)
       .resize({
         width: resolved.width,
         height: resolved.height,
