@@ -15,7 +15,7 @@ import type {
   ProductType,
 } from "@prisma/client";
 
-import { actionUpdateDraft } from "src/actions/build-actions";
+import { actionUpdateDraft, actionSaveArtworkPlacement } from "src/actions/build-actions";
 import { actionSaveArtwork } from "src/actions/artwork-actions";
 import { actionAddToWishlist } from "src/actions/wishlist-actions";
 import {
@@ -23,16 +23,23 @@ import {
   actionCreateAssetForBuilder,
 } from "src/actions/asset-actions";
 import { computeMockupFingerprint } from "src/db/mockup";
+import { isMockupStale } from "src/studio/mockup-staleness";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
 // transform.ts and placement-css.ts have zero server-only imports (no
 // node:fs, no sharp) -- safe to import directly from a client component.
 // Do not import from the src/studio/render barrel (index.ts) here, since
 // it also re-exports server-only modules (templates.ts uses
 // node:fs/promises).
-import { BASELINE_RENDER_DPI, getEffectiveScaleBounds } from "src/studio/render/transform";
+import {
+  artworkOffsetPx,
+  BASELINE_RENDER_DPI,
+  clampArtworkRotation,
+  getEffectiveScaleBounds,
+} from "src/studio/render/transform";
 import { getPlacementStyle } from "src/studio/render/placement-css";
 import { getBespokeShirtImage } from "src/studio/render/bespoke-shirt-image";
 import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
+import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 import {
   placementsFromCustomNotes,
   upsertPlacementsInNotes,
@@ -47,6 +54,7 @@ import QuantitySelector from "src/studio/ui/components/QuantitySelector";
 import ArtworkModal from "src/studio/ui/modals/ArtworkModal";
 import AuthModal from "src/studio/ui/modals/AuthModal";
 import BespokeModal from "src/studio/ui/modals/BespokeModal";
+import SizeGuideModal from "src/studio/ui/modals/SizeGuideModal";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
 type PriceResult =
@@ -116,10 +124,22 @@ type ArtworkTransform = {
   x: number;
   y: number;
   scale: number;
+  // P3-21c: rotation is fully supported server-side (persisted by
+  // src/lib/artwork/save.ts, compared by src/lib/orders/reuse.ts, applied by
+  // src/studio/render/composite.ts, hashed into the mockup fingerprint). The
+  // client used to hardcode 0 on save, which silently destroyed any persisted
+  // rotation on the next save and made the fingerprint disagree with the
+  // stored placement. It is carried through here even though there is no
+  // rotation control in the UI yet.
+  rotation: number;
 };
 
-const CUSTOM_COLOUR_ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAA0AAAANCAYAAABy6+R8AAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAANhJREFUeAGFkssRgkAQRGfVg8c1AvHmUSOAEAyBEAjBDMQIKCNAI8CjNzUCzECMQHul1xp+ZVe9WgZ2droBkaYiUIAneHPNwUYGlIEriIHlPcu6BDu/ccTV3TBgzY1WTa7AAsx0oz/JKaCtmHXO6X5qyYO+GbRn27rW9RakhmHXHH0AR+nK27qDcMKTKlobklGTX0Kfc/mvQFSmlF77NmUkZ4zEj3UP3RtyuR6qqWCGG+2fuf6UcHTQaur9E8ZcL1IHdFZWUn/MKViCU7vJSDdHBELWe9pr6AOp5C+yKrBIdgAAAABJRU5ErkJggg==";
-const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1 };
+// Inline SVG (vector) palette icon. Was previously a 13x13 raster PNG data
+// URI that looked blurry once scaled up inside the ~40px colour swatch,
+// especially on high-DPI desktop displays. An SVG stays crisp at any size.
+const CUSTOM_COLOUR_ICON =
+  "data:image/svg+xml;utf8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%23111111%22%20stroke-width%3D%221.7%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M12%203.5c-4.7%200-8.5%203.4-8.5%207.9%200%203.6%202.9%206.1%206.2%206.1%201.1%200%201.9-.9%201.9-1.9%200-.5-.2-.9-.2-1.4%200-.9.7-1.6%201.6-1.6h1.8c2.7%200%204.9-2.1%204.9-4.8%200-4.3-3.5-7.8-7.9-7.8Z%22%2F%3E%3Ccircle%20cx%3D%227.6%22%20cy%3D%2210.6%22%20r%3D%221.05%22%2F%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%228%22%20r%3D%221.05%22%2F%3E%3Ccircle%20cx%3D%2216.2%22%20cy%3D%2210.9%22%20r%3D%221.05%22%2F%3E%3C%2Fsvg%3E";
+const DEFAULT_ARTWORK_TRANSFORM: ArtworkTransform = { x: 0, y: 0, scale: 1, rotation: 0 };
 const MAX_ARTWORK_BYTES = 10 * 1024 * 1024;
 // A pricing-quote failure is either the rate limit (429) or a transient
 // server error (5xx/network) -- both are worth exactly one retry, not an
@@ -221,6 +241,7 @@ export default function BuilderClient({
       x: typeof p.x === "number" && Number.isFinite(p.x) ? p.x : 0,
       y: typeof p.y === "number" && Number.isFinite(p.y) ? p.y : 0,
       scale: clampArtworkScale(typeof p.scale === "number" ? p.scale : 1, bounds),
+      rotation: clampArtworkRotation(p.rotation),
     };
   });
   // Canonical saved-artwork URL (Artwork model). Set on "Save T-Shirt" and
@@ -263,6 +284,7 @@ export default function BuilderClient({
   const [authPending, setAuthPending] = useState(false);
   const [showCustomPopup, setShowCustomPopup] = useState(false);
   const [showBespokeModal, setShowBespokeModal] = useState(false);
+  const [showSizeGuide, setShowSizeGuide] = useState(false);
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
   const [selectedSize, setSelectedSize] = useState<SizeOption>("M");
   const [fabricOpen, setFabricOpen] = useState(false);
@@ -369,8 +391,9 @@ export default function BuilderClient({
   // /api/mockups/nanobanana resolves the Print Mockup server-side from
   // draftId and stamps the AI mockup with the Print Mockup's own
   // fingerprint verbatim -- see app/api/mockups/nanobanana/route.ts). So
-  // there is exactly one live fingerprint, using the same rotation (always
-  // 0 today, no client rotation control yet) and dpi (BASELINE_RENDER_DPI,
+  // there is exactly one live fingerprint, using the same rotation (the live
+  // artworkTransform.rotation, which round-trips through the persisted
+  // placement -- see P3-21c) and dpi (BASELINE_RENDER_DPI,
   // since generatePrintMockup never overrides it) the server will actually
   // use, so a fresh print mockup doesn't immediately appear stale against
   // its own just-persisted fingerprint. Both isPrintMockupStale and
@@ -391,21 +414,31 @@ export default function BuilderClient({
         // so no behavior change for any non-Bespoke build.
         product: resolveMockupProduct(state.product),
         color: resolveMockupColor(state.color),
-        rotation: 0,
+        rotation: artworkTransform.rotation,
         dpi: BASELINE_RENDER_DPI,
       }),
     [artworkTransform, activePlacement, state.primaryAssetId, state.product, state.color],
   );
 
-  const isPrintMockupStale = useMemo(() => {
-    if (!printMockupFingerprint) return false;
-    return printMockupFingerprint !== livePrintFingerprint;
-  }, [printMockupFingerprint, livePrintFingerprint]);
+  const isPrintMockupStale = useMemo(
+    () =>
+      isMockupStale({
+        url: printMockupUrl,
+        fingerprint: printMockupFingerprint,
+        liveFingerprint: livePrintFingerprint,
+      }),
+    [printMockupUrl, printMockupFingerprint, livePrintFingerprint],
+  );
 
-  const isAiMockupStale = useMemo(() => {
-    if (!aiMockupFingerprint) return false;
-    return aiMockupFingerprint !== livePrintFingerprint;
-  }, [aiMockupFingerprint, livePrintFingerprint]);
+  const isAiMockupStale = useMemo(
+    () =>
+      isMockupStale({
+        url: aiMockupUrl,
+        fingerprint: aiMockupFingerprint,
+        liveFingerprint: livePrintFingerprint,
+      }),
+    [aiMockupUrl, aiMockupFingerprint, livePrintFingerprint],
+  );
 
   const shouldShowGenerateAiButton = useMemo(() => {
     // Bespoke (state.product === "CUSTOM") is a legitimate case now too --
@@ -582,12 +615,20 @@ export default function BuilderClient({
       router.push(
         isBespokeRequest
           ? `/bespoke/new?buildId=${buildId}`
-          : `/checkout?buildId=${buildId}`,
+          // selectedSize must travel with the redirect: this is the ONLY
+          // place the customer's chosen S/M/L/XL is captured (Builder never
+          // persists it to BuildDraft -- see the schema comment on
+          // WishlistItem.size / BespokeRequest.size, which snapshot it at
+          // the point of a real action instead). Previously this was
+          // dropped entirely, so every standard order silently defaulted to
+          // size "M" in src/lib/orders/checkout.ts regardless of what the
+          // customer picked.
+          : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
       );
     } else {
       setShowBespokeModal(true);
     }
-  }, [buildId, checkoutAfterAuth, router, showAuthModal, status, state.product, customQuoteUsdCents]);
+  }, [buildId, checkoutAfterAuth, router, showAuthModal, status, state.product, customQuoteUsdCents, selectedSize]);
 
   function save(next: DraftDTO) {
     // Mirrors actionUpdateDraft's server-side quote invalidation
@@ -630,6 +671,7 @@ export default function BuilderClient({
       return;
     }
 
+    const previousArtworkUrl = artworkUrl;
     const localUrl = URL.createObjectURL(file);
     setUploadName(file.name);
     setArtworkUrl(localUrl);
@@ -654,18 +696,28 @@ export default function BuilderClient({
     startTransition(() => {
       actionCreateAssetForBuilder(buildId, fd).then((res: CreatedAssetDTO) => {
         if (res && res.id) {
+          const persistedUrl = res.url;
           setUserAssets((prev) =>
             prev.map((a) =>
               a.id === tempId
                 ? {
                     id: res.id,
                     buildId: res.buildId ?? buildId,
-                    url: res.url || localUrl,
+                    url: persistedUrl || localUrl,
                     fileName: res.fileName ?? file.name,
                   }
                 : a,
             )
           );
+          // Promote the preview from the temporary blob: URL to the durable
+          // server URL now that the upload is confirmed persisted -- only if
+          // nothing else (replace/remove) has changed the preview in the
+          // meantime, and only after the swap so the blob is never revoked
+          // while it's still the visible src.
+          if (persistedUrl) {
+            setArtworkUrl((current) => (current === localUrl ? persistedUrl : current));
+            URL.revokeObjectURL(localUrl);
+          }
           save({
             ...state,
             primaryAssetId: res.id,
@@ -673,7 +725,9 @@ export default function BuilderClient({
         }
       }).catch((error) => {
         setUserAssets((prev) => prev.filter((asset) => asset.id !== tempId));
-        setArtworkUrl((current) => (current === localUrl ? null : current));
+        // Revert to whatever was showing before this attempt (not null) so a
+        // failed replacement doesn't wipe out an already-selected artwork.
+        setArtworkUrl((current) => (current === localUrl ? previousArtworkUrl : current));
         setUploadName("");
         setMockupError(error instanceof Error ? error.message : "Could not upload artwork.");
         URL.revokeObjectURL(localUrl);
@@ -737,6 +791,9 @@ export default function BuilderClient({
       x: Math.round(next.x * 10000) / 10000,
       y: Math.round(next.y * 10000) / 10000,
       scale: clampArtworkScale(next.scale, bounds),
+      // P3-21c: preserved rather than dropped -- rebuilding the transform
+      // without it made the first drag/zoom silently reset rotation to 0.
+      rotation: clampArtworkRotation(next.rotation),
     });
     discardMockups();
   }
@@ -775,12 +832,14 @@ export default function BuilderClient({
     const dragState = dragStateRef.current;
     if (!dragState || dragState.pointerId !== event.pointerId) return;
 
-    // previewRef is the (now square, see .studio-bespoke-canvas) drag
-    // surface -- convert the raw pointer pixel delta into a fraction of
-    // its live rendered width, matching the units resolvePlacement expects
-    // server-side. Measured live (not cached at pointerdown) since it's a
-    // cheap read and keeps this correct even if the canvas were to resize
-    // mid-drag.
+    // previewRef is the drag surface, sized to the active side's real
+    // template aspect ratio (BespokeModal's previewAspectRatio) -- square
+    // for front, 2:3 portrait for back. BOTH deltas are divided by its
+    // width regardless, since width is the unit artworkOffsetPx and
+    // resolvePlacement read them back in; dividing y by the height here
+    // would desync the drag from the render on back placements. Measured
+    // live (not cached at pointerdown) since it's a cheap read and keeps
+    // this correct even if the canvas were to resize mid-drag.
     const containerWidth = previewNodeRef.current?.getBoundingClientRect().width;
     if (!containerWidth) return;
 
@@ -835,7 +894,7 @@ export default function BuilderClient({
     router.push(
       isBespokeRequest
         ? `/bespoke/new?buildId=${buildId}`
-        : `/checkout?buildId=${buildId}`,
+        : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
     );
   }
 
@@ -909,7 +968,7 @@ export default function BuilderClient({
         router.push(
           isBespokeRequest
             ? `/bespoke/new?buildId=${buildId}`
-            : `/checkout?buildId=${buildId}`,
+            : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
         );
       } else {
         setShowBespokeModal(true);
@@ -1035,6 +1094,33 @@ export default function BuilderClient({
   async function saveBespokeTShirt() {
     save({ ...state });
 
+    const placementPayload = {
+      placement: activePlacement,
+      x: artworkTransform.x,
+      y: artworkTransform.y,
+      scale: artworkTransform.scale,
+      rotation: artworkTransform.rotation,
+    };
+
+    // The canvas transform (drag/resize position) must survive a refresh
+    // on its own, independent of whether an AI mockup has been generated --
+    // see the schema comment on BuildDraft.artworkPlacement / the Artwork
+    // model: placement is deliberately decoupled from the saved image.
+    // Previously this was ONLY written as a side effect of the AI-mockup
+    // branch below, so dragging/resizing artwork and saving before ever
+    // clicking "Generate AI Mockup" silently discarded the positioning on
+    // reload even though the modal closed as if the save succeeded.
+    if (state.primaryAssetId || activeArtworkAsset) {
+      setSavePending(true);
+      try {
+        await actionSaveArtworkPlacement(buildId, placementPayload);
+      } catch (error) {
+        setMockupError(error instanceof Error ? error.message : "Could not save your artwork position.");
+      } finally {
+        setSavePending(false);
+      }
+    }
+
     // Persist the EXACT generated artwork + the current canvas transform as
     // a stable, owner-scoped Artwork (src/actions/artwork-actions.ts) so it
     // survives navigation/refresh and can be referenced by Wishlist /
@@ -1043,13 +1129,7 @@ export default function BuilderClient({
     if (aiMockupUrl && state.primaryAssetId) {
       setSavePending(true);
       try {
-        const result = await actionSaveArtwork(buildId, {
-          placement: activePlacement,
-          x: artworkTransform.x,
-          y: artworkTransform.y,
-          scale: artworkTransform.scale,
-          rotation: 0,
-        });
+        const result = await actionSaveArtwork(buildId, placementPayload);
         setSavedArtworkUrl(result.url);
       } catch (error) {
         setMockupError(error instanceof Error ? error.message : "Could not save your artwork.");
@@ -1129,6 +1209,14 @@ export default function BuilderClient({
   // aspect ratio as the template images (.studio-bespoke-canvas in
   // app/globals.css), so this box lands in the same relative position here
   // as everywhere else -- no second, canvas-tuned table.
+  // Same client-side trim-to-visible-content fix as TryOn3DPreview -- see
+  // useTrimmedArtworkUrl.ts. Kept as a SEPARATE value from `artworkUrl`
+  // (only used for the overlay <img src>) because BespokeModal also uses
+  // the raw `artworkUrl` prop for asset-grid "is this the active asset"
+  // identity comparisons, which must keep comparing against the real,
+  // untrimmed asset URL.
+  const bespokeOverlayArtworkUrl = useTrimmedArtworkUrl(artworkUrl);
+
   const bespokeArtworkStyle = useMemo(() => {
     if (!activePlacement) return {};
     const resolvedProduct: ProductType = state.product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
@@ -1144,9 +1232,10 @@ export default function BuilderClient({
   const bespokeArtworkTransform = useMemo(() => {
     const baseTransform =
       typeof bespokeArtworkStyle.transform === "string" ? bespokeArtworkStyle.transform : "";
-    const offsetX = artworkTransform.x * bespokeCanvasWidth;
-    const offsetY = artworkTransform.y * bespokeCanvasWidth;
-    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${artworkTransform.scale})`.trim();
+    const { x: offsetX, y: offsetY } = artworkOffsetPx(artworkTransform, bespokeCanvasWidth);
+    // P3-21c: rotate last, about the artwork's own center -- matches the
+    // server compositor (src/studio/render/composite.ts).
+    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${artworkTransform.scale}) rotate(${artworkTransform.rotation}deg)`.trim();
   }, [artworkTransform, bespokeArtworkStyle, bespokeCanvasWidth]);
 
   // Single user-facing action: "Generate AI Mockup" always (re)generates a
@@ -1193,6 +1282,7 @@ export default function BuilderClient({
           x: artworkTransform.x,
           y: artworkTransform.y,
           scale: artworkTransform.scale,
+          rotation: artworkTransform.rotation,
           // Resolved -- see resolveMockupProduct/resolveMockupColor and
           // generatePrintMockup below. Bespoke sends the same template
           // choice it's already being previewed against, never "CUSTOM"
@@ -1263,6 +1353,7 @@ export default function BuilderClient({
           x: artworkTransform.x,
           y: artworkTransform.y,
           scale: artworkTransform.scale,
+          rotation: artworkTransform.rotation,
           product: mockupProduct,
           color: mockupColor,
         }),
@@ -1324,6 +1415,18 @@ export default function BuilderClient({
         )
       : null;
 
+  const sizeGuideModal =
+    mounted && showSizeGuide
+      ? createPortal(
+          <SizeGuideModal
+            modelNote="Model is 5ft 8' and wears size XS."
+            whatsappUrl={WHATSAPP_URL}
+            onClose={() => setShowSizeGuide(false)}
+          />,
+          document.body,
+        )
+      : null;
+
   const bespokeModal =
     mounted && showBespokeModal
       ? createPortal(
@@ -1331,6 +1434,7 @@ export default function BuilderClient({
             generatedMockupUrl={aiMockupUrl ?? savedArtworkUrl}
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
+            overlayArtworkUrl={bespokeOverlayArtworkUrl}
             product={state.product}
             color={state.color}
             bespokeArtworkStyle={bespokeArtworkStyle}
@@ -1371,6 +1475,7 @@ export default function BuilderClient({
     <>
       {authPopup}
       {customPopup}
+      {sizeGuideModal}
       {bespokeModal}
 
       <input
@@ -1428,6 +1533,12 @@ export default function BuilderClient({
                   Build Your T-Shirt
                 </button>
 
+                {mockupError && !showBespokeModal ? (
+                  <div className="studio-bespoke-error" role="alert">
+                    {mockupError}
+                  </div>
+                ) : null}
+
                 <div className="studio-save-row">
                   <span
                     className={cn(
@@ -1477,7 +1588,11 @@ export default function BuilderClient({
                       <div className="studio-right-label">Size</div>
                     </div>
 
-                    <button type="button" className="studio-size-guide-link">
+                    <button
+                      type="button"
+                      className="studio-size-guide-link"
+                      onClick={() => setShowSizeGuide(true)}
+                    >
                       Size Guide
                     </button>
                   </div>

@@ -4,11 +4,33 @@ import { auth } from "src/auth";
 import { apiError, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { CheckoutError, createCheckoutOrder } from "src/lib/orders/checkout";
+import { orderFailureUpdateFor } from "src/lib/orders/errors";
 import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
-import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimit } from "src/lib/rate-limit-db";
 import { resolveCurrentCurrency } from "src/pricing/engine";
 
 export const runtime = "nodejs";
+
+// P1-12/P2-3: without an explicit maxDuration this route silently inherits
+// whatever Vercel's un-set default happens to be for the account it's
+// deployed to, which can be lower than the work this handler actually does.
+// 60s is the highest value guaranteed to be valid on every Vercel plan tier
+// (see the identical rationale in app/api/mockups/nanobanana/route.ts).
+// Worst case this handler can spend, budgeted to stay under that ceiling:
+// - up to 3 sequential Paymob calls for CARD (4 for WALLET) share ONE 25s
+//   deadline (PAYMOB_CALL_BUDGET_MS in src/lib/payments/paymob.ts) rather
+//   than each getting its own independent timeout, so adding a step never
+//   grows the total budget;
+// - the payment-attempt-decision transaction below and, for a fresh order,
+//   the nested createCheckoutOrder transaction (src/lib/orders/checkout.ts)
+//   are each capped at 8s maxWait + 8s timeout (~16s worst case each, ~32s
+//   for both).
+// 25s + 32s = 57s, under the 60s ceiling with a few seconds of margin for
+// request parsing/serialization. If Paymob's real-world latency ever makes
+// 25s too tight, raise PAYMOB_CALL_BUDGET_MS and re-check this sum rather
+// than raising maxDuration blind.
+export const maxDuration = 60;
 
 function paymobStageInfo(details: unknown): { stage?: string; status?: number } {
   if (details && typeof details === "object") {
@@ -64,7 +86,7 @@ export async function POST(req: Request) {
     return apiError("Sign in to continue.", 401);
   }
 
-  const limit = rateLimit(req, `checkout:${session.user.id}`, 12, 10 * 60 * 1000);
+  const limit = await rateLimit(req, `checkout:${session.user.id}`, 12, 10 * 60 * 1000);
   if (!limit.ok) {
     return apiError(
       "Too many checkout attempts. Please try again later.",
@@ -179,11 +201,13 @@ export async function POST(req: Request) {
       });
       return { kind: "created" as const, attemptId: created.id };
     }, {
-      // Generous vs Prisma's 2s/5s defaults: a second concurrent request
-      // may have to wait out this whole transaction under real network
-      // latency to the database, not just the lock acquisition itself.
-      maxWait: 10_000,
-      timeout: 15_000,
+      // Equal maxWait/timeout (vs Prisma's 2s/5s defaults) so a second
+      // concurrent request waiting on the lock can wait out the full
+      // duration the first transaction is itself allowed to run. Kept short
+      // since this sits inside the route's overall serverless duration
+      // budget -- see the maxDuration comment above.
+      maxWait: 8_000,
+      timeout: 8_000,
     });
 
     if (decision.kind === "reuse") {
@@ -250,15 +274,14 @@ export async function POST(req: Request) {
         })
         .catch(() => undefined);
     }
-    if (order && order.paymentStatus !== PaymentStatus.PAID) {
+    // P0-5: a CheckoutError (stale order currency, order not found, etc.)
+    // means this request was rejected before any real payment was
+    // attempted -- it must never flip a healthy PENDING order to FAILED.
+    // See orderFailureUpdateFor's own comment for the full rationale.
+    const failureUpdate = orderFailureUpdateFor(order, error);
+    if (order && failureUpdate) {
       await prisma.order
-        .update({
-          where: { id: order.id },
-          data: {
-            paymentStatus: PaymentStatus.FAILED,
-            paymentFailureReason: error instanceof Error ? error.message.slice(0, 500) : "Payment initialization failed",
-          },
-        })
+        .update({ where: { id: order.id }, data: failureUpdate })
         .catch(() => undefined);
     }
     return errorResponse(error, order?.id);

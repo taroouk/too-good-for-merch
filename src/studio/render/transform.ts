@@ -4,8 +4,9 @@ import { RendererError } from "./errors";
 import { getPlacementBox } from "./placement-config";
 import type { ArtworkTransform, GarmentBBox, PlacementBox, ResolvedPlacement } from "./types";
 
-// x/y are fractions of the placement container's own width/height (see
-// resolvePlacement below), not raw pixels -- resolution-independent, so the
+// x AND y are both fractions of the canvas WIDTH (the template's width
+// server-side, the preview container's width client-side) -- not of each
+// axis's own dimension, and not raw pixels. Resolution-independent, so the
 // same value means the same relative offset on any container size, client
 // or server. Bounds are generous (well beyond the visible canvas in either
 // direction); MAX_ABSOLUTE_COVERAGE_FRACTION below is the real safety net
@@ -45,6 +46,30 @@ export const BASELINE_RENDER_DPI = 150;
 
 function clamp(value: number, bounds: { min: number; max: number }) {
   return Math.max(bounds.min, Math.min(bounds.max, value));
+}
+
+// P3-21c: shared by the client builder (which must preserve, not discard, a
+// persisted rotation) and the server renderer, so both agree on the bound and
+// on what a missing/garbage rotation means. Non-finite input degrades to the
+// identity rotation rather than propagating NaN into a render request.
+export function clampArtworkRotation(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  return clamp(value, TRANSFORM_BOUNDS.rotation);
+}
+
+// The single definition of "what does a transform x/y mean in pixels",
+// shared by the server renderer (resolvePlacement) and every client preview
+// that builds a CSS translate(). Exists so the two can't silently drift:
+// they previously did, with the client dividing/multiplying both axes by
+// the container WIDTH while the server used templateHeight for y, which
+// placed server-rendered artwork 1.5x too low on the non-square back
+// template. Callers pass the canvas width only -- taking a height argument
+// at all would reopen the door to using it for y.
+export function artworkOffsetPx(
+  transform: { x: number; y: number },
+  canvasWidth: number,
+): { x: number; y: number } {
+  return { x: transform.x * canvasWidth, y: transform.y * canvasWidth };
 }
 
 // The maximum scale a placement can use without its resolved width
@@ -142,8 +167,7 @@ export function resolvePlacement(params: {
   const left0 = box.xPct * templateWidth;
   const top0 = box.yPct * templateHeight;
 
-  const offsetXPx = transform.x * templateWidth;
-  const offsetYPx = transform.y * templateHeight;
+  const { x: offsetXPx, y: offsetYPx } = artworkOffsetPx(transform, templateWidth);
 
   const scaled = scaleBoxAroundCenter(
     { left: left0, top: top0, width: width0, height: height0 },

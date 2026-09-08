@@ -13,11 +13,20 @@ import type { PlacementKey } from "src/pricing/placements";
 // compositor also uses -- no local coordinate/aspect-ratio table here.
 import { getEffectiveScaleBounds } from "src/studio/render/transform";
 import { getPlacementSide, getTemplateAspectRatio } from "src/studio/render/placement-config";
+import { previewArtworkBlend } from "src/studio/render/preview-blend";
+import {
+  artworkOverlayOpacity,
+  shouldMountArtworkOverlay,
+} from "src/studio/artwork-overlay-visibility";
+import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
+import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
+import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
 
 type ArtworkTransform = {
   x: number;
   y: number;
   scale: number;
+  rotation?: number;
 };
 
 type UserAssetDTO = {
@@ -37,6 +46,12 @@ type BespokeModalProps = {
   generatedMockupUrl: string | null;
   bespokeShirtSrc: string;
   artworkUrl: string | null;
+  // Trim-to-visible-content version of artworkUrl, used ONLY for the
+  // overlay <img src> below -- see BuilderClient's useTrimmedArtworkUrl
+  // usage. artworkUrl itself must stay untrimmed since it's also used for
+  // asset-grid identity comparisons elsewhere in this component. Optional
+  // + falls back to artworkUrl so this stays backwards compatible.
+  overlayArtworkUrl?: string | null;
   product: ProductType | null;
   color: GarmentColor | null;
   bespokeArtworkStyle: CSSProperties;
@@ -79,6 +94,7 @@ export default function BespokeModal({
   generatedMockupUrl,
   bespokeShirtSrc,
   artworkUrl,
+  overlayArtworkUrl,
   product,
   color,
   bespokeArtworkStyle,
@@ -112,6 +128,8 @@ export default function BespokeModal({
   onSelectAsset,
   onSaveTShirt,
 }: BespokeModalProps) {
+  useEscapeToClose(onClose);
+
   // Front templates are true 1:1 squares; back templates are a 1024x1536
   // (2:3) portrait -- see getTemplateAspectRatio's own comment for the real
   // measured dimensions. The canvas below used to be hardcoded to
@@ -127,9 +145,23 @@ export default function BespokeModal({
   // this never diverges from what the parent actually resolved.
   const scaleBounds = getEffectiveScaleBounds(product ?? "FITTED", color ?? "WHITE", activePlacement);
 
+  const panelRef = useModalDialog<HTMLDivElement>(true);
+
   return (
-    <div className="studio-modal-overlay studio-modal-overlay-soft">
-      <div className="studio-bespoke-modal studio-modal-panel">
+    <div
+      className="studio-modal-overlay studio-modal-overlay-soft"
+      onClick={(event) => {
+        if (isBackdropClick(event.target, event.currentTarget)) onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="studio-bespoke-modal studio-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bespoke-modal-title"
+        tabIndex={-1}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -163,18 +195,34 @@ export default function BespokeModal({
              />
            )}
 
-            {artworkUrl && (!generatedMockupUrl || isMockupStale) ? (
+            {artworkUrl && shouldMountArtworkOverlay({ artworkUrl }) ? (
               <img
-                src={artworkUrl}
+                src={overlayArtworkUrl ?? artworkUrl}
                 alt="Artwork preview"
                 className="studio-bespoke-artwork studio-bespoke-artwork-draggable"
                 style={{
                   position: "absolute",
                   zIndex: 40,
-                  mixBlendMode: color === "WHITE" ? "multiply" : "normal",
-                  opacity: color === "WHITE" ? 0.95 : 1,
+                  // Kept mounted at all times (not conditionally removed
+                  // from the DOM) so onArtworkPointerDown is always
+                  // reachable -- a fresh, non-stale generated mockup only
+                  // hides it visually. Previously this <img> was removed
+                  // from the DOM entirely whenever !isMockupStale, which
+                  // meant there was no way to ever start a drag again:
+                  // dragging is the only thing that invalidates the
+                  // mockup (via discardMockups in updateArtworkTransform),
+                  // but dragging requires this element to already exist.
+                  // See src/studio/artwork-overlay-visibility.ts for the
+                  // extracted, unit-tested mount/opacity logic.
+                  //
+                  // previewArtworkBlend/bespokeArtworkStyle both set their
+                  // own `opacity` (blend's is always 1; style's tracks the
+                  // artwork's own alpha), so the visibility override must
+                  // spread LAST or one of theirs silently wins.
+                  ...previewArtworkBlend(color),
                   ...bespokeArtworkStyle,
                   transform: bespokeArtworkTransform,
+                  opacity: artworkOverlayOpacity({ generatedMockupUrl, isMockupStale }),
                 }}
                 draggable={false}
                 onPointerDown={onArtworkPointerDown}
@@ -218,9 +266,10 @@ export default function BespokeModal({
         </div>
 
         <div className="studio-bespoke-controls">
+        <div className="studio-bespoke-controls-scroll">
           <div>
             <div className="studio-bespoke-kicker">Custom Artwork</div>
-            <h2 className="studio-bespoke-title">Build Your T-Shirt</h2>
+            <h2 id="bespoke-modal-title" className="studio-bespoke-title">Build Your T-Shirt</h2>
           </div>
 
           <div className="studio-selected-artwork-area">
@@ -262,6 +311,7 @@ export default function BespokeModal({
                     type="button"
                     onClick={onZoomOut}
                     aria-label="Zoom artwork out"
+                    className="studio-artwork-zoom-button"
                   >
                     -
                   </button>
@@ -278,6 +328,7 @@ export default function BespokeModal({
                     type="button"
                     onClick={onZoomIn}
                     aria-label="Zoom artwork in"
+                    className="studio-artwork-zoom-button"
                   >
                     +
                   </button>
@@ -350,7 +401,9 @@ export default function BespokeModal({
               )}
             </div>
           </div>
+        </div>
 
+        <div className="studio-bespoke-controls-footer">
           <button
             type="button"
             onClick={onSaveTShirt}
@@ -358,6 +411,7 @@ export default function BespokeModal({
           >
             Save T-Shirt
           </button>
+        </div>
         </div>
         </div>
       </div>

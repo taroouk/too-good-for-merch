@@ -1,3 +1,7 @@
+import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
+import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
+import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
+
 type ArtworkModalProps = {
   onClose: () => void;
   onContinueCustomRequest: () => void;
@@ -7,9 +11,24 @@ export default function ArtworkModal({
   onClose,
   onContinueCustomRequest,
 }: ArtworkModalProps) {
+  useEscapeToClose(onClose);
+  const panelRef = useModalDialog<HTMLDivElement>(true);
+
   return (
-    <div className="studio-modal-overlay">
-      <div className="studio-custom-request-modal studio-modal-panel">
+    <div
+      className="studio-modal-overlay"
+      onClick={(event) => {
+        if (isBackdropClick(event.target, event.currentTarget)) onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="studio-custom-request-modal studio-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="artwork-modal-title"
+        tabIndex={-1}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -22,7 +41,7 @@ export default function ArtworkModal({
         <div className="studio-modal-scroll">
           <div className="studio-modal-kicker">TGFM Bespoke</div>
 
-          <h2 className="studio-custom-request-title">Custom Garment Request</h2>
+          <h2 id="artwork-modal-title" className="studio-custom-request-title">Custom Garment Request</h2>
 
           <p className="studio-custom-request-copy">
             Custom garment constructions are not available for instant checkout.

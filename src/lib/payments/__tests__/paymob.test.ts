@@ -1,8 +1,10 @@
 // file: src/lib/payments/__tests__/paymob.test.ts
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+import { OrderStatus, PaymentStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import {
+  classifySuccessfulPayment,
   classifyTransaction,
   paymentFailureReason,
   transactionMatchesOrder,
@@ -174,6 +176,76 @@ export async function runAll() {
         const order = { totalCents: 5000, currency: "EGP" };
         const result = transactionMatchesOrder(SAMPLE_TRANSACTION, order, []);
         assert.equal(result.integrationIdMatches, true);
+      },
+
+      // P0-6 regression: two DIFFERENT Paymob transaction ids both claiming
+      // success against the SAME order. The webhook route reads `current`
+      // under a `SELECT ... FOR UPDATE` lock held for the duration of the
+      // transaction that also writes the result, so a second concurrent
+      // delivery can only ever be processed against the state the first
+      // one already committed -- never the pre-write snapshot. Modelled
+      // here by feeding classifySuccessfulPayment's own output back in as
+      // the next call's `current`, exactly what the locked, serialized
+      // reads in the route produce.
+      "classifySuccessfulPayment: first of two racing transaction ids for a PENDING order succeeds normally"() {
+        const pending = {
+          paymentStatus: PaymentStatus.PENDING,
+          paymobTransactionId: null,
+          status: OrderStatus.NEW,
+          paidAt: null,
+        };
+        const now = new Date("2026-01-01T00:00:00Z");
+        const first = classifySuccessfulPayment(pending, "txn-A", now);
+        assert.equal(first.isDuplicateCharge, false);
+        if (first.isDuplicateCharge) throw new Error("unreachable");
+        assert.deepEqual(first.update, {
+          paymentStatus: PaymentStatus.PAID,
+          status: OrderStatus.PAID,
+          paidAt: now,
+          paymobTransactionId: "txn-A",
+          paymentFailureReason: null,
+        });
+      },
+
+      "classifySuccessfulPayment: a second, DIFFERENT transaction id against the now-PAID order is flagged as a possible double charge, not silently applied"() {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const afterFirstCharge = {
+          paymentStatus: PaymentStatus.PAID,
+          paymobTransactionId: "txn-A",
+          status: OrderStatus.PAID,
+          paidAt: now,
+        };
+        const second = classifySuccessfulPayment(afterFirstCharge, "txn-B", now);
+        assert.deepEqual(second, { isDuplicateCharge: true });
+      },
+
+      "classifySuccessfulPayment: a retried delivery of the SAME transaction id is idempotent, not a double charge"() {
+        const now = new Date("2026-01-01T00:00:00Z");
+        const afterFirstCharge = {
+          paymentStatus: PaymentStatus.PAID,
+          paymobTransactionId: "txn-A",
+          status: OrderStatus.PAID,
+          paidAt: now,
+        };
+        const retry = classifySuccessfulPayment(afterFirstCharge, "txn-A", new Date("2026-01-01T00:05:00Z"));
+        assert.equal(retry.isDuplicateCharge, false);
+        if (retry.isDuplicateCharge) throw new Error("unreachable");
+        // paidAt is preserved from the first charge, not reset to the retry's `now`.
+        assert.deepEqual(retry.update.paidAt, now);
+        assert.equal(retry.update.paymobTransactionId, "txn-A");
+      },
+
+      "classifySuccessfulPayment: does not regress a non-NEW order status (e.g. already in production) back to PAID-only bookkeeping"() {
+        const current = {
+          paymentStatus: PaymentStatus.PENDING,
+          paymobTransactionId: null,
+          status: OrderStatus.IN_PRODUCTION,
+          paidAt: null,
+        };
+        const result = classifySuccessfulPayment(current, "txn-A", new Date());
+        assert.equal(result.isDuplicateCharge, false);
+        if (result.isDuplicateCharge) throw new Error("unreachable");
+        assert.equal(result.update.status, OrderStatus.IN_PRODUCTION);
       },
     });
   } finally {

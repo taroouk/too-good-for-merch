@@ -62,18 +62,38 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
     prisma.order.count({ where: { paymentStatus: PaymentStatus.PAID } }),
     prisma.order.count({ where: { paymentStatus: { in: [PaymentStatus.UNPAID, PaymentStatus.PENDING] } } }),
     prisma.order.count({ where: { paymentStatus: PaymentStatus.FAILED } }),
-    prisma.order.aggregate({ where: { paymentStatus: PaymentStatus.PAID }, _sum: { totalCents: true } }),
-    prisma.order.findMany({ where: { paymentStatus: PaymentStatus.PAID, paidAt: { gte: buckets[0].start } }, select: { paidAt: true, createdAt: true, totalCents: true, currency: true } }),
+    // Canonical revenue must be USD-only (P1-14): totalCents is the
+    // PAYMENT amount/currency (EGP), not what the store sold in USD, so
+    // this can never be summed with a single currency label. See
+    // src/lib/admin/currency-aggregates.ts.
+    // P2-11: aggregated BY THE DATABASE (not fetched as raw rows), so this
+    // stays O(1) instead of O(every paid order ever) as order history
+    // grows. _count.canonicalTotalUsdCents only counts non-null values,
+    // which is exactly what's needed to derive excludedLegacyCount below.
+    prisma.order.aggregate({
+      where: { paymentStatus: PaymentStatus.PAID },
+      _sum: { canonicalTotalUsdCents: true },
+      _count: { canonicalTotalUsdCents: true },
+    }),
+    prisma.order.findMany({ where: { paymentStatus: PaymentStatus.PAID, paidAt: { gte: buckets[0].start } }, select: { paidAt: true, createdAt: true, canonicalTotalUsdCents: true } }),
     prisma.order.groupBy({ by: ["status"], _count: true }),
     getPricingHealth(),
   ]);
   const paymobHealth = getPaymobHealth();
+  // Chart + "Total sales" card are both canonical-USD reporting, so orders
+  // predating canonicalTotalUsdCents (see src/lib/orders/display.ts) are
+  // excluded rather than guessed at -- surfaced via revenueTotals.excludedLegacyCount.
   for (const order of paidForChart) {
+    if (order.canonicalTotalUsdCents == null) continue;
     const date = order.paidAt ?? order.createdAt;
     const bucket = buckets.find((item) => date >= item.start && date < item.end);
-    if (bucket) bucket.value += order.totalCents;
+    if (bucket) bucket.value += order.canonicalTotalUsdCents;
   }
-  const currency = recentOrders[0]?.currency ?? process.env.STORE_CURRENCY ?? "USD";
+  const revenueTotals = {
+    revenueUsdCents: revenue._sum.canonicalTotalUsdCents ?? 0,
+    excludedLegacyCount: paidOrders - (revenue._count.canonicalTotalUsdCents ?? 0),
+  };
+  const currency = "USD";
   const countByOrderStatus = new Map(orderStatusCounts.map((row) => [row.status, row._count]));
   const totalOrderStatusCount = orderStatusCounts.reduce((sum, row) => sum + row._count, 0);
 
@@ -106,7 +126,16 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
         />
 
         <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard label="Total sales" value={money(revenue._sum.totalCents ?? 0, currency)} hint="Confirmed revenue" tone="dark" />
+          <StatCard
+            label="Revenue (USD)"
+            value={money(revenueTotals.revenueUsdCents, currency)}
+            hint={
+              revenueTotals.excludedLegacyCount > 0
+                ? `Confirmed revenue · ${revenueTotals.excludedLegacyCount} legacy paid order(s) excluded (no recorded USD total)`
+                : "Confirmed revenue"
+            }
+            tone="dark"
+          />
           <StatCard label="Total orders" value={totalOrders} hint="All time" />
           <StatCard label="Paid orders" value={paidOrders} hint="Webhook confirmed" tone="success" />
           <StatCard label="Pending" value={pendingOrders} hint="Awaiting payment" tone="warning" />
@@ -115,8 +144,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_.8fr]">
           <Card
-            title="Revenue"
-            subtitle="Paid orders only"
+            title="Revenue (USD)"
+            subtitle="Paid orders only, canonical USD"
             actions={
               <div className="flex rounded-xl bg-black/5 p-1">
                 {(["daily", "weekly", "monthly"] as const).map((value) => (

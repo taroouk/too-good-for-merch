@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess, rememberGuestBuildId } from "src/studio/permissions";
+import { normalizeArtworkPlacement } from "src/lib/artwork/save";
 import { BuildStatus } from "@prisma/client";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
@@ -149,6 +150,34 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
           }
         : {}),
     },
+  });
+}
+
+// Persists ONLY the canvas transform to BuildDraft.artworkPlacement.
+// Deliberately decoupled from actionSaveArtwork (src/actions/artwork-actions.ts),
+// which additionally snapshots the AI-generated mockup bytes into a new
+// Artwork row and therefore no-ops until an AI mockup exists. Per the
+// schema comment on BuildDraft.artworkPlacement / the Artwork model,
+// placement is meant to survive a refresh independently of that image --
+// so a user who drags/resizes artwork but hasn't generated an AI mockup
+// yet must still have their positioning saved. Safe to call repeatedly;
+// same upsert-free single-row update as actionUpdateDraft.
+export async function actionSaveArtworkPlacement(buildId: string, placement: unknown) {
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
+
+  const normalized = normalizeArtworkPlacement(placement);
+  if (!normalized) return;
+
+  const draft = await prisma.buildDraft.findUnique({
+    where: { buildId },
+    select: { id: true },
+  });
+  if (!draft) return;
+
+  await prisma.buildDraft.update({
+    where: { id: draft.id },
+    data: { artworkPlacement: normalized },
   });
 }
 

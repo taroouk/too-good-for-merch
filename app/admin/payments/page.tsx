@@ -4,6 +4,7 @@ import { PaymentAttemptStatus, PaymentMethod, PaymentStatus, Prisma } from "@pri
 import { prisma } from "src/lib/prisma";
 import AdminToast from "src/components/admin/AdminToast";
 import { generateRetryPaymentLinkAction } from "src/actions/admin-system-actions";
+import RetryLinkButton from "src/components/admin/RetryLinkButton";
 import PageHeader from "src/components/admin/ui/PageHeader";
 import StatCard from "src/components/admin/ui/StatCard";
 import Card from "src/components/admin/ui/Card";
@@ -16,6 +17,8 @@ import { Table, Tbody, Td, Th, Thead } from "src/components/admin/ui/Table";
 import TableCardSwitch from "src/components/admin/ui/TableCardSwitch";
 import { buttonClass } from "src/components/admin/ui/Button";
 import { attemptStatusTone } from "src/components/admin/ui/status";
+import { pickCurrencyTotal } from "src/lib/admin/currency-aggregates";
+import { PAYMENT_CURRENCY } from "src/lib/orders/totals";
 
 const PAGE_SIZE = 25;
 
@@ -67,7 +70,7 @@ export default async function PaymentsPage({
       : {}),
   };
 
-  const [attempts, matchingCount, webhooks, orderStatusCounts, revenue, refunded, latestPaidOrder] = await Promise.all([
+  const [attempts, matchingCount, webhooks, orderStatusCounts, revenue, refunded] = await Promise.all([
     prisma.paymentAttempt.findMany({
       where: attemptsWhere,
       orderBy: { createdAt: "desc" },
@@ -81,19 +84,27 @@ export default async function PaymentsPage({
     // source for the summary cards -- one order counted once, unlike the
     // attempts table below which can have several rows per order (retries).
     prisma.order.groupBy({ by: ["paymentStatus"], _count: true }),
-    prisma.order.aggregate({ where: { paymentStatus: PaymentStatus.PAID }, _sum: { totalCents: true } }),
-    prisma.order.aggregate({ where: { paymentStatus: PaymentStatus.REFUNDED }, _sum: { totalCents: true } }),
-    prisma.order.findFirst({ where: { paymentStatus: PaymentStatus.PAID }, orderBy: { createdAt: "desc" }, select: { currency: true } }),
+    // Actual Paymob collections -- payment reporting, never blended with
+    // canonical USD revenue (see src/lib/admin/currency-aggregates.ts).
+    // P2-11: grouped-and-summed BY THE DATABASE (not fetched as raw rows)
+    // so this stays O(distinct currencies) instead of O(every paid order
+    // ever) as the store's order history grows; orders charged in a
+    // currency other than the current PAYMENT_CURRENCY are still counted
+    // and excluded via pickCurrencyTotal, not silently summed in.
+    prisma.order.groupBy({ by: ["currency"], where: { paymentStatus: PaymentStatus.PAID }, _sum: { totalCents: true }, _count: true }),
+    prisma.order.groupBy({ by: ["currency"], where: { paymentStatus: PaymentStatus.REFUNDED }, _sum: { totalCents: true }, _count: true }),
   ]);
 
   const countByPaymentStatus = new Map(orderStatusCounts.map((row) => [row.paymentStatus, row._count]));
   const pendingCount = (countByPaymentStatus.get(PaymentStatus.UNPAID) ?? 0) + (countByPaymentStatus.get(PaymentStatus.PENDING) ?? 0);
-  // Orders can carry different currencies across the USD->EGP migration
-  // (see src/lib/orders/checkout.ts) -- this labels the revenue sum with
-  // whichever currency the most recent paid order actually used, same
-  // simplification the /admin dashboard already makes, rather than
-  // inventing a precise mixed-currency breakdown.
-  const revenueCurrency = latestPaidOrder?.currency ?? "USD";
+  // Paymob's merchant integration is EGP-only (see
+  // src/lib/orders/totals.ts's PAYMENT_CURRENCY); this sums exactly that
+  // currency and separately counts anything historically charged in a
+  // different currency instead of blending it in under one label.
+  const toCurrencyTotals = (groups: typeof revenue) =>
+    groups.map((g) => ({ currency: g.currency, totalCents: g._sum.totalCents ?? 0, count: g._count }));
+  const revenueEgp = pickCurrencyTotal(toCurrencyTotals(revenue), PAYMENT_CURRENCY);
+  const refundedEgp = pickCurrencyTotal(toCurrencyTotals(refunded), PAYMENT_CURRENCY);
   const invalidWebhookCount = webhooks.filter((event) => !event.validSignature).length;
 
   const hasActiveFilters = Boolean(q || statusFilter !== "all" || methodFilter !== "all" || from || to);
@@ -113,7 +124,17 @@ export default async function PaymentsPage({
         <PageHeader eyebrow="Paymob" title="Payments" subtitle="Revenue, payment status, and transaction activity across every order." />
 
         <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-          <StatCard label="Revenue (paid)" value={money(revenue._sum.totalCents ?? 0, revenueCurrency)} hint={`Refunded ${money(refunded._sum.totalCents ?? 0, revenueCurrency)}`} tone="dark" />
+          <StatCard
+            label={`Paymob Collected (${PAYMENT_CURRENCY})`}
+            value={money(revenueEgp.totalCents, PAYMENT_CURRENCY)}
+            hint={
+              `Refunded ${money(refundedEgp.totalCents, PAYMENT_CURRENCY)}` +
+              (revenueEgp.otherCurrencyCount > 0
+                ? ` · ${revenueEgp.otherCurrencyCount} paid order(s) in another currency excluded`
+                : "")
+            }
+            tone="dark"
+          />
           <StatCard label="Successful" value={countByPaymentStatus.get(PaymentStatus.PAID) ?? 0} tone="success" />
           <StatCard label="Pending" value={pendingCount} tone="warning" />
           <StatCard label="Failed" value={countByPaymentStatus.get(PaymentStatus.FAILED) ?? 0} tone="danger" />
@@ -190,7 +211,7 @@ export default async function PaymentsPage({
                         {attempt.order.paymentStatus !== PaymentStatus.PAID && attempt.order.paymentStatus !== PaymentStatus.REFUNDED ? (
                           <form action={generateRetryPaymentLinkAction} className="mt-2">
                             <input type="hidden" name="orderId" value={attempt.order.id} />
-                            <button className="text-xs font-semibold underline">Generate retry link</button>
+                            <RetryLinkButton />
                           </form>
                         ) : null}
                       </Td>
@@ -217,7 +238,7 @@ export default async function PaymentsPage({
                     {attempt.order.paymentStatus !== PaymentStatus.PAID && attempt.order.paymentStatus !== PaymentStatus.REFUNDED ? (
                       <form action={generateRetryPaymentLinkAction} className="mt-3">
                         <input type="hidden" name="orderId" value={attempt.order.id} />
-                        <button className="text-xs font-semibold underline">Generate retry link</button>
+                        <RetryLinkButton />
                       </form>
                     ) : null}
                   </div>

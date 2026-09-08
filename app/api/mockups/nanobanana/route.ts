@@ -3,7 +3,8 @@ import sharp from "sharp";
 import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
-import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
 import { computeMockupFingerprint, upsertMockupForDraft } from "src/db/mockup";
@@ -13,14 +14,40 @@ import {
   blankGarmentPrompt,
   compositeArtworkOntoBase,
   detectGarmentBBox,
+  geminiErrorFromData,
   getPlacementSide,
+  isRetryableGeminiFailure,
   loadTemplateBuffer,
+  parseGeminiJson,
   remapResolvedPlacementToGarmentBBox,
   resolvePlacement,
   RendererError,
+  trimToVisibleBounds,
 } from "src/studio/render";
 
 export const runtime = "nodejs";
+// 60s is the highest value guaranteed to be valid on every Vercel plan tier
+// (it's the Hobby plan's own ceiling; Pro/Enterprise support configuring
+// higher, but this repo has no record of which plan it's actually deployed
+// on -- see the P1-12 verification note below for why a higher number is
+// not safe to guess). Declaring it explicitly here means this route is
+// bounded by a value we know is valid everywhere, instead of silently
+// inheriting whatever Vercel's un-set-maxDuration default happens to be for
+// the account this ends up deployed to.
+//
+// This does NOT make every retry path fit inside 60s: worst case (both
+// Gemini HTTP attempts slow on both generation attempts, both needing an
+// image-URL download) this route's own bounded-but-generous retry/timeout
+// budget (MAX_GEMINI_ATTEMPTS x two 60s fetches each, x up to two
+// generation attempts, x a 60s image download per attempt) sums to several
+// minutes -- see that arithmetic spelled out where MAX_GEMINI_ATTEMPTS is
+// defined below. A pathological run can still be killed by the platform
+// before exhausting its retry budget; what this DOES guarantee is that the
+// platform will always terminate the request at a known, finite point
+// (60s) rather than the request running unbounded, and that every
+// individual network call inside it (Gemini, and the generated-image
+// download) already carries its own AbortSignal.timeout well under that.
+export const maxDuration = 60;
 
 const PRODUCTS = ["FITTED", "OVERSIZED"] as const;
 const COLORS = ["BLACK", "WHITE"] as const;
@@ -59,6 +86,23 @@ const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 // Deliberately narrow: 5xx / a "deadline"-mentioning error body only.
 // Non-retryable failures (bad request, blocked prompt, bad API key, etc.)
 // are returned immediately on the first attempt, exactly as before.
+//
+// Worst-case total wall time this budget can spend below (all bounded, none
+// of it can hang past its own AbortSignal, but the SUM is what matters
+// against the route's maxDuration above): the outer "regenerate on bad
+// bbox" loop runs at most MAX_GEMINI_ATTEMPTS generation attempts; each one
+// runs its own inner HTTP-retry loop of up to MAX_GEMINI_ATTEMPTS calls (60s
+// AbortSignal each) plus one GEMINI_RETRY_DELAY_MS pause between them, and,
+// on success, at most one 60s-bounded fetch of the returned image URL.
+// With MAX_GEMINI_ATTEMPTS=2: 2 generation attempts x (2 x 60s Gemini call +
+// 1.5s delay + 60s image download) ~= 363s worst case -- higher than this
+// route's 60s maxDuration. That is a known, accepted gap: the platform will
+// terminate a pathological run before this budget is exhausted rather than
+// this handler hanging forever, but a run that's merely slow (not stuck)
+// can still be cut off before its last retry would have succeeded. Closing
+// that gap means either lowering this retry budget or raising maxDuration,
+// both product/infra decisions outside this fix's scope -- flagged here so
+// the tradeoff isn't silently invisible the next time these numbers change.
 const MAX_GEMINI_ATTEMPTS = 2;
 const GEMINI_RETRY_DELAY_MS = 1500;
 
@@ -309,14 +353,6 @@ function generatedImageFromResponse(value: unknown) {
 // same harness as the rest of that module -- see its own docs for why the
 // COMPOSITION LOCK section exists).
 
-function parseGeminiJson(text: string) {
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return null;
-  }
-}
-
 function textFromResponsePart(value: unknown) {
   const part = asRecord(value);
   if (!part) return null;
@@ -354,49 +390,6 @@ function geminiTextOutput(value: unknown) {
   }
 
   return textValues.length ? textValues.join("\n").trim() : null;
-}
-
-function geminiErrorFromData(value: unknown) {
-  const root = asRecord(value);
-  if (!root) return null;
-
-  const error = root.error;
-  if (typeof error === "string") return error;
-
-  const errorRecord = asRecord(error);
-  const errorMessageValue =
-    stringValue(errorRecord?.message) ??
-    stringValue(errorRecord?.status) ??
-    stringValue(errorRecord?.code);
-  if (errorMessageValue) return errorMessageValue;
-
-  const promptFeedback = asRecord(root.promptFeedback ?? root.prompt_feedback);
-  const blockReason = stringValue(promptFeedback?.blockReason ?? promptFeedback?.block_reason);
-  if (blockReason) return `Gemini prompt blocked: ${blockReason}`;
-
-  for (const candidate of asArray(root.candidates)) {
-    const candidateRecord = asRecord(candidate);
-    const finishReason = stringValue(
-      candidateRecord?.finishReason ?? candidateRecord?.finish_reason,
-    );
-    if (finishReason && finishReason !== "STOP") {
-      return `Gemini candidate finished without an image: ${finishReason}`;
-    }
-  }
-
-  return null;
-}
-
-// Narrow on purpose: only retry a failure that's actually transient.
-// Server-side (5xx) statuses and Gemini's own "Deadline expired ..."
-// wording (a DEADLINE_EXCEEDED-class error) are retryable; a genuine 4xx
-// (bad request, blocked prompt, invalid API key) never becomes correct by
-// retrying the identical request, so those still fail immediately, exactly
-// as before this change.
-function isRetryableGeminiFailure(status: number, responseBody: string): boolean {
-  if (status >= 500) return true;
-  const parsedError = geminiErrorFromData(parseGeminiJson(responseBody));
-  return typeof parsedError === "string" && /deadline/i.test(parsedError);
 }
 
 function geminiFailureMessage(responseBody: string, statusText?: string) {
@@ -447,7 +440,7 @@ export async function POST(req: Request) {
     const session = await auth();
 
     const limitKey = session?.user?.id ?? "anon";
-    const limit = rateLimit(req, `mockups:ai:${limitKey}`, 20, 10 * 60 * 1000);
+    const limit = await rateLimit(req, `mockups:ai:${limitKey}`, 20, 10 * 60 * 1000);
     if (!limit.ok) {
       return apiError("Too many AI mockup requests. Please try again later.", 429, rateLimitHeaders(limit));
     }
@@ -540,6 +533,14 @@ export async function POST(req: Request) {
       throw new RendererError("Artwork image is missing dimensions.", 400);
     }
 
+    // Same asymmetric-transparent-padding fix as SharpMockupRenderer: size
+    // the placement box off the artwork's TRIMMED (visible-content) aspect
+    // ratio, matching what compositeArtworkOntoBase actually resizes with
+    // fit:"fill" below, not the raw upload's aspect ratio.
+    const trimmedArtworkMeta = await sharp(await trimToVisibleBounds(artwork)).metadata();
+    const trimmedWidth = trimmedArtworkMeta.width ?? artworkMeta.width;
+    const trimmedHeight = trimmedArtworkMeta.height ?? artworkMeta.height;
+
     // Geometry resolved ONCE, via the exact same canonical function and
     // placement config the Studio preview and the deterministic Print
     // Mockup both already use. This never talks to Gemini and is not
@@ -551,8 +552,8 @@ export async function POST(req: Request) {
       transform: { x, y, scale, rotation },
       templateWidth: templateMeta.width,
       templateHeight: templateMeta.height,
-      artworkWidth: artworkMeta.width,
-      artworkHeight: artworkMeta.height,
+      artworkWidth: trimmedWidth,
+      artworkHeight: trimmedHeight,
     });
 
     // The template's own garment bbox -- detected once here (not per
@@ -655,7 +656,12 @@ export async function POST(req: Request) {
 
       let candidateImage: Buffer;
       if (generated.url) {
-        const remoteRes = await fetch(generated.url);
+        // Was previously unbounded -- an unresponsive/slow host serving
+        // Gemini's returned image URL could hang this request indefinitely,
+        // on top of (and independent from) the bounded Gemini call/retry
+        // budget above. Bounded to the same 60s per-call ceiling used for
+        // the Gemini request itself.
+        const remoteRes = await fetch(generated.url, { signal: AbortSignal.timeout(60_000) });
         if (!remoteRes.ok) {
           return apiError("Could not download the generated garment image.", 502);
         }

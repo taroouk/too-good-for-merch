@@ -1,7 +1,7 @@
-import { PaymentStatus, Prisma, Role } from "@prisma/client";
+import { PaymentStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
+import { getAdminUser } from "src/lib/admin/auth";
 
 function csv(value: unknown) {
   const text = String(value ?? "");
@@ -10,8 +10,12 @@ function csv(value: unknown) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  if (!session?.user?.id || session.user.role !== Role.ADMIN) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  // Authoritative, DB-backed check (role + blockedAt re-verified against
+  // the database on every request) -- not the stale JWT `role` claim alone,
+  // so a demoted or blocked admin can't keep exporting customer PII on an
+  // unexpired session. See getAdminUser's own comment in src/lib/admin/auth.ts.
+  const admin = await getAdminUser();
+  if (!admin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 120);
   const filter = (url.searchParams.get("status") ?? "all").toLowerCase();

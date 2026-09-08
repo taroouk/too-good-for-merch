@@ -12,6 +12,7 @@
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed:admins": "node scripts/seed-admins.mjs",
     "build": "prisma generate && next build",
+    "build:production": "node scripts/check-production-env.mjs && prisma generate && next build",
     "start": "next start"
   },
   "engines": {

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { BespokeRequestStatus, Prisma } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { requireAdmin } from "src/lib/admin/auth";
+import { requireNoteParent } from "src/lib/admin/notes";
 import { BESPOKE_STATUS_FLOW } from "src/components/admin/ui/status";
 
 // Sets (or replaces) the admin quote for a Bespoke/Custom build -- the only
@@ -190,6 +191,11 @@ export async function addBespokeRequestNoteAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!id || !body) throw new Error("Note cannot be empty.");
+
+  requireNoteParent(
+    await prisma.bespokeRequest.findUnique({ where: { id }, select: { id: true } }),
+    "Bespoke request not found.",
+  );
 
   await prisma.$transaction([
     prisma.bespokeRequestNote.create({ data: { requestId: id, authorId: admin.id, body } }),

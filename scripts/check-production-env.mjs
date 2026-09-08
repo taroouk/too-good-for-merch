@@ -1,12 +1,25 @@
-const REQUIRED = [
-  "DATABASE_URL",
-  "NEXTAUTH_URL",
-  "NEXTAUTH_SECRET",
-  "PAYMOB_API_KEY",
-  "PAYMOB_INTEGRATION_ID",
-  "PAYMOB_IFRAME_ID",
-  "PAYMOB_HMAC_SECRET",
-];
+// dotenv never overwrites a var that's already set in process.env, so this
+// is a no-op on Vercel (which injects real env vars directly) and only
+// helps when running this check by hand against local .env files.
+//
+// A plain `import "dotenv/config"` only ever reads `.env`, but `next build`
+// (which this check gates, via the build:production script) actually loads
+// -- in order of decreasing priority -- `.env.production.local`,
+// `.env.local`, `.env.production`, then `.env` (see Next.js's documented
+// env file load order). Only loading `.env` here meant this check could
+// pass or fail based on stale/incomplete `.env` contents while the actual
+// build picked up different, overriding values from `.env.local` or
+// `.env.production.local` -- see P3-21j -- P3-21i. Loading the same files in
+// the same precedence order (each `config()` call only fills in vars not
+// already set, so the first file loaded wins) makes this check see exactly
+// what `next build` would see.
+import { config as loadEnv } from "dotenv";
+
+for (const file of [".env.production.local", ".env.local", ".env.production", ".env"]) {
+  loadEnv({ path: file });
+}
+
+import { REQUIRED_PRODUCTION_ENV as REQUIRED } from "./required-production-env.mjs";
 
 const missing = REQUIRED.filter((name) => !process.env[name]?.trim());
 const errors = [];

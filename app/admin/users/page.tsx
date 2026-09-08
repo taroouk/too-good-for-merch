@@ -27,7 +27,7 @@ export default async function UsersPage({
   const where = q
     ? { OR: [{ email: { contains: q, mode: "insensitive" as const } }, { phone: { contains: q } }] }
     : undefined;
-  const [users, matchingCount, paidTotals] = await Promise.all([
+  const [users, matchingCount] = await Promise.all([
     prisma.user.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -36,14 +36,48 @@ export default async function UsersPage({
       include: { _count: { select: { orders: true, builds: true } } },
     }),
     prisma.user.count({ where }),
-    prisma.order.groupBy({
-      by: ["userId"],
-      where: { paymentStatus: "PAID", userId: { not: null } },
-      _sum: { totalCents: true },
-    }),
   ]);
-  const paidByUser = new Map(paidTotals.map((row) => [row.userId, row._sum.totalCents ?? 0]));
-  const currency = process.env.STORE_CURRENCY ?? "USD";
+
+  // Lifetime spend is canonical USD reporting (P1-14) -- totalCents is the
+  // payment (EGP) amount, not what the customer was canonically charged in
+  // USD, so it can never be summed and labeled a single currency directly.
+  // P2-11: this previously fetched every paid order for every user in the
+  // entire store (unbounded, grows forever) just to compute totals for the
+  // 25 users on the current page. Scoped to only this page's user ids and
+  // aggregated BY THE DATABASE per (userId, whether canonicalTotalUsdCents
+  // is set) instead of pulling raw rows into memory.
+  const pageUserIds = users.map((user) => user.id);
+  const spendByUser = new Map<string, { revenueUsdCents: number; excludedLegacyCount: number }>();
+  if (pageUserIds.length > 0) {
+    const [withCanonicalTotal, withoutCanonicalTotal] = await Promise.all([
+      prisma.order.groupBy({
+        by: ["userId"],
+        where: { paymentStatus: "PAID", userId: { in: pageUserIds }, canonicalTotalUsdCents: { not: null } },
+        _sum: { canonicalTotalUsdCents: true },
+      }),
+      prisma.order.groupBy({
+        by: ["userId"],
+        where: { paymentStatus: "PAID", userId: { in: pageUserIds }, canonicalTotalUsdCents: null },
+        _count: true,
+      }),
+    ]);
+    for (const row of withCanonicalTotal) {
+      if (!row.userId) continue;
+      spendByUser.set(row.userId, { revenueUsdCents: row._sum.canonicalTotalUsdCents ?? 0, excludedLegacyCount: 0 });
+    }
+    for (const row of withoutCanonicalTotal) {
+      if (!row.userId) continue;
+      const existing = spendByUser.get(row.userId) ?? { revenueUsdCents: 0, excludedLegacyCount: 0 };
+      spendByUser.set(row.userId, { ...existing, excludedLegacyCount: row._count });
+    }
+  }
+  const currency = "USD";
+  function userSpendLabel(userId: string) {
+    const spend = spendByUser.get(userId);
+    if (!spend) return `${currency} 0.00`;
+    const base = `${currency} ${(spend.revenueUsdCents / 100).toFixed(2)}`;
+    return spend.excludedLegacyCount > 0 ? `${base} (+${spend.excludedLegacyCount} legacy)` : base;
+  }
 
   // See app/admin/orders/page.tsx for why an out-of-range page is resolved
   // to the last real page instead of rendering a misleading empty state.
@@ -76,7 +110,7 @@ export default async function UsersPage({
                     <Th>Joined</Th>
                     <Th>Orders</Th>
                     <Th>Projects</Th>
-                    <Th>Paid value</Th>
+                    <Th>Lifetime spend (USD)</Th>
                     <Th>Access</Th>
                     <Th />
                   </tr>
@@ -91,7 +125,7 @@ export default async function UsersPage({
                       <Td className="text-admin-muted">{user.createdAt.toLocaleDateString("en-GB", { dateStyle: "medium" })}</Td>
                       <Td className="font-semibold text-admin-ink">{user._count.orders}</Td>
                       <Td>{user._count.builds}</Td>
-                      <Td className="font-semibold text-admin-ink">{currency} {((paidByUser.get(user.id) ?? 0) / 100).toFixed(2)}</Td>
+                      <Td className="font-semibold text-admin-ink">{userSpendLabel(user.id)}</Td>
                       <Td><Badge tone={user.blockedAt ? "danger" : "success"}>{user.blockedAt ? "Blocked" : "Active"}</Badge></Td>
                       <Td align="right">
                         <div className="flex items-center justify-end gap-3">
@@ -129,7 +163,7 @@ export default async function UsersPage({
                     </div>
                     <div className="mt-3 flex items-center justify-between text-xs text-admin-faint">
                       <span>{user._count.orders} orders · {user._count.builds} projects</span>
-                      <span className="font-semibold text-admin-ink">{currency} {((paidByUser.get(user.id) ?? 0) / 100).toFixed(2)}</span>
+                      <span className="font-semibold text-admin-ink">{userSpendLabel(user.id)}</span>
                     </div>
                     <div className="mt-3 flex items-center gap-3">
                       <Link href={`/admin/users/${user.id}`} className="text-xs font-semibold text-admin-ink underline">View orders</Link>

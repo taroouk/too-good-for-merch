@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "src/lib/prisma";
+import { isSvgContentSafe } from "src/lib/svg-safety";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
@@ -36,6 +37,11 @@ export function looksLikeAllowedArtwork(buffer: Buffer, mimeType: string) {
   return false;
 }
 
+// P2-9: see src/lib/svg-safety.ts for the full rationale -- raw,
+// unsanitized user-uploaded SVGs flow from here into sharp()
+// (src/studio/render/engines/sharp-renderer.ts, composite.ts) for
+// server-side print-mockup rasterization via libvips/librsvg.
+
 export async function uploadArtwork(file: File) {
   const contentType = normalizeArtworkMimeType(file.type);
 
@@ -52,6 +58,9 @@ export async function uploadArtwork(file: File) {
   }
   if (!looksLikeAllowedArtwork(buffer, contentType)) {
     throw new Error("Artwork file content does not match its file type.");
+  }
+  if (contentType === "image/svg+xml" && !isSvgContentSafe(buffer)) {
+    throw new Error("This SVG file contains unsupported content (scripts, external references, or embedded elements) and cannot be uploaded.");
   }
 
   const id = randomUUID();

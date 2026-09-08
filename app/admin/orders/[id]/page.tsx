@@ -7,7 +7,15 @@ import {
   updateOrderStatusAction,
 } from "src/actions/admin-order-actions";
 import AdminToast from "src/components/admin/AdminToast";
-import { formatExchangeRate, formatMoney, isNewPricingModel, itemDisplayCurrency } from "src/lib/orders/display";
+import {
+  formatExchangeRate,
+  formatMoney,
+  isNewPricingModel,
+  itemDisplayCurrency,
+  orderPaymentBreakdown,
+  orderUsdSurcharges,
+  resolveOrderMockupIds,
+} from "src/lib/orders/display";
 import Breadcrumbs from "src/components/admin/ui/Breadcrumbs";
 import Card from "src/components/admin/ui/Card";
 import Badge from "src/components/admin/ui/Badge";
@@ -75,12 +83,11 @@ export default async function AdminOrderDetailsPage({
       },
       build: {
         include: {
-          draft: {
-            include: {
-              printMockup: { select: { id: true, mimeType: true, createdAt: true } },
-              aiMockup: { select: { id: true, mimeType: true, createdAt: true } },
-            },
-          },
+          // Only used as a fallback for orders placed before OrderItem.preview
+          // snapshotted these pointers (see resolveOrderMockupIds below) --
+          // never treat this live BuildDraft state as authoritative for a
+          // paid order.
+          draft: { select: { printMockupId: true, aiMockupId: true } },
         },
       },
       items: {
@@ -121,6 +128,14 @@ export default async function AdminOrderDetailsPage({
   // See src/lib/orders/display.ts for the reasoning behind these two.
   const isNewOrder = isNewPricingModel(order);
   const itemCurrency = itemDisplayCurrency(order);
+  // P1-8: prefer the purchase-time mockup snapshot on the first item's
+  // preview over the live (mutable) BuildDraft pointers.
+  const { printMockupId, aiMockupId } = resolveOrderMockupIds(order.items[0]?.preview, order.build?.draft);
+  // P3-21d: a payment-currency breakdown that reconciles exactly, plus the
+  // canonical USD tax/shipping snapshot reported alongside it (never summed
+  // into it -- see src/lib/orders/display.ts).
+  const breakdown = orderPaymentBreakdown(order);
+  const usdSurcharges = orderUsdSurcharges(order.items[0]?.preview);
 
   return (
     <main className="px-4 py-10">
@@ -211,13 +226,13 @@ export default async function AdminOrderDetailsPage({
               </div>
             </Card>
 
-            {order.build?.draft?.printMockup || order.build?.draft?.aiMockup ? (
+            {printMockupId || aiMockupId ? (
               <Card title="Mockups">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {order.build.draft.printMockup ? (
+                  {printMockupId ? (
                     <div className="overflow-hidden rounded-2xl border border-admin-border">
-                      <a href={`/api/mockups/${order.build.draft.printMockup.id}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
-                        <img src={`/api/mockups/${order.build.draft.printMockup.id}/file`} alt="Print mockup" className="h-full w-full object-contain" />
+                      <a href={`/api/mockups/${printMockupId}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
+                        <img src={`/api/mockups/${printMockupId}/file`} alt="Print mockup" className="h-full w-full object-contain" />
                       </a>
                       <div className="p-4 text-xs">
                         <p className="font-semibold text-admin-ink">Print mockup</p>
@@ -226,10 +241,10 @@ export default async function AdminOrderDetailsPage({
                     </div>
                   ) : null}
 
-                  {order.build.draft.aiMockup ? (
+                  {aiMockupId ? (
                     <div className="overflow-hidden rounded-2xl border border-admin-border">
-                      <a href={`/api/mockups/${order.build.draft.aiMockup.id}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
-                        <img src={`/api/mockups/${order.build.draft.aiMockup.id}/file`} alt="AI mockup" className="h-full w-full object-contain" />
+                      <a href={`/api/mockups/${aiMockupId}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
+                        <img src={`/api/mockups/${aiMockupId}/file`} alt="AI mockup" className="h-full w-full object-contain" />
                       </a>
                       <div className="p-4 text-xs">
                         <p className="font-semibold text-admin-ink">AI mockup</p>
@@ -353,18 +368,33 @@ export default async function AdminOrderDetailsPage({
                 <div className="border-t border-admin-border pt-3">
                   <div className="flex justify-between">
                     <span className="text-admin-faint">Subtotal</span>
-                    <span className="font-medium text-admin-ink">{money(order.subtotalCents, order.currency)}</span>
+                    <span className="font-medium text-admin-ink">{money(breakdown.subtotalCents, order.currency)}</span>
                   </div>
                   <div className="mt-2 flex justify-between">
-                    <span className="text-admin-faint">Shipping</span>
-                    <span className="font-medium text-admin-ink">TBC</span>
+                    <span className="text-admin-faint">Tax + shipping</span>
+                    <span className="font-medium text-admin-ink">{money(breakdown.surchargeCents, order.currency)}</span>
                   </div>
+                  {usdSurcharges.taxUsdCents != null || usdSurcharges.shippingUsdCents != null ? (
+                    <p className="mt-2 text-xs text-admin-faint">
+                      Recorded at checkout (canonical USD): tax{" "}
+                      {usdSurcharges.taxUsdCents != null ? money(usdSurcharges.taxUsdCents, "USD") : "not recorded"},
+                      shipping{" "}
+                      {usdSurcharges.shippingUsdCents != null
+                        ? money(usdSurcharges.shippingUsdCents, "USD")
+                        : "not recorded"}
+                      .
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-admin-faint">
+                      Tax and shipping were not recorded separately for this order.
+                    </p>
+                  )}
                 </div>
 
                 <div className="border-t border-admin-border pt-3">
                   <div className="flex justify-between">
                     <span className="font-semibold text-admin-ink">Total</span>
-                    <span className="text-xl font-semibold text-admin-ink">{money(order.totalCents, order.currency)}</span>
+                    <span className="text-xl font-semibold text-admin-ink">{money(breakdown.totalCents, order.currency)}</span>
                   </div>
                 </div>
               </div>

@@ -145,3 +145,37 @@ const TEMPLATE_ASPECT_RATIO: Record<GarmentSide, number> = {
 export function getTemplateAspectRatio(side: GarmentSide): number {
   return TEMPLATE_ASPECT_RATIO[side];
 }
+
+// P3-21k: TGFM Black.png (FITTED/BLACK/front) is a 2480x2480 re-export of
+// the identical framing as TGFM White.png (1254x1254) -- same aspect ratio,
+// double the resolution (see the comment above). sharp-renderer.ts used to
+// size its final output off each template's own raw metadata dimensions, so
+// an otherwise-identical mockup request (same product/placement/transform/
+// artwork/dpi) produced a ~2x larger output raster for BLACK than for WHITE
+// -- a real, customer-visible print-resolution inconsistency between
+// colorways of the same product/side, not an intentional feature.
+//
+// This table holds the canonical REFERENCE WIDTH per (product, side) --
+// deliberately just a width, not a fixed (width, height) pair -- so
+// sharp-renderer.ts can derive a single uniform scale factor
+// (referenceWidth / template's own actual width) and apply it to BOTH of
+// the template's own actual dimensions. That preserves whatever aspect
+// ratio the loaded template actually has (this file is not the place that
+// decides aspect ratio -- see getTemplateAspectRatio above) while still
+// normalizing absolute resolution across colors: every (product, side) pair
+// other than FITTED/front is already naturally consistent across colors
+// (OVERSIZED front: 1254x1254 both colors; both BACK templates: 1024x1536
+// both colors), so those simply get scale=1 (no-op) using their own already-
+// correct width as the reference. FITTED front's reference is 1254 (the
+// WHITE/majority resolution), so the higher-res BLACK asset (width 2480)
+// gets downscaled by ~0.506x to match -- rather than upscaling WHITE to
+// match BLACK, which would just synthesize detail that was never there.
+const TEMPLATE_REFERENCE_WIDTH: Record<ProductType, Record<GarmentSide, number>> = {
+  FITTED: { front: 1254, back: 1024 },
+  OVERSIZED: { front: 1254, back: 1024 },
+  CUSTOM: { front: 1254, back: 1024 },
+};
+
+export function getTemplateReferenceWidth(product: ProductType, side: GarmentSide): number {
+  return TEMPLATE_REFERENCE_WIDTH[product]?.[side] ?? TEMPLATE_REFERENCE_WIDTH.FITTED[side];
+}

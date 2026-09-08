@@ -27,6 +27,20 @@ export default function MarketingLayout({
     };
   }, [menuOpen]);
 
+  // Keyboard-accessibility parity with the admin sidebar's UserMenu/MobileNav
+  // (src/components/admin/UserMenu.tsx), which already close on Escape --
+  // this overlay previously had no keydown handler at all, so a keyboard
+  // user had no way to dismiss it short of tabbing to the "MENU" button
+  // itself. Only listens while open, same guard as the admin components use.
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMenuOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [menuOpen]);
+
   const closeMenu = () => setMenuOpen(false);
 
   return (

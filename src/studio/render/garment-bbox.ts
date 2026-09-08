@@ -8,6 +8,7 @@
 // (scripts/investigate-geometry.mjs) before being wired into production.
 import sharp from "sharp";
 import { RendererError } from "./errors";
+import { scanAboveThresholdBBox } from "./alpha-trim";
 import type { GarmentBBox } from "./types";
 
 export type DetectedGarmentBBox = GarmentBBox & {
@@ -46,7 +47,8 @@ const MAX_BBOX_FRACTION = 0.995;
 // all, distinguishing an actually-transparent template from an opaque
 // photo that merely carries an (all-255) alpha channel, e.g. from a prior
 // ensureAlpha() call.
-const ALPHA_SUBJECT_THRESHOLD = 10;
+// ALPHA_SUBJECT_THRESHOLD now lives in ./alpha-trim (imported above) --
+// shared verbatim with the client-side trim preview.
 const ALPHA_TRANSPARENCY_PRESENT_THRESHOLD = 250;
 
 // Max per-channel difference between ADJACENT pixels for them to still
@@ -119,78 +121,9 @@ function assertPlausibleBBox(
 // so every pixel in it has zero diagonal neighbours above threshold and
 // gets excluded, while a genuine (curved, multi-pixel) garment/hair edge
 // has diagonal continuity and is unaffected.
-function hasAboveThresholdNeighbor(
-  data: Buffer,
-  width: number,
-  height: number,
-  channels: number,
-  x: number,
-  y: number,
-): boolean {
-  const orthogonal: Array<[number, number]> = [
-    [x - 1, y],
-    [x + 1, y],
-    [x, y - 1],
-    [x, y + 1],
-  ];
-  const diagonal: Array<[number, number]> = [
-    [x - 1, y - 1],
-    [x + 1, y - 1],
-    [x - 1, y + 1],
-    [x + 1, y + 1],
-  ];
-
-  const above = (nx: number, ny: number) =>
-    nx >= 0 && nx < width && ny >= 0 && ny < height && data[(ny * width + nx) * channels + 3] > ALPHA_SUBJECT_THRESHOLD;
-
-  const hasOrthogonal = orthogonal.some(([nx, ny]) => above(nx, ny));
-  const hasDiagonal = diagonal.some(([nx, ny]) => above(nx, ny));
-  return hasOrthogonal && hasDiagonal;
-}
-
-// Shared scanning core behind both garment detection (alphaScanBBox below)
-// and artwork-bounds trimming (trimToVisibleBounds below). Both agree on
-// what counts as "visible" (ALPHA_SUBJECT_THRESHOLD), but NOT on the
-// neighbor-connectivity requirement: requireNeighbor exists specifically
-// for the 1px-wide PNG-export-artifact defect documented on
-// hasAboveThresholdNeighbor -- appropriate for a photographed GARMENT,
-// which always has substantial real 2D extent, so a hairline with no
-// neighbors is provably a defect, not the subject. That assumption is
-// false for arbitrary uploaded ARTWORK: a deliberately tiny logo, a 1px
-// hairline stroke, or even a legitimate 1x1 image has no 2D neighbors
-// either, but IS the real content, not an artifact -- requiring
-// neighbors there would incorrectly treat it as "fully transparent" and
-// reject it outright. trimToVisibleBounds passes requireNeighbor=false for
-// exactly this reason; alphaScanBBox keeps the existing true, unchanged.
-function scanAboveThresholdBBox(
-  data: Buffer,
-  width: number,
-  height: number,
-  channels: number,
-  requireNeighbor: boolean,
-): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = width;
-  let minY = height;
-  let maxX = -1;
-  let maxY = -1;
-
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const alpha = data[(y * width + x) * channels + 3];
-      const isVisible =
-        alpha > ALPHA_SUBJECT_THRESHOLD &&
-        (!requireNeighbor || hasAboveThresholdNeighbor(data, width, height, channels, x, y));
-      if (isVisible) {
-        if (x < minX) minX = x;
-        if (x > maxX) maxX = x;
-        if (y < minY) minY = y;
-        if (y > maxY) maxY = y;
-      }
-    }
-  }
-
-  return { minX, minY, maxX, maxY };
-}
+// hasAboveThresholdNeighbor and scanAboveThresholdBBox now live in
+// ./alpha-trim (imported above), shared verbatim with the client-side trim
+// preview -- see that module's header comment for why.
 
 async function alphaScanBBox(
   buffer: Buffer,

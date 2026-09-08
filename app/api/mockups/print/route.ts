@@ -4,7 +4,8 @@ import type { GarmentColor, ProductType } from "@prisma/client";
 import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
-import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
 import {
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     const session = await auth();
 
     const limitKey = session?.user?.id ?? "anon";
-    const limit = rateLimit(req, `mockups:print:${limitKey}`, 20, 10 * 60 * 1000);
+    const limit = await rateLimit(req, `mockups:print:${limitKey}`, 20, 10 * 60 * 1000);
     if (!limit.ok) {
       return apiError("Too many print mockup requests. Please try again later.", 429, rateLimitHeaders(limit));
     }

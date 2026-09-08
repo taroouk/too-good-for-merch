@@ -10,6 +10,7 @@ export * from "./templates";
 export * from "./composite";
 export * from "./garment-bbox";
 export * from "./gemini-prompt";
+export * from "./gemini-retry";
 
 let cachedRenderer: MockupRenderer | null = null;
 let cachedEngine: string | null = null;

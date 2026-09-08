@@ -19,8 +19,25 @@ type BuildQuote = {
   price:
     | { mode: "standard"; unit: number; total: number; currency: string }
     | { mode: "custom" | "bulk"; unit: null; total: null; currency: string; message: string };
+  // Tax/shipping-inclusive breakdown plus the payment-currency conversion,
+  // computed server-side by the same helper createCheckoutOrder uses. Null
+  // when the build isn't priceable or the store's exchange rate is
+  // unconfigured -- render price.message / a fallback rather than a total.
+  totals: {
+    subtotalUsdCents: number;
+    taxUsdCents: number;
+    shippingUsdCents: number;
+    totalUsdCents: number;
+    paymentCurrency: string;
+    totalPaymentCents: number;
+    exchangeRate: number;
+  } | null;
   walletEnabled?: boolean;
 };
+
+function money(cents: number, currency: string) {
+  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
+}
 
 type PaymentMethod = "CARD" | "WALLET";
 
@@ -41,6 +58,17 @@ export default function CheckoutPage() {
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const buildId = searchParams.get("buildId");
+  // The Studio Builder's size selector (S/M/L/XL) has no field on
+  // BuildDraft to persist to (see WishlistItem.size / BespokeRequest.size in
+  // prisma/schema.prisma -- size is only ever snapshotted at the point of a
+  // real action, not stored on the in-progress draft), so it's forwarded
+  // here via the checkout redirect instead. createCheckoutOrder (called
+  // below) already accepts and validates a `size` field and otherwise
+  // silently defaults to "M" -- previously nothing on this page ever sent
+  // one, so every standard order was created as size M regardless of what
+  // the customer picked in the Builder.
+  const sizeParam = searchParams.get("size");
+  const size = sizeParam && ["S", "M", "L", "XL"].includes(sizeParam) ? sizeParam : "M";
   const { data: session, status } = useSession();
 
   const [quote, setQuote] = useState<BuildQuote | null>(null);
@@ -116,6 +144,7 @@ function CheckoutContent() {
         body: JSON.stringify({
           orderId: orderId ?? undefined,
           buildId,
+          size,
           method,
           customer: {
             name: customerName,
@@ -183,7 +212,10 @@ function CheckoutContent() {
   }
 
   const draft = quote.build.draft;
-  const canPay = quote.price.mode === "standard";
+  // No totals means the store's exchange rate is unconfigured, which
+  // createCheckoutOrder rejects with a 503 anyway -- block the submit here
+  // rather than sending the customer into a guaranteed failure.
+  const canPay = quote.price.mode === "standard" && quote.totals != null;
   const availablePaymentMethods: PaymentMethod[] = quote.walletEnabled
     ? ["CARD", "WALLET"]
     : ["CARD"];
@@ -302,15 +334,48 @@ function CheckoutContent() {
               <strong>{draft.quantity}</strong>
             </div>
           </div>
-          <div className="mt-5 border-t border-black/10 pt-5">
-            <div className="flex justify-between text-lg font-semibold">
-              <span>Total</span>
-              <span>
-                {quote.price.mode === "standard"
-                  ? `${quote.price.currency} ${quote.price.total.toFixed(2)}`
-                  : quote.price.message}
-              </span>
-            </div>
+          <div className="mt-5 space-y-2 border-t border-black/10 pt-5 text-sm">
+            {quote.totals ? (
+              <>
+                <div className="flex justify-between gap-4">
+                  <span className="text-black/45">Subtotal</span>
+                  <span>{money(quote.totals.subtotalUsdCents, "USD")}</span>
+                </div>
+                {quote.totals.taxUsdCents > 0 ? (
+                  <div className="flex justify-between gap-4">
+                    <span className="text-black/45">Tax</span>
+                    <span>{money(quote.totals.taxUsdCents, "USD")}</span>
+                  </div>
+                ) : null}
+                <div className="flex justify-between gap-4">
+                  <span className="text-black/45">Shipping</span>
+                  <span>
+                    {quote.totals.shippingUsdCents > 0
+                      ? money(quote.totals.shippingUsdCents, "USD")
+                      : "Free"}
+                  </span>
+                </div>
+                <div className="flex justify-between border-t border-black/10 pt-3 text-lg font-semibold">
+                  <span>Total</span>
+                  <span>{money(quote.totals.totalUsdCents, "USD")}</span>
+                </div>
+                <p className="text-xs text-black/45">
+                  Paymob charge: {money(quote.totals.totalPaymentCents, quote.totals.paymentCurrency)}
+                </p>
+                <p className="text-xs text-black/45">
+                  Exchange rate: 1 USD = {quote.totals.exchangeRate} {quote.totals.paymentCurrency}
+                </p>
+              </>
+            ) : (
+              <div className="flex justify-between text-lg font-semibold">
+                <span>Total</span>
+                <span>
+                  {quote.price.mode === "standard"
+                    ? "Unavailable right now"
+                    : quote.price.message}
+                </span>
+              </div>
+            )}
           </div>
         </aside>
       </div>

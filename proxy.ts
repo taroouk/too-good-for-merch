@@ -23,4 +23,11 @@ export async function proxy(request: NextRequest) {
   return NextResponse.next();
 }
 
-export const config = { matcher: ["/admin/:path*"] };
+// /api/admin/:path* is included here too as a cheap early reject for
+// obviously non-admin JWTs, matching /admin/:path*'s treatment -- but this
+// is defense in depth only. Every app/api/admin/** route handler still
+// re-verifies role + blockedAt against the database itself via
+// getAdminUser() (src/lib/admin/auth.ts), since this Edge check can only
+// see the JWT's `role` claim, which goes stale the moment an admin is
+// demoted or blocked mid-session.
+export const config = { matcher: ["/admin/:path*", "/api/admin/:path*"] };

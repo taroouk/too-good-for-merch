@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { SharpMockupRenderer } from "../engines/sharp-renderer";
+import { getTemplateReferenceWidth } from "../placement-config";
 import { BASELINE_RENDER_DPI } from "../transform";
 import type { RenderRequest } from "../types";
 import { runSuite } from "./test-harness";
@@ -62,10 +63,17 @@ export async function runAll() {
       const req = await baseRequest();
       const result = await renderer.render(req);
       // Hand-computed from placement-config's CENTER_FRONT/FITTED box
-      // (xPct 0.41, yPct 0.5, widthPct 0.18) against a 1000x1000 template:
-      // left=410, top=500, width=180, height=90 -> sample the center.
-      const sampleX = 410 + 90;
-      const sampleY = 500 + 45;
+      // (xPct 0.41, yPct 0.5, widthPct 0.18) against the 1000x1000 template
+      // this test composites onto: left=410, top=500, width=180, height=90
+      // -> sample the center. The renderer then normalizes its output
+      // resolution to a canonical per-(product, side) reference width (see
+      // P3-21k / getTemplateReferenceWidth) rather than leaving it at the
+      // input template's own 1000x1000 resolution, so the hand-computed
+      // sample point must be scaled by the same referenceWidth/1000 ratio
+      // the renderer itself applies.
+      const scale = getTemplateReferenceWidth(req.product, "front") / 1000;
+      const sampleX = Math.round((410 + 90) * scale);
+      const sampleY = Math.round((500 + 45) * scale);
       const { data, info } = await sharp(result.data)
         .extract({ left: sampleX, top: sampleY, width: 1, height: 1 })
         .raw()

@@ -1,4 +1,5 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { OrderStatus, PaymentStatus } from "@prisma/client";
 import type { Order, OrderItem, PaymentMethod, Prisma } from "@prisma/client";
 
 const PAYMOB_BASE_URL = "https://accept.paymob.com";
@@ -35,13 +36,19 @@ function redact(value: unknown): unknown {
   return value;
 }
 
-async function paymobFetch<T>(stage: string, path: string, body: unknown, reference?: Record<string, unknown>): Promise<T> {
+async function paymobFetch<T>(
+  stage: string,
+  path: string,
+  body: unknown,
+  reference: Record<string, unknown> | undefined,
+  signal: AbortSignal,
+): Promise<T> {
   const response = await fetch(`${PAYMOB_BASE_URL}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
     body: JSON.stringify(body),
     cache: "no-store",
-    signal: AbortSignal.timeout(20_000),
+    signal,
   });
   const data = await response.json().catch(() => null);
   if (!response.ok) {
@@ -95,18 +102,32 @@ function billingData(order: PaymobOrder) {
   };
 }
 
+// createPaymobPayment makes 3 sequential calls for CARD (4 for WALLET). A
+// per-call AbortSignal.timeout would let worst cases stack additively (each
+// call independently allowed to take its own full timeout), so instead one
+// deadline is created here and shared across every call in this invocation:
+// the total time this function can spend talking to Paymob is bounded no
+// matter how many sequential steps the chosen method requires. 25s is
+// comfortably above Paymob's normal per-call latency (typically well under
+// 2s) while keeping the route's total worst case (this budget plus the two
+// short-lived DB transactions around it) under its 60s maxDuration -- see
+// app/api/payments/paymob/create-intent/route.ts.
+const PAYMOB_CALL_BUDGET_MS = 25_000;
+
 export async function createPaymobPayment(order: PaymobOrder, method: PaymentMethod) {
   if (!Number.isSafeInteger(order.totalCents) || order.totalCents <= 0) {
     throw new PaymobError("Order amount is invalid.");
   }
 
   const reference = { orderId: order.id, orderNumber: order.orderNumber, amountCents: order.totalCents, currency: order.currency, method };
+  const deadline = AbortSignal.timeout(PAYMOB_CALL_BUDGET_MS);
 
   const auth = await paymobFetch<{ token?: string }>(
     "auth",
     "/api/auth/tokens",
     { api_key: requiredEnv("PAYMOB_API_KEY") },
     reference,
+    deadline,
   );
   if (!auth.token) throw new PaymobError("Paymob did not return an authentication token.");
 
@@ -139,6 +160,7 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
       ],
     },
     reference,
+    deadline,
   );
   if (!remoteOrder.id) throw new PaymobError("Paymob did not return an order ID.", remoteOrder);
 
@@ -156,6 +178,7 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
       lock_order_when_paid: true,
     },
     { ...reference, paymobOrderId: remoteOrder.id },
+    deadline,
   );
   if (!paymentKey.token) throw new PaymobError("Paymob did not return a payment key.", paymentKey);
 
@@ -168,6 +191,7 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
         payment_token: paymentKey.token,
       },
       { ...reference, paymobOrderId: remoteOrder.id },
+      deadline,
     );
     const paymentUrl = wallet.redirect_url ?? wallet.iframe_redirection_url ?? "";
     if (!paymentUrl) throw new PaymobError("Paymob wallet did not return a redirect URL.", wallet);
@@ -252,6 +276,66 @@ export function classifyTransaction(object: Record<string, unknown>): Transactio
   const refunded = object.is_refunded === true;
   const failed = !succeeded && object.pending !== true;
   return { succeeded, refunded, failed };
+}
+
+export type SuccessfulPaymentClassification =
+  | { isDuplicateCharge: true }
+  | {
+      isDuplicateCharge: false;
+      update: {
+        paymentStatus: typeof PaymentStatus.PAID;
+        status: OrderStatus;
+        paidAt: Date;
+        paymobTransactionId: string | null;
+        paymentFailureReason: null;
+      };
+    };
+
+// P0-6: decides what a SUCCEEDED transaction should do to an order's
+// payment state, given the order row read (and locked, via `SELECT ...
+// FOR UPDATE`) inside the SAME database transaction that then applies this
+// result -- never a copy of the order read before that lock was acquired.
+// Paymob retries deliveries aggressively and can send two distinct
+// transactions for the same order close together; without locking the read
+// and write together, both requests could observe the pre-write "not yet
+// PAID" snapshot and each write their own paymobTransactionId, silently
+// losing the fact that a second charge went through. With the lock in
+// place, the second request's `current` reflects the first's completed
+// write, so this function sees paymentStatus already PAID with a
+// DIFFERENT paymobTransactionId and flags it rather than overwriting it.
+// A retried delivery of the SAME transaction id is not a double charge --
+// idempotent re-application, not a second charge -- so it is treated as
+// the normal (non-duplicate) path, safely re-writing the same values.
+export function classifySuccessfulPayment(
+  current: {
+    paymentStatus: PaymentStatus;
+    paymobTransactionId: string | null;
+    status: OrderStatus;
+    paidAt: Date | null;
+  },
+  transactionId: string | null,
+  now: Date = new Date(),
+): SuccessfulPaymentClassification {
+  const isDuplicateCharge =
+    current.paymentStatus === PaymentStatus.PAID &&
+    current.paymobTransactionId != null &&
+    transactionId != null &&
+    current.paymobTransactionId !== transactionId;
+
+  if (isDuplicateCharge) {
+    return { isDuplicateCharge: true };
+  }
+
+  return {
+    isDuplicateCharge: false,
+    update: {
+      paymentStatus: PaymentStatus.PAID,
+      status: current.status === OrderStatus.NEW ? OrderStatus.PAID : current.status,
+      paidAt: current.paidAt ?? now,
+      paymobTransactionId: transactionId,
+      paymentFailureReason: null,
+    },
+  };
 }
 
 export type TransactionMatch = {

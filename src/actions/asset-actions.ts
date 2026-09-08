@@ -2,11 +2,33 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import { hashArtworkData, uploadArtwork } from "src/lib/storage";
+import { clientIpFromHeaders } from "src/lib/rate-limit";
+import { rateLimitByKey } from "src/lib/rate-limit-db";
+
+// P2-8: uploads (artwork bytes -> storage + DB row) were previously
+// completely unbounded per user/IP -- a compromised or scripted client
+// could hammer this server action to burn storage and DB write capacity
+// with no ceiling at all. Server actions don't receive a Request object,
+// so the client IP is read from next/headers() instead (same trusted
+// x-forwarded-for-only model as the route-handler limiter). DB-backed
+// because this is a real write with real cost across every instance, not a
+// cheap in-memory-only operation.
+const UPLOAD_LIMIT = 30;
+const UPLOAD_WINDOW_MS = 10 * 60 * 1000;
+
+async function enforceUploadRateLimit(userId: string | null) {
+  const key = userId ?? `ip:${clientIpFromHeaders(await headers())}`;
+  const limit = await rateLimitByKey("asset:upload", key, UPLOAD_LIMIT, UPLOAD_WINDOW_MS);
+  if (!limit.ok) {
+    throw new Error("Too many uploads. Please wait a few minutes and try again.");
+  }
+}
 
 async function createAssetRecord(buildId: string, formData: FormData) {
   const file = formData.get("file");
@@ -41,6 +63,7 @@ async function createAssetRecord(buildId: string, formData: FormData) {
 export async function actionCreateAsset(buildId: string, formData: FormData) {
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
+  await enforceUploadRateLimit(userId);
 
   await createAssetRecord(buildId, formData);
 
@@ -54,6 +77,7 @@ export async function actionCreateAssetForBuilder(
 ) {
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
+  await enforceUploadRateLimit(userId);
 
   const asset = await createAssetRecord(buildId, formData);
 

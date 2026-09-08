@@ -16,12 +16,13 @@ type BuildRow = {
 export default async function ProjectsPage({
   searchParams,
 }: {
-  searchParams?: { guest?: string };
+  searchParams?: Promise<{ guest?: string }>;
 }) {
   const userId = await getUserId();
 
   if (!userId) {
-    const showGuestMsg = searchParams?.guest === "1";
+    const resolvedSearchParams = await searchParams;
+    const showGuestMsg = resolvedSearchParams?.guest === "1";
 
     return (
       <main className="mx-auto max-w-3xl space-y-4 p-4 sm:p-8">

@@ -3,12 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { auth } from "src/auth";
 import { BuildStatus } from "@prisma/client";
 import { apiError } from "src/lib/api/responses";
-import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimitHeaders } from "src/lib/rate-limit";
+import { rateLimit } from "src/lib/rate-limit-db";
 import { rememberGuestBuildId } from "src/studio/permissions";
 
 export async function POST(req: Request) {
   try {
-    const limit = rateLimit(req, "studio:create-project", 10, 60 * 60 * 1000);
+    const limit = await rateLimit(req, "studio:create-project", 10, 60 * 60 * 1000);
     if (!limit.ok) {
       return apiError(
         "Too many projects created. Please try again later.",

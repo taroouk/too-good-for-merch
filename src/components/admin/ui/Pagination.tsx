@@ -5,12 +5,21 @@ export function getPageCount(total: number, pageSize: number) {
   return Math.max(1, Math.ceil(total / pageSize));
 }
 
-export function pageHref(basePath: string, params: Record<string, string | undefined>, page: number) {
+// pageParam defaults to "page" for every existing single-list page; pages
+// with two independently-paginated lists (e.g. admin/bespoke's open/closed
+// sections) pass distinct param names ("openPage"/"closedPage") so paging
+// one list doesn't reset the other.
+export function pageHref(
+  basePath: string,
+  params: Record<string, string | undefined>,
+  page: number,
+  pageParam: string = "page",
+) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value) query.set(key, value);
   }
-  if (page > 1) query.set("page", String(page));
+  if (page > 1) query.set(pageParam, String(page));
   const qs = query.toString();
   return qs ? `${basePath}?${qs}` : basePath;
 }
@@ -21,12 +30,14 @@ export default function Pagination({
   total,
   basePath,
   params,
+  pageParam = "page",
 }: {
   page: number;
   pageSize: number;
   total: number;
   basePath: string;
   params: Record<string, string | undefined>;
+  pageParam?: string;
 }) {
   const pageCount = getPageCount(total, pageSize);
   if (pageCount <= 1) {
@@ -46,7 +57,7 @@ export default function Pagination({
       </p>
       <div className="flex items-center gap-2">
         {page > 1 ? (
-          <Link href={pageHref(basePath, params, page - 1)} className={buttonClass({ variant: "outline", size: "sm" })}>
+          <Link href={pageHref(basePath, params, page - 1, pageParam)} className={buttonClass({ variant: "outline", size: "sm" })}>
             Previous
           </Link>
         ) : (
@@ -56,7 +67,7 @@ export default function Pagination({
           Page {page} of {pageCount}
         </span>
         {page < pageCount ? (
-          <Link href={pageHref(basePath, params, page + 1)} className={buttonClass({ variant: "outline", size: "sm" })}>
+          <Link href={pageHref(basePath, params, page + 1, pageParam)} className={buttonClass({ variant: "outline", size: "sm" })}>
             Next
           </Link>
         ) : (

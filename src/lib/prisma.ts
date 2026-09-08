@@ -35,13 +35,28 @@ const RETRYABLE_READ_ACTIONS = new Set([
 // connection") mean the connection itself failed, not that the query ran
 // and produced this outcome -- observed in practice from Neon's PgBouncer
 // pooler recycling idle connections out from under this long-lived
-// singleton. P2024 (connection pool timeout) is deliberately excluded:
-// retrying immediately would add more load to an already-saturated pool.
-// Checked via error.code directly, not `instanceof Prisma.
+// singleton. Checked via error.code directly, not `instanceof Prisma.
 // PrismaClientKnownRequestError` -- this file imports only the plain
 // PrismaClient class, never the `Prisma` namespace/runtime.
 const RETRYABLE_CONNECTION_ERROR_CODES = new Set(["P1001", "P1017"]);
 const RETRY_DELAY_MS = 200;
+
+// P2024 ("Timed out fetching a new connection from the pool") is different
+// from P1001/P1017 above: the connection itself is fine, there just wasn't
+// a free slot in DATABASE_URL's connection_limit=5 pool within
+// pool_timeout (10s, Prisma's default -- not overridden). Root-caused to a
+// single Studio/Builder navigation issuing several near-duplicate Prisma
+// queries across its layout+page (since fixed via React's cache() in
+// src/studio/authz.ts and src/studio/permissions.ts) landing during a slow
+// Neon cold-start, which was enough to transiently saturate a 5-connection
+// pool. An immediate retry would just requeue behind the same jam -- this
+// waits long enough for one of the in-flight queries holding a connection
+// to finish and free it up first. Bounded to exactly one extra attempt,
+// same as P1001/P1017, and (like those) only ever reached for the
+// whitelisted read actions above -- never a write, so there is no risk of
+// a duplicated mutation.
+const POOL_TIMEOUT_RETRYABLE_ERROR_CODE = "P2024";
+const POOL_TIMEOUT_RETRY_DELAY_MS = 750;
 
 // PrismaClientInitializationError (thrown when the engine can't establish
 // its *first* connection, e.g. `prisma.user.findUnique(...)` as the very
@@ -109,6 +124,15 @@ if (typeof window === "undefined") {
           }
 
           const code = (error as { code?: string } | null)?.code;
+
+          if (code === POOL_TIMEOUT_RETRYABLE_ERROR_CODE) {
+            console.warn(
+              `prisma: connection pool exhausted (${code}) on ${params.model ?? "?"}.${params.action} -- retrying once in ${POOL_TIMEOUT_RETRY_DELAY_MS}ms`,
+            );
+            await new Promise((resolve) => setTimeout(resolve, POOL_TIMEOUT_RETRY_DELAY_MS));
+            return next(params);
+          }
+
           if (!code || !RETRYABLE_CONNECTION_ERROR_CODES.has(code)) {
             throw error;
           }

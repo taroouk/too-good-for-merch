@@ -1,4 +1,7 @@
 import type { ChangeEventHandler, FormEventHandler } from "react";
+import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
+import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
+import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
 
 type AuthMode = "login" | "signup";
 
@@ -37,9 +40,24 @@ export default function AuthModal({
   onEmailChange,
   onPasswordChange,
 }: AuthModalProps) {
+  useEscapeToClose(onClose);
+  const panelRef = useModalDialog<HTMLDivElement>(true);
+
   return (
-    <div className="studio-modal-overlay">
-      <div className="studio-auth-modal studio-modal-panel">
+    <div
+      className="studio-modal-overlay"
+      onClick={(event) => {
+        if (isBackdropClick(event.target, event.currentTarget)) onClose();
+      }}
+    >
+      <div
+        ref={panelRef}
+        className="studio-auth-modal studio-modal-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="auth-modal-title"
+        tabIndex={-1}
+      >
         <button
           type="button"
           onClick={onClose}
@@ -51,7 +69,7 @@ export default function AuthModal({
 
         <div className="studio-modal-scroll">
           <div className="studio-modal-kicker">TGFM Account</div>
-          <h2 className="studio-auth-title">Login Or Sign Up</h2>
+          <h2 id="auth-modal-title" className="studio-auth-title">Login Or Sign Up</h2>
           <p className="studio-auth-copy">
             Continue to save your artwork and build your T-shirt.
           </p>

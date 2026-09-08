@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { apiError, readJsonObject } from "src/lib/api/responses";
-import { rateLimit, rateLimitHeaders } from "src/lib/rate-limit";
+import { inMemoryRateLimit, rateLimitHeaders } from "src/lib/rate-limit";
 import { computePrice } from "src/pricing/engine";
 import { normalizePlacements } from "src/pricing/placements";
 
@@ -8,7 +8,7 @@ const PRODUCTS = new Set(["FITTED", "OVERSIZED", "CUSTOM"]);
 const FABRICS = new Set(["ESSENTIALS_170", "SIGNATURE_200", "HEAVYWEIGHT_300"]);
 
 export async function POST(req: Request) {
-  const limit = rateLimit(req, "pricing:quote", 120, 5 * 60 * 1000);
+  const limit = inMemoryRateLimit(req, "pricing:quote", 120, 5 * 60 * 1000);
   if (!limit.ok) {
     return apiError("Too many quote requests. Please slow down.", 429, rateLimitHeaders(limit));
   }

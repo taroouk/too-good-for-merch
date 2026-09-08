@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Role } from "@prisma/client";
 import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
+import { formatExchangeRate, formatMoney, itemDisplayCurrency } from "src/lib/orders/display";
 import PaymentStatusClient from "./PaymentStatusClient";
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -24,6 +25,15 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     orderBy: { createdAt: "desc" },
     select: { createdAt: true },
   });
+  // OrderItem money is canonical USD on the current pricing model, while
+  // Order.totalCents is what Paymob actually charged (EGP) -- see
+  // src/lib/orders/checkout.ts. Labelling line items with order.currency
+  // reported a USD figure as EGP, understating each item by roughly the
+  // exchange rate. itemDisplayCurrency is the one helper that gets this
+  // split right, including for pre-split historical orders.
+  const itemCurrency = itemDisplayCurrency(order);
+  const showsConversion = itemCurrency !== order.currency;
+
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
       <div className="mx-auto max-w-2xl">
@@ -45,17 +55,22 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
                 <span>
                   {item.quantity}x {item.product.replaceAll("_", " ")} - {item.fabric.replaceAll("_", " ")}
                 </span>
-                <strong>
-                  {order.currency} {(item.totalCents / 100).toFixed(2)}
-                </strong>
+                <strong>{formatMoney(item.totalCents, itemCurrency)}</strong>
               </div>
             ))}
             <div className="mt-3 flex items-center justify-between border-t border-black/10 pt-4 text-lg">
-              <strong>Total</strong>
-              <strong>
-                {order.currency} {(order.totalCents / 100).toFixed(2)}
-              </strong>
+              <strong>Total charged</strong>
+              <strong>{formatMoney(order.totalCents, order.currency)}</strong>
             </div>
+            {showsConversion ? (
+              <p className="mt-2 text-xs text-black/45">
+                Items are shown in {itemCurrency}. You were charged in {order.currency}
+                {order.exchangeRateUsed
+                  ? ` at 1 ${itemCurrency} = ${formatExchangeRate(order.exchangeRateUsed)} ${order.currency}`
+                  : ""}
+                , and the total includes tax and shipping.
+              </p>
+            ) : null}
           </div>
         </section>
       </div>

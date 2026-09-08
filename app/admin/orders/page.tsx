@@ -14,6 +14,7 @@ import { Table, Tbody, Td, Th, Thead } from "src/components/admin/ui/Table";
 import TableCardSwitch from "src/components/admin/ui/TableCardSwitch";
 import { buttonClass } from "src/components/admin/ui/Button";
 import { ORDER_STATUS_LABELS, orderStatusTone, paymentStatusTone } from "src/components/admin/ui/status";
+import { ORDER_TOTAL_FILTER_HINT, orderTotalFilterLabel } from "src/lib/orders/display";
 
 const PAGE_SIZE = 25;
 
@@ -141,12 +142,12 @@ export default async function AdminOrdersPage({
                 <Input type="date" name="to" defaultValue={to} className="mt-1 h-9 w-auto" />
               </Label>
               <Label>
-                <span className="text-xs font-medium text-admin-muted">Min total</span>
-                <Input type="number" step="0.01" min="0" name="minTotal" defaultValue={minTotal} placeholder="0.00" className="mt-1 h-9 w-24" />
+                <span className="text-xs font-medium text-admin-muted">{orderTotalFilterLabel("Min")}</span>
+                <Input type="number" step="0.01" min="0" name="minTotal" defaultValue={minTotal} placeholder="0.00" className="mt-1 h-9 w-28" />
               </Label>
               <Label>
-                <span className="text-xs font-medium text-admin-muted">Max total</span>
-                <Input type="number" step="0.01" min="0" name="maxTotal" defaultValue={maxTotal} placeholder="0.00" className="mt-1 h-9 w-24" />
+                <span className="text-xs font-medium text-admin-muted">{orderTotalFilterLabel("Max")}</span>
+                <Input type="number" step="0.01" min="0" name="maxTotal" defaultValue={maxTotal} placeholder="0.00" className="mt-1 h-9 w-28" />
               </Label>
               <button className={buttonClass({ variant: "outline", size: "sm" })}>Apply</button>
               {from || to || minTotal || maxTotal ? (
@@ -155,6 +156,7 @@ export default async function AdminOrdersPage({
                 </Link>
               ) : null}
             </div>
+            <p className="mt-2 text-xs text-admin-faint">{ORDER_TOTAL_FILTER_HINT}</p>
           </form>
 
           <TableCardSwitch

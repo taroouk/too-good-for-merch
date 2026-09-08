@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { OrderStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { requireAdmin } from "src/lib/admin/auth";
+import { requireNoteParent } from "src/lib/admin/notes";
 
 const allowedStatusFlow: Record<OrderStatus, OrderStatus[]> = {
   NEW: [OrderStatus.CANCELLED],
@@ -36,6 +37,10 @@ export async function addAdminNoteAction(formData: FormData) {
   const id = String(formData.get("id") ?? "");
   const body = String(formData.get("body") ?? "").trim().slice(0, 4000);
   if (!id || !body) throw new Error("Admin note cannot be empty.");
+  requireNoteParent(
+    await prisma.order.findUnique({ where: { id }, select: { id: true } }),
+    "Order not found.",
+  );
   await prisma.$transaction([
     prisma.adminNote.create({ data: { orderId: id, authorId: admin.id, body } }),
     prisma.adminAuditLog.create({ data: { orderId: id, adminId: admin.id, action: "ADMIN_NOTE_ADDED" } }),

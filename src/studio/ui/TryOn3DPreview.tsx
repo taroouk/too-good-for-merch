@@ -9,7 +9,10 @@ import type { GarmentColor, ProductType } from "@prisma/client";
 // placement-coordinate table here.
 import { getPlacementSide, getTemplateAspectRatio } from "src/studio/render/placement-config";
 import { getPlacementStyle } from "src/studio/render/placement-css";
+import { previewArtworkBlend } from "src/studio/render/preview-blend";
+import { artworkOffsetPx, clampArtworkRotation } from "src/studio/render/transform";
 import { useContainerWidth } from "src/studio/ui/useContainerSize";
+import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 
 type PreviewSide = "front" | "back";
 
@@ -32,6 +35,7 @@ type TryOn3DPreviewProps = {
     x: number;
     y: number;
     scale: number;
+    rotation?: number;
   };
   generatedMockupUrl?: string | null;
   isMockupStale?: boolean;
@@ -97,6 +101,14 @@ export default function TryOn3DPreview({
       ? frontImage
       : backImage;
 
+  // Trimmed to visible content client-side, using the exact same alpha
+  // scan the server's trimToVisibleBounds runs, so this preview's box
+  // aspect ratio (width fixed, height: auto -> driven by this image's
+  // intrinsic aspect ratio) matches what sharp-renderer.ts actually
+  // composites, including for asymmetric transparent padding. See
+  // useTrimmedArtworkUrl.ts.
+  const trimmedArtworkUrl = useTrimmedArtworkUrl(artworkUrl);
+
   const shouldShowArtwork = useMemo(() => {
     if (showingGeneratedMockup) return false;
     if (!artworkUrl || !activePlacement) return false;
@@ -122,9 +134,12 @@ export default function TryOn3DPreview({
   const artworkTransformStyle = useMemo(() => {
     const baseTransform = typeof artworkStyle.transform === "string" ? artworkStyle.transform : "";
     const transform = artworkTransform ?? { x: 0, y: 0, scale: 1 };
-    const offsetX = transform.x * containerWidth;
-    const offsetY = transform.y * containerWidth;
-    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${transform.scale})`.trim();
+    const { x: offsetX, y: offsetY } = artworkOffsetPx(transform, containerWidth);
+    // P3-21c: rotate about the artwork's own center, matching the server
+    // compositor, which rotates the artwork buffer and re-centers it on the
+    // resolved anchor (src/studio/render/composite.ts).
+    const rotation = clampArtworkRotation(transform.rotation);
+    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${transform.scale}) rotate(${rotation}deg)`.trim();
   }, [artworkStyle, artworkTransform, containerWidth]);
 
   function cnDot(active: boolean) {
@@ -166,13 +181,12 @@ export default function TryOn3DPreview({
         {/* ده اللوجو اللي بينزل فوق صورتك الأصلية بالإحداثيات المظبوطة */}
         {shouldShowArtwork ? (
           <img
-            src={artworkUrl!}
+            src={trimmedArtworkUrl ?? artworkUrl!}
             alt="Artwork overlay"
             style={{ 
               position: "absolute", 
               zIndex: 30, 
-              mixBlendMode: color === "WHITE" ? "multiply" : "normal",
-              opacity: color === "WHITE" ? 0.95 : 1,
+              ...previewArtworkBlend(color),
               ...artworkStyle,
               transform: artworkTransformStyle,
             }}

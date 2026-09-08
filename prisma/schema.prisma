@@ -217,6 +217,19 @@ model Order {
   @@index([userId])
   @@index([status])
   @@index([paymentStatus])
+  // P2-5: the webhook handler looks orders up by paymobOrderId
+  // (app/api/payments/paymob/webhook/route.ts) with no index today, forcing
+  // a full table scan on every delivery. Not a @@unique constraint: each
+  // retried checkout attempt beyond the reuse window
+  // (create-intent/route.ts) creates a brand new Paymob order and
+  // overwrites this column with the new id, so an Order's paymobOrderId
+  // changes over its lifetime -- Paymob ids from its earlier, abandoned
+  // attempts are never removed from the database, they just live on in
+  // PaymentAttempt.externalId (see that model) instead of this column.
+  // A unique index would also risk failing to apply against any existing
+  // rows that already share a value (e.g. legacy/test data), which a
+  // plain index cannot.
+  @@index([paymobOrderId])
 }
 
 model OrderItem {
@@ -311,6 +324,24 @@ model WebhookEvent {
   @@index([orderId])
   @@index([transactionId])
   @@index([createdAt])
+}
+
+// P2-6: backs the distributed rate limiter (src/lib/rate-limit-db.ts). An
+// in-memory Map is scoped to a single serverless instance -- on Vercel a
+// determined caller's requests land on different warm instances (or fresh
+// cold starts) with their own independent memory, so a per-instance
+// counter never actually bounds a caller's total request rate. This table
+// makes the counter visible to every instance via the one piece of shared
+// infrastructure already in this project (Postgres/Neon) instead of adding
+// a new external dependency (e.g. Upstash/Redis) purely for this. `key` is
+// `${scope}:${identifier}` (e.g. "auth:login:1.2.3.4:someone@example.com").
+// Rows are cleaned up opportunistically by the limiter itself (see
+// RATE_LIMIT_CLEANUP_PROBABILITY) rather than a cron job, since this repo
+// has none configured.
+model RateLimitBucket {
+  key     String   @id
+  count   Int
+  resetAt DateTime
 }
 
 model AdminAuditLog {

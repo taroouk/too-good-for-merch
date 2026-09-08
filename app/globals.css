@@ -1701,10 +1701,10 @@ h6,
 
 .studio-bespoke-modal {
   position: relative;
-  width: 820px;
+  width: 860px;
   max-width: calc(100vw - 32px);
-  max-height: min(720px, calc(100svh - 32px)) !important;
-  max-height: min(720px, calc(100dvh - 32px)) !important;
+  max-height: min(760px, calc(100svh - 48px)) !important;
+  max-height: min(760px, calc(100dvh - 48px)) !important;
   min-height: min(430px, calc(100dvh - 32px));
   display: flex;
   flex-direction: column;
@@ -1715,21 +1715,44 @@ h6,
   box-shadow: 0 34px 90px rgba(0,0,0,0.18);
 }
 
-/* Wraps preview + controls so the modal scrolls as one region while the
-   close button (a sibling, absolutely positioned against the panel) stays
-   fixed in view. Desktop keeps the original 2-column grid; mobile stacks. */
+/* Lays out preview + controls as two independent columns -- NEITHER this
+   nor its children scroll as one shared region anymore. Previously this
+   was itself the scroll container (overflow-y: auto), which forced a
+   single grid row to stretch to the modal's full height and made BOTH
+   columns scroll together: the short left preview inherited a tall empty
+   row (dead whitespace) while the taller right column's own overflow
+   dragged the whole preview out of view to reach the Save button instead
+   of just scrolling its own content. Scroll ownership is now explicit and
+   local to each column (see .studio-bespoke-preview /
+   .studio-bespoke-controls-scroll below) -- this is purely a layout row,
+   never a scroll surface. Desktop keeps the original 2-column grid;
+   mobile stacks (see max-width:932 block below). */
 .studio-bespoke-scroll {
   display: grid;
   grid-template-columns: 382px 1fr;
+  align-items: stretch;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  overflow: hidden;
 }
 
 .studio-bespoke-preview {
   display: flex;
   flex-direction: column;
+  /* Vertically balances the canvas + placement grid inside whatever
+     height this column actually gets (matches the controls column via
+     grid stretch) instead of pinning everything to the top and leaving a
+     dead gap underneath -- the "excessive unused vertical whitespace"
+     complaint. */
+  justify-content: center;
+  gap: 22px;
+  min-height: 0;
+  /* Fallback only: this column normally fits without scrolling, but a
+     very short viewport (see max-height:560 rules) can still make its own
+     content taller than the space it's given -- it must not force the
+     controls column to scroll along with it, so it owns its own overflow. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   border-right: 1px solid #000000;
   background: linear-gradient(180deg, #fbfaf7, #ffffff);
   padding: 28px 26px 18px;
@@ -1772,7 +1795,9 @@ h6,
   height: 104px;
   transform: translateX(-50%);
   object-fit: contain;
-  mix-blend-mode: multiply;
+  /* P3-21b: no mix-blend-mode here -- the artwork overlay must match the
+     server compositor, which is plain alpha-over. See previewArtworkBlend
+     in src/studio/render/preview-blend.ts. */
 }
 
 .studio-bespoke-artwork-draggable {
@@ -1805,11 +1830,18 @@ h6,
 }
 
 .studio-placement-card {
-  height: 51px;
+  /* Square frame instead of a fixed pixel height: at 6 columns this cell's
+     width already varies with the modal/viewport width, so a fixed height
+     made the cards look randomly cropped/inconsistent against their own
+     width. aspect-ratio keeps every card square (and consistent with the
+     other artwork/upload frames below) at any width. */
+  aspect-ratio: 1 / 1;
+  height: auto;
+  min-height: 40px;
   border: 1px solid rgba(0,0,0,0.14);
   border-radius: 10px;
   background: #ffffff;
-  padding: 2px;
+  padding: 4px;
   transition: border-color 160ms ease, transform 160ms ease;
 }
 
@@ -1828,10 +1860,36 @@ h6,
   object-fit: contain;
 }
 
+/* Owns its own height (matches the preview column via the grid's
+   align-items: stretch) and splits into a scrollable body
+   (.studio-bespoke-controls-scroll) + a footer that never scrolls
+   (.studio-bespoke-controls-footer, holds Save T-Shirt) -- this is the
+   modal's primary/explicit scroll owner (see PART 6). Save is pinned
+   below the scroll region so it's always visible and never clipped,
+   regardless of how much content (artwork tools, AI mockup actions,
+   uploads grid) is above it. */
 .studio-bespoke-controls {
   display: flex;
   flex-direction: column;
-  padding: 36px 28px 28px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.studio-bespoke-controls-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  padding: 32px 28px 20px;
+}
+
+.studio-bespoke-controls-footer {
+  flex: 0 0 auto;
+  padding: 14px 28px 24px;
+  border-top: 1px solid rgba(0,0,0,0.1);
 }
 
 .studio-bespoke-title {
@@ -1857,10 +1915,17 @@ h6,
 .studio-selected-artwork-card,
 .studio-selected-artwork-add {
   position: relative;
-  height: 58px;
+  /* Square frame (was a fixed 58px height) so every thumbnail -- and the
+     "add" tile alongside them -- shares the exact same proportions as
+     .studio-upload-slot below, instead of two differently-shaped grids
+     of artwork sitting next to each other. */
+  aspect-ratio: 1 / 1;
+  height: auto;
+  min-height: 56px;
   border: 1px solid rgba(0,0,0,0.14);
   border-radius: 10px;
   background: #ffffff;
+  transition: border-color 160ms ease, transform 160ms ease;
 }
 
 .studio-selected-artwork-card {
@@ -1869,29 +1934,58 @@ h6,
   justify-content: center;
 }
 
+.studio-selected-artwork-card:hover {
+  border-color: rgba(0,0,0,0.4);
+}
+
+.studio-selected-artwork-card:active {
+  transform: scale(0.98);
+}
+
 .studio-selected-artwork-remove {
   position: absolute;
   right: 4px;
-  top: 2px;
+  top: 4px;
+  height: 18px;
+  width: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
-  background: transparent;
-  font-size: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: rgba(0, 0, 0, 0.7);
+  font-size: 11px;
   line-height: 1;
+  /* 18px visual size is still below the 44px touch-target guideline on a
+     thumbnail this small; padding-based hit-slop keeps the icon compact
+     while giving touch/pointer input a realistic target. */
+  padding: 4px;
 }
 
 .studio-selected-artwork-image {
-  height: 35px;
-  width: 35px;
+  height: 70%;
+  width: 70%;
   object-fit: contain;
 }
 
 .studio-selected-artwork-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-style: dashed;
   color: rgba(0,0,0,0.52);
   font-size: 8px;
   font-weight: 700;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-align: center;
+  padding: 4px;
+}
+
+.studio-selected-artwork-add:hover {
+  border-color: rgba(0,0,0,0.4);
+  color: rgba(0,0,0,0.75);
 }
 
 .studio-artwork-tools {
@@ -1901,23 +1995,57 @@ h6,
 
 .studio-artwork-transform-controls {
   display: grid;
-  grid-template-columns: 28px 1fr 28px auto;
+  /* -/+ bumped from 28px to 34px square so they're an easier target and
+     visually balanced against the taller Reset button and the slider
+     between them, instead of reading as an afterthought. */
+  grid-template-columns: 34px 1fr 34px auto;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
 }
 
-.studio-artwork-transform-controls button,
+/* Scoped to .studio-artwork-zoom-button specifically (NOT the generic
+   ".studio-artwork-transform-controls button" descendant selector) --
+   that broader selector also matched .studio-artwork-reset-button (it's a
+   <button> in the same container too), forcing Reset into the same 34px
+   square box as +/- and clipping its "Reset" label to one wrapped,
+   overflow-hidden line. */
+.studio-artwork-zoom-button {
+  height: 34px;
+  width: 34px;
+  font-size: 15px;
+}
+
 .studio-artwork-edit-button,
 .studio-artwork-reset-button {
-  height: 28px;
+  height: 34px;
+  padding: 0 14px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.studio-artwork-zoom-button,
+.studio-artwork-edit-button,
+.studio-artwork-reset-button {
   border: 1px solid rgba(0,0,0,0.18);
   border-radius: 8px;
   background: #ffffff;
   color: #000000;
-  font-size: 8px;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.studio-artwork-zoom-button:hover,
+.studio-artwork-edit-button:hover,
+.studio-artwork-reset-button:hover {
+  border-color: #000000;
+}
+
+.studio-artwork-zoom-button:active,
+.studio-artwork-edit-button:active,
+.studio-artwork-reset-button:active {
+  transform: scale(0.96);
 }
 
 .studio-artwork-transform-controls input[type="range"] {
@@ -1987,13 +2115,29 @@ h6,
 
 .studio-upload-slot {
   display: flex;
-  height: 45px;
+  /* Square frame (was a fixed 45px height) so every uploaded-artwork
+     thumbnail is the same shape as the selected-artwork/placement frames
+     above, and stays square instead of looking squashed as the 2-column
+     grid gets wider on narrower panels. min-height keeps it from
+     shrinking below a reasonable tap target on very narrow columns. */
+  aspect-ratio: 1 / 1;
+  height: auto;
+  min-height: 64px;
   align-items: center;
   justify-content: center;
   border: 1px dashed rgba(0,0,0,0.16);
   border-radius: 10px;
   background: #ffffff;
   color: rgba(0,0,0,0.35);
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.studio-upload-slot:hover:not(:disabled) {
+  border-color: rgba(0,0,0,0.4);
+}
+
+.studio-upload-slot:active:not(:disabled) {
+  transform: scale(0.98);
 }
 
 .studio-upload-slot:disabled {
@@ -2005,7 +2149,7 @@ h6,
   height: 100%;
   width: 100%;
   object-fit: contain;
-  padding: 5px;
+  padding: 6px;
 }
 
 .studio-upload-name {
@@ -2024,7 +2168,7 @@ h6,
 
 .studio-upload-empty {
   grid-column: 1 / -1;
-  min-height: 45px;
+  min-height: 64px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2039,8 +2183,9 @@ h6,
 }
 
 .studio-bespoke-save-button {
-  margin-top: auto;
-  height: 38px;
+  width: 100%;
+  margin-top: 0;
+  height: 40px;
   border: 1px solid #000000;
   border-radius: 12px;
   background: #000000;
@@ -2377,11 +2522,25 @@ h6,
     min-height: 0 !important;
   }
 
-  .studio-modal-scroll,
-  .studio-bespoke-scroll {
+  .studio-modal-scroll {
     flex: 1 1 auto;
     min-height: 0;
     overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  /* NOT .studio-bespoke-scroll: that's a plain grid row, never a scroll
+     surface (see its own comment above) -- .studio-bespoke-preview and
+     .studio-bespoke-controls-scroll below already own their own overflow
+     independently, including at short heights. Re-adding overflow-y:auto
+     here would resurrect the original bug this file's other comments
+     describe: both columns scrolling together, dragging the preview out
+     of view to reach Save and clipping it at the bottom of exactly this
+     kind of short desktop viewport. */
+  .studio-bespoke-preview,
+  .studio-bespoke-controls-scroll {
+    min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -2405,6 +2564,7 @@ h6,
 
   .studio-bespoke-preview {
     padding-top: 40px;
+    justify-content: flex-start;
   }
 
   .studio-auth-copy,
@@ -2413,13 +2573,18 @@ h6,
   }
 
   .studio-auth-submit,
-  .studio-modal-primary-button,
-  .studio-bespoke-save-button {
+  .studio-modal-primary-button {
     position: sticky;
     bottom: 0;
     z-index: 5;
     box-shadow: 0 -10px 14px 6px #ffffff;
   }
+
+  /* .studio-bespoke-save-button no longer needs position:sticky here --
+     it already lives in .studio-bespoke-controls-footer, a non-scrolling
+     flex sibling of .studio-bespoke-controls-scroll, so it's always
+     visible without being pulled into (or pinned against) any scroll
+     region. */
 }
 
 /* ============================================================
@@ -2492,9 +2657,36 @@ h6,
 
   .studio-bespoke-preview {
     flex: 0 0 auto;
+    justify-content: flex-start;
+    /* Single continuous page scroll owned by .studio-bespoke-scroll on
+       phones (see block comment above) -- this column must not also
+       scroll internally, or it'd be a scrollbar nested inside a
+       scrollbar. */
+    overflow-y: visible;
     /* padding-top clears the absolute close button (44px + top:4px in
        portrait, 36px + top:4px in landscape) so X never covers the art. */
     padding: 52px 14px 14px;
+  }
+
+  /* Same reasoning: the desktop/tablet split (own scroll + pinned footer)
+     collapses into the single full-page scroll here, so the inner
+     scroll body must give up its own overflow and let content flow
+     naturally into .studio-bespoke-scroll. Its own padding is zeroed
+     because .studio-bespoke-controls (below) already supplies the
+     mobile padding -- keeping both would double it on every edge. */
+  .studio-bespoke-controls-scroll {
+    overflow-y: visible;
+    padding: 0;
+  }
+
+  /* Save lives in a fixed full-bleed bar (see .studio-bespoke-save-button
+     below), so this footer is no longer a pinned action bar on mobile --
+     it's just an inert flex child sitting in the single page scroll. Zero
+     its desktop padding/divider so it doesn't leave a stray bordered gap
+     above the fixed Save bar. */
+  .studio-bespoke-controls-footer {
+    padding: 0;
+    border-top: 0;
   }
 
   /* Cap the preview (1:1 for front, 2:3 portrait for back -- see
@@ -3086,8 +3278,10 @@ h6,
 }
 
 .studio-colour-dot-core {
-  width: 26px !important;
-  height: 26px !important;
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 999px !important;
+  display: block !important;
 }
 
 .studio-colour-dot-core-black {

@@ -1,45 +1,30 @@
+import { REQUIRED_PRODUCTION_ENV } from "../../scripts/required-production-env.mjs";
+
 export type EnvRequirement = {
   name: string;
   requiredInProduction: boolean;
   description: string;
 };
 
+// Descriptions live here (display-only); the names themselves come from
+// scripts/required-production-env.mjs so this list and the pre-build CLI
+// check (scripts/check-production-env.mjs) can never drift apart.
+const REQUIRED_DESCRIPTIONS: Record<string, string> = {
+  DATABASE_URL: "PostgreSQL connection string used by Prisma.",
+  NEXTAUTH_URL: "Canonical HTTPS application URL.",
+  NEXTAUTH_SECRET: "Long random secret used to sign auth tokens.",
+  PAYMOB_API_KEY: "Paymob server API key.",
+  PAYMOB_INTEGRATION_ID: "Paymob card integration ID.",
+  PAYMOB_IFRAME_ID: "Paymob hosted card iframe ID.",
+  PAYMOB_HMAC_SECRET: "Paymob webhook HMAC secret.",
+};
+
 export const ENV_REQUIREMENTS: EnvRequirement[] = [
-  {
-    name: "DATABASE_URL",
-    requiredInProduction: true,
-    description: "PostgreSQL connection string used by Prisma.",
-  },
-  {
-    name: "NEXTAUTH_URL",
-    requiredInProduction: true,
-    description: "Canonical HTTPS application URL.",
-  },
-  {
-    name: "NEXTAUTH_SECRET",
-    requiredInProduction: true,
-    description: "Long random secret used to sign auth tokens.",
-  },
-  {
-    name: "PAYMOB_API_KEY",
-    requiredInProduction: true,
-    description: "Paymob server API key.",
-  },
-  {
-    name: "PAYMOB_INTEGRATION_ID",
-    requiredInProduction: true,
-    description: "Paymob card integration ID.",
-  },
-  {
-    name: "PAYMOB_IFRAME_ID",
-    requiredInProduction: true,
-    description: "Paymob hosted card iframe ID.",
-  },
-  {
-    name: "PAYMOB_HMAC_SECRET",
-    requiredInProduction: true,
-    description: "Paymob webhook HMAC secret.",
-  },
+  ...REQUIRED_PRODUCTION_ENV.map((name) => ({
+    name,
+    requiredInProduction: true as const,
+    description: REQUIRED_DESCRIPTIONS[name] ?? "",
+  })),
   {
     name: "ADMIN_EMAILS",
     requiredInProduction: false,

@@ -6,6 +6,10 @@
 // re-render, no Gemini call: the bytes are copied verbatim from the
 // mockup. Unit-tested in src/lib/artwork/__tests__/save.test.ts.
 import { createHash } from "node:crypto";
+// Relative import on purpose: this module is compiled + run as plain JS by
+// the pure test runner (scripts/run-payments-tests.mjs), which cannot
+// resolve the "src/*" baseUrl alias at runtime.
+import { TRANSFORM_BOUNDS } from "../../studio/render/transform";
 
 export class ArtworkSaveError extends Error {
   status = 400;
@@ -83,17 +87,28 @@ export type ArtworkPlacement = {
   rotation: number;
 };
 
+// Bounds-checked against src/studio/render/transform.ts's TRANSFORM_BOUNDS
+// -- the same contract the renderer enforces -- so a value that would
+// later be rejected by validateTransform() can never be written to
+// BuildDraft.artworkPlacement in the first place. A non-finite/missing
+// field falls back to its identity default (0 for x/y/rotation, 1 for
+// scale); a finite but out-of-range field is clamped into bounds rather
+// than thrown, so malformed legacy data read back from the DB degrades to
+// a safe in-range value instead of bricking the builder.
+function boundedNumber(n: unknown, fallback: number, bounds: { min: number; max: number }): number {
+  const value = typeof n === "number" && Number.isFinite(n) ? n : fallback;
+  return Math.min(bounds.max, Math.max(bounds.min, value));
+}
+
 export function normalizeArtworkPlacement(value: unknown): ArtworkPlacement | null {
   if (!value || typeof value !== "object") return null;
   const v = value as Record<string, unknown>;
-  const num = (n: unknown, fallback: number) =>
-    typeof n === "number" && Number.isFinite(n) ? n : fallback;
   const placement = typeof v.placement === "string" ? v.placement : null;
   return {
     placement,
-    x: num(v.x, 0),
-    y: num(v.y, 0),
-    scale: num(v.scale, 1),
-    rotation: num(v.rotation, 0),
+    x: boundedNumber(v.x, 0, TRANSFORM_BOUNDS.x),
+    y: boundedNumber(v.y, 0, TRANSFORM_BOUNDS.y),
+    scale: boundedNumber(v.scale, 1, TRANSFORM_BOUNDS.scale),
+    rotation: boundedNumber(v.rotation, 0, TRANSFORM_BOUNDS.rotation),
   };
 }

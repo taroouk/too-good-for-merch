@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { apiError, NO_STORE_HEADERS } from "src/lib/api/responses";
 import { computePrice, customQuotePriceResult } from "src/pricing/engine";
+import { isValidExchangeRate } from "src/pricing/currency";
+import { computeOrderTotals } from "src/lib/orders/totals";
 import {
   normalizePlacements,
   placementsFromCustomNotes,
@@ -72,8 +74,28 @@ export async function GET(
             placements,
           });
 
+    // The checkout page previously displayed price.total on its own, which
+    // is the pre-tax, pre-shipping SUBTOTAL in USD -- while Paymob charges
+    // the tax/shipping-inclusive total in EGP, so the customer was shown
+    // neither the right amount nor the right currency. Quote the full
+    // breakdown from the same computeOrderTotals createCheckoutOrder uses
+    // so the two cannot disagree. Null when the build isn't priceable
+    // (bespoke/bulk) or the store's rate is unconfigured -- checkout fails
+    // closed on the latter, and this must not invent a total meanwhile.
+    const settings = await prisma.storeSetting.findUnique({ where: { id: "store" } }).catch(() => null);
+    const totals =
+      price.mode === "standard" && isValidExchangeRate(settings?.usdToEgpRate)
+        ? computeOrderTotals({
+            subtotalUsdCents: Math.round(price.total * 100),
+            taxRateBps: settings?.taxRateBps,
+            shippingCents: settings?.shippingCents,
+            usdToEgpRate: settings.usdToEgpRate,
+          })
+        : null;
+
     return NextResponse.json(
       {
+        totals,
         build: {
           id: build.id,
           name: build.name,

@@ -7,7 +7,7 @@
 // The Studio preview (TryOn3DPreview.tsx / BuilderClient.tsx's bespoke
 // canvas) positions the artwork with CSS: top/left/width from
 // getPlacementStyle() (placement-css.ts, itself derived from
-// getPlacementBox() below), then `transform: translate(x*W, y*H)
+// getPlacementBox() below), then `transform: translate(x*W, y*W)
 // scale(s)` with the browser's default transform-origin (50% 50%, i.e.
 // the box's own center) -- see BuilderClient.tsx's bespokeArtworkTransform
 // and TryOn3DPreview.tsx's artworkTransformStyle. Both containers are now
@@ -15,6 +15,16 @@
 // in placement-config.ts -- front templates really are 1:1 squares, but
 // back templates are a 1024x1536, 2:3 portrait), so a fraction of the
 // container is the same fraction of the template on BOTH sides.
+//
+// Note the y offset is x*W and y*W -- BOTH axes are a fraction of the
+// canvas WIDTH, because that is the unit the client itself writes when a
+// drag delta becomes `px / containerWidth` for x and y alike
+// (BuilderClient's handleArtworkPointerMove). This suite previously wrote
+// y*H here, which was a restatement of what resolvePlacement happened to
+// do rather than a model of the client -- so it passed while the server
+// really was placing back-template artwork 1.5x too low. When correcting
+// that, fix the CLIENT model here first and let it fail; never edit this
+// expectation to match whatever resolvePlacement currently returns.
 //
 // This suite previously used one hardcoded 2000x2000 SQUARE for every
 // placement, front and back alike -- meaning it could never have caught a
@@ -99,11 +109,12 @@ function cssEquivalentBox(
   // scale(s) around the box's own center, applied first (innermost)...
   const afterScaleLeft = centerX - scaledWidth / 2;
   const afterScaleTop = centerY - scaledHeight / 2;
-  // ...then translate(x*W, y*H), applied second (outermost), in real px
+  // ...then translate(x*W, y*W), applied second (outermost), in real px
   // unaffected by the scale -- matches CSS matrix composition order for
-  // `transform: translate(...) scale(...)`.
+  // `transform: translate(...) scale(...)`. Both axes use the WIDTH; see
+  // the file header for why y*H here was the bug rather than the spec.
   const left = afterScaleLeft + transform.x * templateWidth;
-  const top = afterScaleTop + transform.y * templateHeight;
+  const top = afterScaleTop + transform.y * templateWidth;
 
   return {
     left: Math.round(left),

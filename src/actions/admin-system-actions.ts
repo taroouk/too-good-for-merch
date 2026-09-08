@@ -14,8 +14,47 @@ export async function generateRetryPaymentLinkAction(formData: FormData) {
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
   if (!order) throw new Error("Order not found.");
   if (order.paymentStatus === PaymentStatus.PAID || order.paymentStatus === PaymentStatus.REFUNDED) throw new Error("Paid orders cannot be retried.");
+
+  // P2-10: a double-click (or a slow first request + impatient retry) on
+  // "Generate retry link" previously had nothing stopping it from creating
+  // two separate Paymob orders/payment links for the same order back to
+  // back -- both real, chargeable Paymob orders, confusing for the
+  // customer (which link is live?) and wasteful of Paymob's own order
+  // creation quota. Guard server-side (the client-side pending-disable in
+  // app/admin/payments/page.tsx only protects against the fast in-browser
+  // double-click, not two separate form submissions/tabs) by checking for
+  // a very recent PENDING attempt on this order and refusing to create
+  // another one if the last one is still fresh.
+  //
+  // The check-then-create below is wrapped in a transaction that takes a
+  // row lock on the Order (`SELECT ... FOR UPDATE`) so two genuinely
+  // concurrent calls for the SAME order (two tabs, a real double-click
+  // faster than one request/response cycle) are serialized rather than
+  // racing: the second call's transaction blocks until the first commits
+  // its new PaymentAttempt row, so it always sees that fresh row in its
+  // own check. The status check also includes CREATED (not just PENDING)
+  // because a freshly created attempt starts as CREATED and only becomes
+  // PENDING after the Paymob API round-trip completes -- checking PENDING
+  // alone left exactly the fast-concurrent-call window open that this
+  // guard exists to close, since both calls would find no PENDING row yet.
+  // Different orders are unaffected -- the row lock is scoped per orderId.
+  const RECENT_ATTEMPT_WINDOW_MS = 30_000;
   const method = order.paymentMethod ?? PaymentMethod.CARD;
-  const attempt = await prisma.paymentAttempt.create({ data: { orderId, method, amountCents: order.totalCents, currency: order.currency } });
+  const attempt = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${orderId} FOR UPDATE`;
+    const recentAttempt = await tx.paymentAttempt.findFirst({
+      where: {
+        orderId,
+        status: { in: [PaymentAttemptStatus.CREATED, PaymentAttemptStatus.PENDING] },
+        createdAt: { gte: new Date(Date.now() - RECENT_ATTEMPT_WINDOW_MS) },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (recentAttempt) {
+      throw new Error("A payment link was just generated for this order. Please wait a moment before generating another.");
+    }
+    return tx.paymentAttempt.create({ data: { orderId, method, amountCents: order.totalCents, currency: order.currency } });
+  });
   try {
     const payment = await createPaymobPayment(order, method);
     await prisma.$transaction([
