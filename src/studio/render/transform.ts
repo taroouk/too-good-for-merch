@@ -1,7 +1,7 @@
 // file: src/studio/render/transform.ts
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import { RendererError } from "./errors";
-import { getPlacementBox } from "./placement-config";
+import { getPlacementBox, getPlacementSide, getTemplateAspectRatio } from "./placement-config";
 import type { ArtworkTransform, GarmentBBox, PlacementBox, ResolvedPlacement } from "./types";
 
 // x AND y are both fractions of the canvas WIDTH (the template's width
@@ -89,6 +89,37 @@ export function getEffectiveScaleBounds(
   return {
     min: TRANSFORM_BOUNDS.scale.min,
     max: Math.min(TRANSFORM_BOUNDS.scale.max, placementMax),
+  };
+}
+
+// Keeps the dragged artwork's own bounding box fully inside the visible
+// garment canvas -- the UI-only counterpart to TRANSFORM_BOUNDS.x/y above
+// (which are deliberately generous, "well beyond the visible canvas", for
+// server-side validation). Without this, dragging let x/y reach the full
+// [-3, 3] range, pushing the artwork far off the shirt entirely. Approximates
+// the artwork as square (half-height == half-width, both in canvas-WIDTH
+// units, matching artworkOffsetPx's convention that both axes divide/
+// multiply by width) since the client has no reliable natural aspect ratio
+// for the uploaded image at drag time; the server's resolvePlacement still
+// applies the exact aspect-correct geometry independently.
+export function getDragBounds(
+  product: ProductType,
+  color: GarmentColor,
+  placement: PlacementType,
+  scale: number,
+): { x: { min: number; max: number }; y: { min: number; max: number } } {
+  const box = getPlacementBox(product, color, placement);
+  const side = getPlacementSide(placement);
+  const canvasAspect = getTemplateAspectRatio(side); // templateWidth / templateHeight
+  const canvasHeightInWidthUnits = 1 / canvasAspect;
+
+  const half = (box.widthPct * scale) / 2;
+  const centerX = box.xPct + box.widthPct / 2;
+  const centerY = box.yPct / canvasAspect + half;
+
+  return {
+    x: { min: half - centerX, max: 1 - centerX - half },
+    y: { min: half - centerY, max: canvasHeightInWidthUnits - centerY - half },
   };
 }
 

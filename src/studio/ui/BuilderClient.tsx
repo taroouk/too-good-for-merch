@@ -34,6 +34,7 @@ import {
   artworkOffsetPx,
   BASELINE_RENDER_DPI,
   clampArtworkRotation,
+  getDragBounds,
   getEffectiveScaleBounds,
 } from "src/studio/render/transform";
 import { getPlacementStyle } from "src/studio/render/placement-css";
@@ -174,6 +175,21 @@ function clampQty(qty: number) {
 function clampArtworkScale(scale: number, bounds: { min: number; max: number }) {
   if (!Number.isFinite(scale)) return Math.max(bounds.min, Math.min(bounds.max, 1));
   return Math.max(bounds.min, Math.min(bounds.max, scale));
+}
+
+// Keeps dragged artwork inside the visible shirt canvas -- see
+// getDragBounds's own comment in transform.ts for why this is an
+// approximation (square artwork assumption) rather than exact garment-
+// silhouette geometry.
+function clampArtworkPosition(
+  x: number,
+  y: number,
+  bounds: { x: { min: number; max: number }; y: { min: number; max: number } },
+) {
+  return {
+    x: Number.isFinite(x) ? Math.max(bounds.x.min, Math.min(bounds.x.max, x)) : 0,
+    y: Number.isFinite(y) ? Math.max(bounds.y.min, Math.min(bounds.y.max, y)) : 0,
+  };
 }
 
 // Bespoke ("CUSTOM") has no product/colour of its own yet -- that's the
@@ -783,14 +799,21 @@ export default function BuilderClient({
   }
 
   function updateArtworkTransform(next: ArtworkTransform) {
-    const bounds = getEffectiveScaleBounds(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
+    const product = state.product ?? "FITTED";
+    const color = state.color ?? "WHITE";
+    const bounds = getEffectiveScaleBounds(product, color, activePlacement);
+    const scale = clampArtworkScale(next.scale, bounds);
+    const dragBounds = getDragBounds(product, color, activePlacement, scale);
+    const { x, y } = clampArtworkPosition(next.x, next.y, dragBounds);
     setArtworkTransform({
       // x/y are fractions of the preview container's own width (see
       // src/studio/render/transform.ts), not raw px -- round to decimal
-      // precision like scale, not to the nearest integer.
-      x: Math.round(next.x * 10000) / 10000,
-      y: Math.round(next.y * 10000) / 10000,
-      scale: clampArtworkScale(next.scale, bounds),
+      // precision like scale, not to the nearest integer. Clamped to
+      // getDragBounds first so the artwork can never be dragged off the
+      // visible shirt canvas.
+      x: Math.round(x * 10000) / 10000,
+      y: Math.round(y * 10000) / 10000,
+      scale,
       // P3-21c: preserved rather than dropped -- rebuilding the transform
       // without it made the first drag/zoom silently reset rotation to 0.
       rotation: clampArtworkRotation(next.rotation),
