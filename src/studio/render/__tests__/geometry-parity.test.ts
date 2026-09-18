@@ -45,7 +45,7 @@
 import assert from "node:assert/strict";
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import { getPlacementBox, getPlacementSide, getTemplateAspectRatio } from "../placement-config";
-import { resolvePlacement } from "../transform";
+import { getEffectiveScaleBounds, resolvePlacement } from "../transform";
 import { runSuite } from "./test-harness";
 
 const PRODUCTS: ProductType[] = ["FITTED", "OVERSIZED"];
@@ -101,10 +101,20 @@ function cssEquivalentBox(
   const left0 = box.xPct * templateWidth;
   const top0 = box.yPct * templateHeight;
 
+  // resolvePlacement clamps the requested scale to this placement's own
+  // effective ceiling (see getEffectiveScaleBounds) -- the client's zoom
+  // control clamps to the same bounds, so this CSS model must too, or a
+  // requested scale beyond the ceiling would diverge from the server here
+  // even though no real client could ever request it.
+  const clampedScale = Math.max(
+    getEffectiveScaleBounds(product, color, placement).min,
+    Math.min(getEffectiveScaleBounds(product, color, placement).max, transform.scale),
+  );
+
   const centerX = left0 + width0 / 2;
   const centerY = top0 + height0 / 2;
-  const scaledWidth = width0 * transform.scale;
-  const scaledHeight = height0 * transform.scale;
+  const scaledWidth = width0 * clampedScale;
+  const scaledHeight = height0 * clampedScale;
 
   // scale(s) around the box's own center, applied first (innermost)...
   const afterScaleLeft = centerX - scaledWidth / 2;

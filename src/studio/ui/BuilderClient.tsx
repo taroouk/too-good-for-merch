@@ -479,9 +479,23 @@ export default function BuilderClient({
 
   // A placement/product/color/transform change invalidates both tracks --
   // both compare against livePrintFingerprint (see above).
+  //
+  // Also clears savedArtworkUrl: the BespokeModal's generatedMockupUrl prop
+  // falls back to it (`aiMockupUrl ?? savedArtworkUrl`) so a previously
+  // Saved T-Shirt keeps rendering after a page reload even if the AI mockup
+  // row was pruned. But that same fallback, left uncleared, meant the
+  // canvas kept showing the last-Saved snapshot FOREVER once one existed --
+  // every edit already nulled aiMockupUrl via discardAiMockup above, but
+  // the fallback silently took over, so the preview looked permanently
+  // "stuck" on the saved image and dragging (which moves an overlay
+  // rendered invisible whenever generatedMockupUrl is truthy -- see
+  // artworkOverlayOpacity) appeared to do nothing. A live edit invalidates
+  // a saved snapshot exactly like it invalidates the print/AI mockups, so
+  // this must be discarded here too, not just at Save time.
   function discardMockups() {
     discardPrintMockup();
     discardAiMockup();
+    setSavedArtworkUrl(null);
     setMockupError(null);
   }
 

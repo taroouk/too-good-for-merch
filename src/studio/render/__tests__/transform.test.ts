@@ -53,10 +53,10 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 410);
-      assert.equal(resolved.top, 500);
-      assert.equal(resolved.width, 180);
-      assert.equal(resolved.height, 90);
+      assert.equal(resolved.left, 340);
+      assert.equal(resolved.top, 400);
+      assert.equal(resolved.width, 320);
+      assert.equal(resolved.height, 160);
       assert.equal(resolved.rotation, 0);
     },
 
@@ -65,14 +65,18 @@ export async function runAll() {
         product: "FITTED",
         color: "WHITE",
         placement: "CENTER_FRONT",
+        // CENTER_FRONT's own effective scale ceiling (MAX_PLACEMENT_WIDTH_FRACTION
+        // / widthPct = 0.45 / 0.24 = 1.875) is below the requested 2, so the
+        // resolved size reflects the clamped 1.875, not the raw request --
+        // exactly what getEffectiveScaleBounds exists to guarantee.
         transform: { x: 0, y: 0, scale: 2 },
         templateWidth: 1000,
         templateHeight: 1000,
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.width, 360);
-      assert.equal(resolved.height, 180);
+      assert.equal(resolved.width, 450);
+      assert.equal(resolved.height, 225);
     },
 
     "resolvePlacement moves the anchor with x/y offsets"() {
@@ -91,7 +95,7 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 910);
+      assert.equal(resolved.left, 840);
     },
 
     "resolvePlacement rejects x/y beyond TRANSFORM_BOUNDS"() {

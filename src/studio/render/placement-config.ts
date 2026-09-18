@@ -8,55 +8,43 @@ import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import type { GarmentSide, PlacementBox, TemplateRef } from "./types";
 import { RendererError } from "./errors";
 
-// Values below are carried over as-is from the two previously-duplicated
-// hardcoded CSS tables (src/studio/ui/TryOn3DPreview.tsx and the bespoke
-// modal's coordinate table in BuilderClient.tsx), converted from their
-// top/left/width CSS percentages (some center-anchored via translateX(-50%),
-// some top-left-anchored) into a single consistent top-left-anchored
-// (xPct, yPct, widthPct) box. These are a starting approximation carried
-// over from already-tuned UI values, not re-derived from scratch — they
-// should be visually verified against the actual template images once the
-// compositor is wired up end-to-end.
-//
-// Garment color does not currently affect placement position in this
-// codebase (only which template image loads, see getGarmentTemplate) — both
-// BLACK and WHITE share the same box per (product, placement), matching
-// TryOn3DPreview.tsx today. The lookup below is keyed by product only; the
-// public getPlacementBox() still accepts color for API stability in case
-// color-specific geometry is needed later.
+// Re-measured directly against the CURRENT real template photos
+// (public/images/TGFM White*.png, public/images/Oversized White*.png --
+// these files were replaced mid-project with new, differently-framed
+// photos; see getTemplateAspectRatio's own comment) by compositing each box
+// as a translucent rectangle onto the real template and visually checking
+// it lands on the model's actual shirt, iterating with a percent-gridline
+// overlay for precision. The previous values here were calibrated against
+// the OLD (now-replaced) template files and no longer lined up with the
+// new photos at all -- CENTER_BACK/FULL_BACK in particular were landing on
+// the model's hair, and LEFT_CHEST/RIGHT_CHEST overlapped each other and
+// sat on the collar instead of chest-pocket height.
 const FITTED_BOXES: Record<PlacementType, PlacementBox> = {
-  CENTER_FRONT: { xPct: 0.41, yPct: 0.5, widthPct: 0.18 },
-  FULL_FRONT: { xPct: 0.385, yPct: 0.46, widthPct: 0.23 },
-  LEFT_CHEST: { xPct: 0.44, yPct: 0.49, widthPct: 0.055 },
-  RIGHT_CHEST: { xPct: 0.51, yPct: 0.49, widthPct: 0.055 },
+  CENTER_FRONT: { xPct: 0.34, yPct: 0.4, widthPct: 0.32 },
+  FULL_FRONT: { xPct: 0.2, yPct: 0.36, widthPct: 0.6 },
+  LEFT_CHEST: { xPct: 0.3, yPct: 0.38, widthPct: 0.14 },
+  RIGHT_CHEST: { xPct: 0.56, yPct: 0.38, widthPct: 0.14 },
   // BACK boxes below are calibrated separately from FRONT -- the back
-  // template (TGFM White/Black Back.png, 1024x1536) has different photo
-  // framing than the front template, so identical (xPct, yPct) values do
-  // NOT land on the same physical body location. Measured directly by
-  // sampling pixels down the panel's horizontal center on the real back
-  // template: the shirt fabric itself spans yFrac 0.286-0.716 (y=440-1100
-  // of 1536px), not the 0-1 range the old copied-from-front values assumed.
-  // yPct below targets the upper third of that measured span (shoulder-
-  // blade height), mirroring how CENTER_FRONT/FULL_FRONT sit on the chest.
-  // xPct/widthPct were already correctly centered on the back panel, so
-  // only yPct changes here. See scripts/investigate-geometry.mjs.
-  CENTER_BACK: { xPct: 0.41, yPct: 0.4, widthPct: 0.18 },
-  FULL_BACK: { xPct: 0.375, yPct: 0.36, widthPct: 0.25 },
-  LEFT_SLEEVE: { xPct: 0.35, yPct: 0.5, widthPct: 0.05 },
-  RIGHT_SLEEVE: { xPct: 0.6, yPct: 0.5, widthPct: 0.05 },
+  // template has different photo framing than the front template, so
+  // identical (xPct, yPct) values do NOT land on the same physical body
+  // location.
+  CENTER_BACK: { xPct: 0.34, yPct: 0.38, widthPct: 0.32 },
+  FULL_BACK: { xPct: 0.2, yPct: 0.34, widthPct: 0.6 },
+  LEFT_SLEEVE: { xPct: 0.06, yPct: 0.34, widthPct: 0.12 },
+  RIGHT_SLEEVE: { xPct: 0.82, yPct: 0.34, widthPct: 0.12 },
 };
 
+// See the FITTED_BOXES comment above -- same re-measurement, checked against
+// the current Oversized White/Black.png and Oversized White/Black Back.png.
 const OVERSIZED_BOXES: Record<PlacementType, PlacementBox> = {
-  CENTER_FRONT: { xPct: 0.39, yPct: 0.48, widthPct: 0.22 },
-  FULL_FRONT: { xPct: 0.37, yPct: 0.46, widthPct: 0.26 },
-  LEFT_CHEST: { xPct: 0.43, yPct: 0.48, widthPct: 0.06 },
-  RIGHT_CHEST: { xPct: 0.51, yPct: 0.48, widthPct: 0.06 },
-  // See the FITTED_BOXES comment above -- same recalibration, measured
-  // against Oversized White/Black Back.png (yFrac 0.271-0.708 measured).
-  CENTER_BACK: { xPct: 0.39, yPct: 0.38, widthPct: 0.22 },
-  FULL_BACK: { xPct: 0.36, yPct: 0.36, widthPct: 0.28 },
-  LEFT_SLEEVE: { xPct: 0.33, yPct: 0.5, widthPct: 0.06 },
-  RIGHT_SLEEVE: { xPct: 0.61, yPct: 0.5, widthPct: 0.06 },
+  CENTER_FRONT: { xPct: 0.33, yPct: 0.4, widthPct: 0.34 },
+  FULL_FRONT: { xPct: 0.18, yPct: 0.36, widthPct: 0.64 },
+  LEFT_CHEST: { xPct: 0.3, yPct: 0.38, widthPct: 0.15 },
+  RIGHT_CHEST: { xPct: 0.55, yPct: 0.38, widthPct: 0.15 },
+  CENTER_BACK: { xPct: 0.33, yPct: 0.38, widthPct: 0.34 },
+  FULL_BACK: { xPct: 0.18, yPct: 0.34, widthPct: 0.64 },
+  LEFT_SLEEVE: { xPct: 0.02, yPct: 0.36, widthPct: 0.14 },
+  RIGHT_SLEEVE: { xPct: 0.84, yPct: 0.36, widthPct: 0.14 },
 };
 
 const PLACEMENT_SIDES: Record<PlacementType, GarmentSide> = {
@@ -121,39 +109,40 @@ export function getGarmentTemplate(
   return { product, color, side, file };
 }
 
-// Real measured pixel dimensions of the template files above (verified via
-// `sharp(...).metadata()` against every file in TEMPLATE_FILES): every FRONT
-// template is a true 1:1 square (TGFM White/Oversized*.png are 1254x1254;
-// TGFM Black.png is a higher-res 2480x2480 re-export of the identical
-// framing -- same aspect ratio, just double the resolution). Every BACK
-// template (TGFM/Oversized *Back.png) is 1024x1536 -- a 2:3 portrait, NOT
-// square. This is the one fact the client preview got wrong: its container
-// was hardcoded to aspect-ratio 1/1 for both sides (see
-// TryOn3DPreview.tsx/BespokeModal.tsx), which silently pillarboxed the real
-// back photo inside object-fit:"contain" and threw off the artwork-overlay
-// percentages that assume the image fills the container exactly. Exporting
-// the real ratio here (not re-deriving it ad hoc per component) keeps this
-// file the single source of truth for anything template-geometry-shaped,
-// exactly like PlacementBox/getPlacementBox above -- it does not change
-// resolvePlacement()'s own math at all, which already reads each template's
-// actual width/height via sharp().metadata() and was never affected by this.
+// Real measured pixel dimensions of the CURRENT template files (verified via
+// `sharp(...).metadata()` against every file in TEMPLATE_FILES, 2026-09-18):
+// TGFM White.png 581x1185, TGFM Black.png 1118x2353, TGFM White Back.png
+// 689x1345, TGFM Black Back.png 683x1439, Oversized White.png 619x1197,
+// Oversized Black.png 646x1205, Oversized White Back.png 666x1213, Oversized
+// Black Back.png 716x1310. Unlike the previous generation of these assets,
+// NEITHER side is a clean square or a shared exact ratio across colors any
+// more -- every one of the 8 files is its own individual tightly-cropped
+// photo, front and back both landing in the ~0.47-0.55 (width/height) range.
+// This constant is only ever a FALLBACK now: the client preview measures
+// each image's real aspect ratio itself once it loads (see
+// useImageAspectRatio.ts) rather than trusting a single hardcoded per-side
+// value, precisely because these values go stale the moment the underlying
+// photos are swapped for a different framing/crop -- exactly what happened
+// here. resolvePlacement()'s own math is unaffected either way, since it
+// always reads each template's actual width/height via sharp().metadata().
+// Values below use the WHITE file of each side as the representative ratio
+// (same convention as TEMPLATE_REFERENCE_WIDTH below).
 const TEMPLATE_ASPECT_RATIO: Record<GarmentSide, number> = {
-  front: 1,
-  back: 1024 / 1536,
+  front: 581 / 1185,
+  back: 689 / 1345,
 };
 
 export function getTemplateAspectRatio(side: GarmentSide): number {
   return TEMPLATE_ASPECT_RATIO[side];
 }
 
-// P3-21k: TGFM Black.png (FITTED/BLACK/front) is a 2480x2480 re-export of
-// the identical framing as TGFM White.png (1254x1254) -- same aspect ratio,
-// double the resolution (see the comment above). sharp-renderer.ts used to
-// size its final output off each template's own raw metadata dimensions, so
-// an otherwise-identical mockup request (same product/placement/transform/
-// artwork/dpi) produced a ~2x larger output raster for BLACK than for WHITE
-// -- a real, customer-visible print-resolution inconsistency between
-// colorways of the same product/side, not an intentional feature.
+// P3-21k: TGFM Black.png (FITTED/BLACK/front) has never had the same native
+// resolution as TGFM White.png -- sharp-renderer.ts sizes its final output
+// off a canonical per-(product,side) reference width rather than each
+// template's own raw metadata, so an otherwise-identical mockup request
+// (same product/placement/transform/artwork/dpi) doesn't produce a
+// different-sized output raster purely because one color's source photo
+// happens to be a higher-resolution export than the other.
 //
 // This table holds the canonical REFERENCE WIDTH per (product, side) --
 // deliberately just a width, not a fixed (width, height) pair -- so
@@ -162,20 +151,43 @@ export function getTemplateAspectRatio(side: GarmentSide): number {
 // the template's own actual dimensions. That preserves whatever aspect
 // ratio the loaded template actually has (this file is not the place that
 // decides aspect ratio -- see getTemplateAspectRatio above) while still
-// normalizing absolute resolution across colors: every (product, side) pair
-// other than FITTED/front is already naturally consistent across colors
-// (OVERSIZED front: 1254x1254 both colors; both BACK templates: 1024x1536
-// both colors), so those simply get scale=1 (no-op) using their own already-
-// correct width as the reference. FITTED front's reference is 1254 (the
-// WHITE/majority resolution), so the higher-res BLACK asset (width 2480)
-// gets downscaled by ~0.506x to match -- rather than upscaling WHITE to
-// match BLACK, which would just synthesize detail that was never there.
+// normalizing absolute resolution across colors. Unlike the previous
+// generation of assets, BLACK and WHITE now have genuinely different native
+// aspect ratios (not just different resolutions of the same framing), so
+// normalizing width no longer implies identical output height across
+// colors any more -- see template-resolution-parity.test.ts's own updated
+// assertions. Values below use each side's WHITE file width as the
+// reference (arbitrary but consistent choice, matching the previous
+// generation's convention of using the majority/lower-resolution file).
 const TEMPLATE_REFERENCE_WIDTH: Record<ProductType, Record<GarmentSide, number>> = {
-  FITTED: { front: 1254, back: 1024 },
-  OVERSIZED: { front: 1254, back: 1024 },
-  CUSTOM: { front: 1254, back: 1024 },
+  FITTED: { front: 581, back: 689 },
+  OVERSIZED: { front: 619, back: 666 },
+  CUSTOM: { front: 581, back: 689 },
 };
 
 export function getTemplateReferenceWidth(product: ProductType, side: GarmentSide): number {
   return TEMPLATE_REFERENCE_WIDTH[product]?.[side] ?? TEMPLATE_REFERENCE_WIDTH.FITTED[side];
+}
+
+// The rectangle (top-left anchored, template-relative fractions) the
+// artwork's own bounding box must stay inside while being dragged -- NOT
+// the full canvas. These template photos are tightly, edge-to-edge cropped
+// (no background border to detect a garment silhouette against, unlike a
+// studio product-only shot), so the "canvas" already includes the model's
+// head, hair, arms and legs well beyond the shirt itself. getDragBounds
+// used to clamp only to the full [0,1] canvas, which let the user drag
+// artwork up onto the face/hair or down onto the jeans -- outside the
+// t-shirt entirely. These values are an eyeballed approximation of where
+// the shirt actually sits in each of the 8 real template photos (roughly:
+// collar/shoulder line down to the hem above the waistband, inset a bit
+// from the outer arm/sleeve edges) -- re-check visually against the actual
+// files if they're ever replaced again, the same way TEMPLATE_ASPECT_RATIO
+// above needs to be.
+const GARMENT_SAFE_AREA: Record<GarmentSide, PlacementBox & { heightPct: number }> = {
+  front: { xPct: 0.06, yPct: 0.26, widthPct: 0.88, heightPct: 0.54 },
+  back: { xPct: 0.06, yPct: 0.26, widthPct: 0.88, heightPct: 0.52 },
+};
+
+export function getGarmentSafeArea(side: GarmentSide): PlacementBox & { heightPct: number } {
+  return GARMENT_SAFE_AREA[side];
 }

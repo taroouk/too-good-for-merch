@@ -77,21 +77,18 @@ export async function runAll() {
     },
 
     // REGRESSION: the preview container (TryOn3DPreview.tsx / BespokeModal.tsx)
-    // used to be hardcoded to aspect-ratio 1/1 for BOTH sides. Front
-    // templates really are 1:1 squares (1254x1254 / 2480x2480), but back
-    // templates are a 1024x1536 (2:3) portrait -- a hardcoded 1:1 container
-    // silently pillarboxed the real back photo (object-fit: contain),
-    // which threw off the artwork overlay's percentage-based position
-    // relative to the container vs. the image's actual displayed
-    // rectangle. This locks the real, measured ratios in place so the
-    // preview components' consumption of getTemplateAspectRatio can never
-    // silently drift back to "always square."
-    "getTemplateAspectRatio: front is a true 1:1 square, back is the real 1024x1536 portrait"() {
-      assert.equal(getTemplateAspectRatio("front"), 1, "front templates are square");
-      assert.equal(
-        getTemplateAspectRatio("back"),
-        1024 / 1536,
-        "back templates are the real measured 1024x1536 portrait ratio, not square",
+    // used to be hardcoded to aspect-ratio 1/1 for BOTH sides, which silently
+    // pillarboxed a non-square back photo (object-fit: contain). The current
+    // generation of template photos is neither side a clean square any more
+    // (both front and back are tightly-cropped portrait photos in the
+    // ~0.47-0.55 width/height range -- see TEMPLATE_ASPECT_RATIO's own
+    // comment in placement-config.ts) -- this just locks in "portrait, not
+    // square" for both sides so getTemplateAspectRatio's fallback value can
+    // never silently drift back to a hardcoded 1:1.
+    "getTemplateAspectRatio: both front and back are portrait, neither is a square"() {
+      assert.ok(
+        getTemplateAspectRatio("front") < 1,
+        "front's aspect ratio must be < 1 (portrait, narrower than tall) -- a value of 1 here would silently reintroduce the pillarboxing bug",
       );
       assert.ok(
         getTemplateAspectRatio("back") < 1,

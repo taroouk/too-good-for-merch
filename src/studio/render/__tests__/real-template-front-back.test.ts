@@ -20,6 +20,7 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import { SharpMockupRenderer } from "../engines/sharp-renderer";
+import { getPlacementSide, getTemplateReferenceWidth } from "../placement-config";
 import { loadTemplateBuffer } from "../templates";
 import { getEffectiveScaleBounds, resolvePlacement } from "../transform";
 import { runSuite } from "./test-harness";
@@ -35,10 +36,26 @@ async function markerArtwork(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
+// Some of the current template photos have a thin (~1-2%) fully-transparent
+// border. Sharp/libvips' unpremultiply-resize-repremultiply pipeline leaves
+// UNDEFINED colour data under alpha==0 (there is no "real" RGB for a fully
+// transparent pixel), and normalizing the composited output's resolution
+// (see sharp-renderer.ts's own resize step) can turn that undefined data
+// into near-arbitrary bytes -- observed in practice as isolated
+// alpha<=1 "ghost" pixels that happen to carry the exact marker RGB, dozens
+// to hundreds of pixels away from the real, visible artwork. They are
+// invisible in the actual output (alpha~1 out of 255 renders as fully
+// transparent to the eye/to print), so requiring a real, visible alpha
+// before counting a pixel as "the marker" -- the same alpha-aware
+// convention garment-bbox.ts's alpha-scan already uses -- filters them out
+// without weakening what this test actually needs to catch (the artwork
+// visibly landing in the wrong place).
+const MARKER_MIN_ALPHA = 200;
+
 async function detectMarkerBBox(
   buffer: Buffer,
 ): Promise<{ left: number; top: number; width: number; height: number } | null> {
-  const { data, info } = await sharp(buffer).raw().toBuffer({ resolveWithObject: true });
+  const { data, info } = await sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
   const { width, height, channels } = info;
   let minX = width;
   let minY = height;
@@ -51,7 +68,13 @@ async function detectMarkerBBox(
       const dr = Math.abs(data[idx] - MARKER.r);
       const dg = Math.abs(data[idx + 1] - MARKER.g);
       const db = Math.abs(data[idx + 2] - MARKER.b);
-      if (dr <= MARKER_MATCH_TOLERANCE && dg <= MARKER_MATCH_TOLERANCE && db <= MARKER_MATCH_TOLERANCE) {
+      const alpha = data[idx + 3];
+      if (
+        dr <= MARKER_MATCH_TOLERANCE &&
+        dg <= MARKER_MATCH_TOLERANCE &&
+        db <= MARKER_MATCH_TOLERANCE &&
+        alpha >= MARKER_MIN_ALPHA
+      ) {
         if (x < minX) minX = x;
         if (x > maxX) maxX = x;
         if (y < minY) minY = y;
@@ -79,15 +102,24 @@ const CASES: Case[] = [
   { product: "FITTED", color: "WHITE", placement: "CENTER_FRONT", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 1 },
   { product: "FITTED", color: "WHITE", placement: "CENTER_FRONT", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 1 },
   { product: "FITTED", color: "WHITE", placement: "CENTER_FRONT", artworkShape: "landscape", artworkWidth: 300, artworkHeight: 150, scale: 1 },
-  { product: "FITTED", color: "WHITE", placement: "FULL_FRONT", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 1 },
-  { product: "FITTED", color: "WHITE", placement: "FULL_FRONT", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 1.3 },
+  // FULL_FRONT's box now has widthPct 0.6 -- getEffectiveScaleBounds caps
+  // its own ceiling at MAX_PLACEMENT_WIDTH_FRACTION / widthPct = 0.75 (see
+  // transform.ts), so these cases must stay at or below that, not at the
+  // flat TRANSFORM_BOUNDS.scale.max used for smaller placements.
+  { product: "FITTED", color: "WHITE", placement: "FULL_FRONT", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 0.7 },
+  // FULL_FRONT's box (widthPct 0.6, yPct 0.36) sits low enough on the
+  // template that a 2:1 portrait artwork overflows the canvas bottom at any
+  // scale above ~0.45 -- this case is intentionally near the placement's own
+  // effective floor (TRANSFORM_BOUNDS.scale.min) to stay on-canvas.
+  { product: "FITTED", color: "WHITE", placement: "FULL_FRONT", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 0.4 },
 
-  // BACK, FITTED/WHITE (real template: TGFM White Back.png, 1024x1536 portrait -- NOT square)
+  // BACK, FITTED/WHITE (real template: TGFM White Back.png -- a portrait photo, NOT square)
   { product: "FITTED", color: "WHITE", placement: "CENTER_BACK", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 1 },
   { product: "FITTED", color: "WHITE", placement: "CENTER_BACK", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 1 },
   { product: "FITTED", color: "WHITE", placement: "CENTER_BACK", artworkShape: "landscape", artworkWidth: 300, artworkHeight: 150, scale: 1 },
-  { product: "FITTED", color: "WHITE", placement: "FULL_BACK", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 1 },
-  { product: "FITTED", color: "WHITE", placement: "FULL_BACK", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 1.3 },
+  // Same FULL_BACK widthPct=0.6 scale-ceiling note as FULL_FRONT above.
+  { product: "FITTED", color: "WHITE", placement: "FULL_BACK", artworkShape: "square", artworkWidth: 200, artworkHeight: 200, scale: 0.7 },
+  { product: "FITTED", color: "WHITE", placement: "FULL_BACK", artworkShape: "portrait", artworkWidth: 150, artworkHeight: 300, scale: 0.7 },
 
   // Cross-product sanity: OVERSIZED/BLACK, both sides, one shape each.
   { product: "OVERSIZED", color: "BLACK", placement: "CENTER_FRONT", artworkShape: "square", artworkWidth: 220, artworkHeight: 220, scale: 1 },
@@ -149,33 +181,57 @@ export async function runAll() {
       const actual = await detectMarkerBBox(rendered.data);
       assert.ok(actual, `expected to detect the marker-coloured artwork in the rendered output for ${caseName(c)}`);
 
-      // Tolerance: at least 3px, or 1% of the template's own width --
-      // covers resize/rotate interpolation softening a few edge pixels,
-      // not a real geometry drift.
-      const tolerance = Math.max(3, Math.round(templateWidth * 0.01));
+      // sharp-renderer.ts normalizes its OUTPUT resolution to a canonical
+      // per-(product,side) reference width (see TEMPLATE_REFERENCE_WIDTH's
+      // own comment in placement-config.ts) rather than the loaded
+      // template's own raw pixel width -- `resolved` above is computed in
+      // the template's own raw pixel space, but `actual` is detected in the
+      // RENDERED (possibly normalized) output's pixel space. Every one of
+      // the 8 real template files now has its own distinct native width per
+      // (product, color, side) -- unlike the previous generation, where
+      // OVERSIZED's BLACK and WHITE files happened to share one native
+      // width -- so this scale factor is no longer a no-op for most cases
+      // here and must be applied before comparing the two coordinate
+      // spaces.
+      const side = getPlacementSide(c.placement);
+      const referenceWidth = getTemplateReferenceWidth(c.product, side);
+      const normalizationScale = referenceWidth / templateWidth;
+      const normalizedResolved = {
+        left: resolved.left * normalizationScale,
+        top: resolved.top * normalizationScale,
+        width: resolved.width * normalizationScale,
+        height: resolved.height * normalizationScale,
+      };
+
+      // Tolerance: at least 3px, or 1% of the NORMALIZED (actually rendered)
+      // width -- covers resize/rotate interpolation softening a few edge
+      // pixels, not a real geometry drift.
+      const tolerance = Math.max(3, Math.round(templateWidth * normalizationScale * 0.01));
 
       assert.ok(
-        Math.abs(actual!.left - resolved.left) <= tolerance,
-        `left mismatch for ${caseName(c)}: resolved=${resolved.left}, actual=${actual!.left}, tolerance=${tolerance}`,
+        Math.abs(actual!.left - normalizedResolved.left) <= tolerance,
+        `left mismatch for ${caseName(c)}: resolved=${normalizedResolved.left}, actual=${actual!.left}, tolerance=${tolerance}`,
       );
       assert.ok(
-        Math.abs(actual!.top - resolved.top) <= tolerance,
-        `top mismatch for ${caseName(c)}: resolved=${resolved.top}, actual=${actual!.top}, tolerance=${tolerance}`,
+        Math.abs(actual!.top - normalizedResolved.top) <= tolerance,
+        `top mismatch for ${caseName(c)}: resolved=${normalizedResolved.top}, actual=${actual!.top}, tolerance=${tolerance}`,
       );
       assert.ok(
-        Math.abs(actual!.width - resolved.width) <= tolerance,
-        `width mismatch for ${caseName(c)}: resolved=${resolved.width}, actual=${actual!.width}, tolerance=${tolerance}`,
+        Math.abs(actual!.width - normalizedResolved.width) <= tolerance,
+        `width mismatch for ${caseName(c)}: resolved=${normalizedResolved.width}, actual=${actual!.width}, tolerance=${tolerance}`,
       );
       assert.ok(
-        Math.abs(actual!.height - resolved.height) <= tolerance,
-        `height mismatch for ${caseName(c)}: resolved=${resolved.height}, actual=${actual!.height}, tolerance=${tolerance}`,
+        Math.abs(actual!.height - normalizedResolved.height) <= tolerance,
+        `height mismatch for ${caseName(c)}: resolved=${normalizedResolved.height}, actual=${actual!.height}, tolerance=${tolerance}`,
       );
 
       // No clipping/overflow: the actual detected bbox must stay fully
-      // within the template canvas.
+      // within the RENDERED (normalized) canvas.
+      const renderedWidth = Math.round(templateWidth * normalizationScale);
+      const renderedHeight = Math.round(templateHeight * normalizationScale);
       assert.ok(actual!.left >= 0 && actual!.top >= 0, `artwork clipped off the top/left edge for ${caseName(c)}`);
       assert.ok(
-        actual!.left + actual!.width <= templateWidth && actual!.top + actual!.height <= templateHeight,
+        actual!.left + actual!.width <= renderedWidth && actual!.top + actual!.height <= renderedHeight,
         `artwork overflowed the template canvas for ${caseName(c)}`,
       );
 

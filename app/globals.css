@@ -1020,9 +1020,32 @@ h6,
 .studio-preview-inner,
 .studio-preview-inner-clean {
   position: relative;
-  width: 100%;
-  flex: 1;
+  /* !important on width is required here -- the JSX also carries Tailwind's
+     `w-full` utility class (width:100%), which has the same specificity as
+     this rule and would otherwise win/lose based on unpredictable stylesheet
+     ordering. Without forcing width:auto, the container stayed 100% of its
+     flex parent's width for BOTH sides regardless of `aspect-ratio`, so only
+     height (via the rules below) ever reflected the per-side ratio -- width
+     never did, which is what made front/back look mismatched in size even
+     after the .studio-model-image fill fix. */
+  width: auto !important;
+  height: min(calc(100svh - 198px), 73vh) !important;
   min-height: 0;
+  max-height: 760px !important;
+  max-width: 94% !important;
+  /* Its own parent (.studio-preview-panel) is flex-direction:column and
+     never sets align-items, so it defaults to `stretch` -- which stretches
+     this element's cross-axis (== width, in a column flex) to fill the
+     panel's full width regardless of the width:auto above. `width:auto`
+     and `stretch` resolve to the exact same "auto -> fill container"
+     behavior at the flex layout stage; !important only controls which
+     DECLARATION wins the cascade, it can't stop stretch from being applied
+     to whatever value wins. align-self:center opts this element out of
+     that stretch so width can actually be derived from height x
+     aspect-ratio, per-side, as intended -- same root cause and same fix as
+     .studio-bespoke-canvas's align-self below. */
+  align-self: center !important;
+  flex: 1;
   display: flex;
   align-items: center !important;
   justify-content: center !important;
@@ -1030,14 +1053,23 @@ h6,
   overflow: hidden !important;
 }
 
+/* Front templates are square (aspectRatio 1) and back templates are a
+   1024x1536 portrait (aspectRatio ~0.667) -- see getTemplateAspectRatio.
+   The container above is sized (height fixed, width derived from its own
+   inline `aspect-ratio` style, set per-side in TryOn3DPreview.tsx) so front
+   and back occupy the SAME visual height and a side-correct width. The
+   image itself must fill that container exactly rather than imposing its
+   own independent height, or it silently ignores the container's per-side
+   aspect ratio and both sides render at the same fixed height but very
+   different (and misleading) widths. */
 .studio-model-image {
   position: relative;
   z-index: 4;
-  height: min(calc(100svh - 198px), 73vh) !important;
+  width: 100% !important;
+  height: 100% !important;
   min-height: 0 !important;
-  max-height: 760px !important;
-  max-width: 94% !important;
-  width: auto;
+  max-height: none !important;
+  max-width: none !important;
   object-fit: contain !important;
   object-position: center bottom !important;
   user-select: none;
@@ -1760,7 +1792,6 @@ h6,
 
 .studio-bespoke-canvas {
   position: relative;
-  width: 100%;
   /* aspect-ratio is set per-instance via inline style in BespokeModal.tsx
      (getTemplateAspectRatio(getPlacementSide(activePlacement))), NOT
      hardcoded here -- front templates really are 1:1 squares, but back
@@ -1768,8 +1799,35 @@ h6,
      own measured-dimensions comment). A single hardcoded 1/1 here silently
      pillarboxed the real back photo (object-fit: contain below) and threw
      off the artwork overlay's percentage-based box, which is computed
-     against THIS container, not the image's actual displayed rectangle. */
+     against THIS container, not the image's actual displayed rectangle.
+     width:100% previously forced BOTH sides to the same column width and
+     let height float free via the aspect-ratio -- since back's ratio needs
+     MORE height per unit width than front's square ratio, the back canvas
+     ended up taller (i.e. visibly bigger) than front at the same width,
+     the exact "الضهر اكبر من الوش" complaint. Using the standard
+     width:auto/height:auto + max-width/max-height "letterbox" pairing
+     instead makes the browser pick the largest box that (a) preserves the
+     per-side aspect-ratio and (b) fits within the same bounding box for
+     both sides -- so front and back now occupy the same visual footprint,
+     just shaped differently, exactly like the .studio-model-image fix in
+     TryOn3DPreview's container above. */
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(58vh, 640px);
   flex: 0 0 auto;
+  /* .studio-bespoke-preview (this element's flex parent) is a
+     flex-direction:column container that never sets its own align-items,
+     so it defaults to `stretch` -- which stretches every child's cross
+     axis (== width, in a column flex) to fill the full column width
+     BEFORE this element's own width/max-width above ever get a say. That
+     silently reproduced the exact width:100% bug the comment above
+     describes, just one level up: the letterbox sizing never took effect
+     because the flex algorithm was overriding `width:auto` with a
+     stretched full-column width first. align-self:center opts this one
+     item out of that stretch so it can size itself from its own
+     aspect-ratio + max-width/max-height instead. */
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2302,7 +2360,8 @@ h6,
     height: 34px !important;
   }
 
-  .studio-model-image {
+  .studio-preview-inner,
+  .studio-preview-inner-clean {
     height: min(calc(100svh - 184px), 70vh) !important;
   }
 
@@ -2385,7 +2444,8 @@ h6,
     border-bottom: 1px solid rgba(0,0,0,0.08);
   }
 
-  .studio-model-image {
+  .studio-preview-inner,
+  .studio-preview-inner-clean {
     height: min(72vh, 620px) !important;
     max-width: 86% !important;
   }
@@ -2966,12 +3026,16 @@ h6,
   padding: 0 0 76px !important;
   align-items: center !important;
   justify-content: center !important;
-}
-
-.studio-model-image {
   height: min(calc(100svh - 184px), 73vh) !important;
   max-height: 780px !important;
   max-width: 92% !important;
+}
+
+.studio-model-image {
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  max-width: none !important;
   object-fit: contain !important;
   object-position: center bottom !important;
   transform: translateY(6px) scale(1.02) !important;

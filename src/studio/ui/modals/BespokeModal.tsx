@@ -21,6 +21,7 @@ import {
 import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
 import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
 import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
+import { useImageAspectRatio } from "src/studio/ui/useImageAspectRatio";
 
 type ArtworkTransform = {
   x: number;
@@ -130,14 +131,19 @@ export default function BespokeModal({
 }: BespokeModalProps) {
   useEscapeToClose(onClose);
 
-  // Front templates are true 1:1 squares; back templates are a 1024x1536
-  // (2:3) portrait -- see getTemplateAspectRatio's own comment for the real
-  // measured dimensions. The canvas below used to be hardcoded to
-  // aspect-ratio 1/1 in globals.css for both sides, which silently
-  // pillarboxed the real back photo (object-fit: contain) and threw off
-  // the artwork overlay's percentage-based position, computed against the
-  // CONTAINER, not the image's actual displayed rectangle.
-  const previewAspectRatio = getTemplateAspectRatio(getPlacementSide(activePlacement));
+  // getTemplateAspectRatio's hardcoded table is only a FALLBACK, used
+  // before the actual displayed image has finished loading -- it goes
+  // stale the moment the template/mockup PNGs actually on disk are a
+  // different shape than the table assumes (which is exactly what
+  // happened: the front template went from a 2480x2480 square to a
+  // ~1118x2353 portrait). The real ratio is measured from whichever image
+  // is ACTUALLY being shown right now (generated mockup or blank shirt
+  // template) via its own naturalWidth/naturalHeight, so the canvas always
+  // matches what's on screen instead of a guess that can silently drift
+  // out of sync with the asset files again.
+  const bespokeImageSrc = generatedMockupUrl && !isMockupStale ? generatedMockupUrl : bespokeShirtSrc;
+  const fallbackAspectRatio = getTemplateAspectRatio(getPlacementSide(activePlacement));
+  const previewAspectRatio = useImageAspectRatio(bespokeImageSrc, fallbackAspectRatio);
 
   // Same per-placement ceiling the server's resolvePlacement already
   // enforces (getEffectiveScaleBounds) -- not a second, independently

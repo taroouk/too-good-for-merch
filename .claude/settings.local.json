@@ -218,7 +218,10 @@
       "Bash(node --env-file=.env /tmp/tgfm-verify/cleanup.mjs)",
       "Bash(grep -v '^$')",
       "Bash([ -f \"$d/migration.sql\" ])",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/ --max-time 5)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/ --max-time 5)",
+      "Bash(node scripts/run-render-tests.mjs)",
+      "Bash(UPDATE_GOLDEN=1 node scripts/run-render-tests.mjs)",
+      "Bash(python3 -c \"print\\(len\\('962cb6f0af77b9400fc0715e167afbc6fa6b864911c18bb66e5d586286ed6054'\\)\\)\")"
     ]
   }
 }

@@ -19,7 +19,7 @@ import {
   isRetryableGeminiFailure,
   loadTemplateBuffer,
   parseGeminiJson,
-  remapResolvedPlacementToGarmentBBox,
+  printedArtworkPrompt,
   resolvePlacement,
   RendererError,
   trimToVisibleBounds,
@@ -338,20 +338,21 @@ function generatedImageFromResponse(value: unknown) {
   );
 }
 
-// Gemini NEVER receives the artwork -- not the raw file, not a composite,
-// not a screenshot, nothing that contains it. It receives exactly one
-// image (the clean, artwork-free garment template) and is asked only to
-// make THAT garment photorealistic. There is therefore nothing for it to
-// move, resize, rotate, crop, duplicate, redraw, or reinterpret: the
-// artwork doesn't exist yet at this stage of the pipeline. It gets
-// composited afterward, deterministically, by compositeArtworkOntoBase()
-// using the exact geometry resolvePlacement() already computed -- Gemini's
-// output is only ever used as a background layer.
+// Gemini receives BOTH the clean garment crop AND the (trimmed) artwork,
+// and is asked to render the artwork PRINTED onto the garment itself --
+// following fabric folds, lighting, and texture -- rather than having it
+// pasted on afterward as a flat, deterministic Sharp overlay. This trades
+// away the old design's pixel-exact placement guarantee (Gemini is given
+// the intended box as strong prose guidance, not a hard constraint it is
+// mechanically bound to) in exchange for artwork that actually looks
+// printed rather than stuck on top -- an explicit product choice, since the
+// old flat-overlay approach could guarantee exact placement but never
+// looked like a real print.
 //
-// blankGarmentPrompt() itself now lives in src/studio/render/gemini-prompt.ts
-// (moved out so it has zero server-only imports and is unit-testable by the
-// same harness as the rest of that module -- see its own docs for why the
-// COMPOSITION LOCK section exists).
+// printedArtworkPrompt() lives in src/studio/render/gemini-prompt.ts (zero
+// server-only imports, unit-testable by the same harness as the rest of
+// that module -- see its own docs for why the COMPOSITION LOCK section
+// exists, carried over unchanged from the old blankGarmentPrompt()).
 
 function textFromResponsePart(value: unknown) {
   const part = asRecord(value);
@@ -535,9 +536,12 @@ export async function POST(req: Request) {
 
     // Same asymmetric-transparent-padding fix as SharpMockupRenderer: size
     // the placement box off the artwork's TRIMMED (visible-content) aspect
-    // ratio, matching what compositeArtworkOntoBase actually resizes with
-    // fit:"fill" below, not the raw upload's aspect ratio.
-    const trimmedArtworkMeta = await sharp(await trimToVisibleBounds(artwork)).metadata();
+    // ratio, and send Gemini this same trimmed buffer as INPUT 2 -- not the
+    // raw upload, which can carry arbitrary transparent padding around the
+    // actual design that has no business being described as part of "the
+    // artwork" in the prompt below.
+    const trimmedArtworkBuffer = await trimToVisibleBounds(artwork);
+    const trimmedArtworkMeta = await sharp(trimmedArtworkBuffer).metadata();
     const trimmedWidth = trimmedArtworkMeta.width ?? artworkMeta.width;
     const trimmedHeight = trimmedArtworkMeta.height ?? artworkMeta.height;
 
@@ -556,11 +560,19 @@ export async function POST(req: Request) {
       artworkHeight: trimmedHeight,
     });
 
-    // The template's own garment bbox -- detected once here (not per
-    // Gemini response) since it only depends on the template, which is
-    // fixed for this request. See remapResolvedPlacementToGarmentBBox: this
-    // is the anchor `resolved` gets re-expressed relative to, instead of
-    // the full template canvas.
+    // The template's own subject bbox (model + garment) -- detected once
+    // here since it only depends on the template, which is fixed for this
+    // request. Unlike the old design (send Gemini the WHOLE photo and remap
+    // its output back via a SECOND bbox detection), this bbox now defines
+    // the ONLY region Gemini is allowed to touch: everything outside it
+    // (background, and anything not caught in the subject's own bounding
+    // rectangle) is spliced back from the pixel-identical original after
+    // generation. That is what guarantees the background never changes and
+    // removes the whole "Gemini reframed/rescaled the shot" failure class --
+    // there is no second bbox to detect or remap against because the
+    // output canvas is byte-identical to the template outside this
+    // rectangle, and exactly `templateGarmentBBox` in size/position inside
+    // it, by construction (see the resize-back-to-bbox step below).
     const templateGarmentBBox = await detectGarmentBBox(template, {
       role: "template",
       product,
@@ -568,19 +580,54 @@ export async function POST(req: Request) {
       placement,
     });
 
-    const apiKey = process.env.GEMINI_API_KEY?.trim();
-    if (!apiKey) {
+    const apiKeyRaw = process.env.GEMINI_API_KEY?.trim();
+    if (!apiKeyRaw) {
       return apiError("Missing GEMINI_API_KEY.", 500);
     }
+    // Re-bound to a definite (non-optional) type -- TS can't narrow a
+    // captured outer `const` across the nested callGemini() closure below,
+    // so without this every call site inside it would still see `string |
+    // undefined` despite the guard above having already returned.
+    const apiKey: string = apiKeyRaw;
 
     const model = process.env.GEMINI_IMAGE_MODEL?.trim() || DEFAULT_GEMINI_IMAGE_MODEL;
-    const prompt = blankGarmentPrompt({ product, color, placement });
 
-    // Gemini receives exactly ONE image: the clean, artwork-free garment
-    // template. Not the artwork, not a composite, not a screenshot -- there
-    // is nothing here for it to move, resize, rotate, crop, duplicate,
-    // redraw, or reinterpret. The request body is built once and reused
-    // verbatim across retry attempts -- retrying never changes what's sent.
+    // Only the subject-bbox CROP of the template is sent to Gemini -- not
+    // the full photo. Whatever Gemini does to background pixels inside this
+    // crop is irrelevant, since only the region strictly inside
+    // templateGarmentBBox gets pasted back onto the untouched original
+    // template afterward (background outside it never reaches Gemini at
+    // all, so it cannot possibly change).
+    const templateCrop = await sharp(template)
+      .extract({
+        left: templateGarmentBBox.left,
+        top: templateGarmentBBox.top,
+        width: templateGarmentBBox.width,
+        height: templateGarmentBBox.height,
+      })
+      .png()
+      .toBuffer();
+
+    // `resolved` is in FULL TEMPLATE pixel coordinates; the prompt below
+    // describes the print position relative to templateCrop (what Gemini
+    // actually sees as INPUT 1), so convert into crop-relative fractions.
+    const placementBoxPct = {
+      leftPct: (resolved.left - templateGarmentBBox.left) / templateGarmentBBox.width,
+      topPct: (resolved.top - templateGarmentBBox.top) / templateGarmentBBox.height,
+      widthPct: resolved.width / templateGarmentBBox.width,
+      heightPct: resolved.height / templateGarmentBBox.height,
+      rotationDeg: resolved.rotation,
+    };
+    const prompt = printedArtworkPrompt({ product, color, placement, box: placementBoxPct });
+
+    // Gemini now receives TWO images: the clean garment crop (INPUT 1) and
+    // the artwork itself, trimmed to its own visible content (INPUT 2) --
+    // per the user's explicit choice of "let Gemini actually print the
+    // artwork" over the old flat-Sharp-overlay approach, trading the
+    // Sharp compositor's pixel-exact placement guarantee for artwork that
+    // visibly follows the garment's fabric folds/lighting. The request
+    // body is built once and reused verbatim across retry attempts --
+    // retrying never changes what's sent.
     const geminiRequestBody = JSON.stringify({
       model,
       input: [
@@ -591,7 +638,12 @@ export async function POST(req: Request) {
         {
           type: "image",
           mime_type: "image/png",
-          data: template.toString("base64"),
+          data: templateCrop.toString("base64"),
+        },
+        {
+          type: "image",
+          mime_type: "image/png",
+          data: trimmedArtworkBuffer.toString("base64"),
         },
       ],
       response_format: {
@@ -604,21 +656,15 @@ export async function POST(req: Request) {
       },
     });
 
-    let geminiImage: Buffer | null = null;
-    let geminiGarmentBBox: Awaited<ReturnType<typeof detectGarmentBBox>> | null = null;
-
-    // Outer loop: a Gemini generation can come back HTTP-ok but still land
-    // on an output the garment-bbox detector can't trust (see
-    // garment-bbox.ts's assertPlausibleBBox) -- e.g. an occasional
-    // rendering defect or an off-composition shot the prompt's COMPOSITION
-    // LOCK didn't fully prevent. That's a different failure from the
-    // request itself being wrong, so a fresh generation attempt (not just
-    // re-parsing the same response) is what actually has a chance of
-    // succeeding. Bounded the same way as the HTTP-level retry above, and
-    // deliberately independent of it: a generation can also be re-attempted
-    // here after MAX_GEMINI_ATTEMPTS HTTP retries were already spent
-    // landing the ok response being rejected now.
-    for (let generationAttempt = 1; ; generationAttempt++) {
+    // One HTTP call to Gemini, with the bounded inner retry for transient
+    // (5xx/"deadline") failures -- shared by both the "let Gemini print it"
+    // attempt and the flat-composite fallback below, so neither path
+    // duplicates this retry logic. Throws RendererError (via apiError being
+    // returned directly for the non-retryable/final case is handled by the
+    // caller instead, since only the caller knows which fallback, if any,
+    // should run next) -- actually returns a Response for the terminal
+    // failure case so the caller can propagate it as-is.
+    async function callGemini(requestBody: string): Promise<Buffer | Response> {
       let geminiRes: Response;
       let responseBody: string;
       for (let attempt = 1; ; attempt++) {
@@ -628,7 +674,7 @@ export async function POST(req: Request) {
             "Content-Type": "application/json",
             "x-goog-api-key": apiKey,
           },
-          body: geminiRequestBody,
+          body: requestBody,
           signal: AbortSignal.timeout(60_000),
         });
         responseBody = await geminiRes.text();
@@ -654,7 +700,6 @@ export async function POST(req: Request) {
 
       logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
 
-      let candidateImage: Buffer;
       if (generated.url) {
         // Was previously unbounded -- an unresponsive/slow host serving
         // Gemini's returned image URL could hang this request indefinitely,
@@ -666,24 +711,45 @@ export async function POST(req: Request) {
           return apiError("Could not download the generated garment image.", 502);
         }
         const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
-        candidateImage = Buffer.from(remoteBytes);
-      } else if (generated.data) {
-        candidateImage = Buffer.from(generated.data, "base64");
-      } else {
-        return apiError(geminiNoImageMessage(data), 500);
+        return Buffer.from(remoteBytes);
       }
+      if (generated.data) {
+        return Buffer.from(generated.data, "base64");
+      }
+      return apiError(geminiNoImageMessage(data), 500);
+    }
 
-      // --- Deterministic post-compositor: geometry is guaranteed by code,
-      // not by Gemini. Gemini's image is used purely as a background layer.
-      //
-      // Both the metadata/dimension check and the bbox detection below are
-      // validating the SAME thing -- whether this particular generated
-      // image is usable -- so both share one retry-eligible catch. An
-      // unreadable/dimension-less image is exactly as much "this generation
-      // was bad, try again" as an implausible bbox is; splitting them into
-      // separate catches previously meant a corrupt image failed the whole
-      // request immediately while a bad-composition image got retried, even
-      // though neither indicates a problem with our own request.
+    let geminiImage: Buffer | null = null;
+    // Set only if the "let Gemini print it" path exhausts its attempts on a
+    // recoverable (RendererError) failure -- e.g. Gemini repeatedly
+    // returning a mismatched aspect ratio for this particular crop/artwork
+    // combination. Falls back to the old, reliable flat-Sharp-overlay
+    // pipeline (blank photorealistic garment + deterministic composite)
+    // rather than surfacing an error to the user -- realism is a nice-to-
+    // have the user asked for, but a correctly-placed, undistorted mockup
+    // must always be the floor this feature can fall to.
+    let printedArtworkFailure: RendererError | null = null;
+
+    // Outer loop: a Gemini generation can come back HTTP-ok but still land
+    // on an unreadable/corrupt image, or one with the wrong aspect ratio
+    // (see the aspect check below). That's a different failure from the
+    // request itself being wrong, so a fresh generation attempt (not just
+    // re-parsing the same response) is what actually has a chance of
+    // succeeding. Bounded the same way as the HTTP-level retry above, and
+    // deliberately independent of it.
+    printedArtworkAttempts: for (let generationAttempt = 1; ; generationAttempt++) {
+      const candidateImage = await callGemini(geminiRequestBody);
+      if (candidateImage instanceof Response) return candidateImage;
+
+      // Splice Gemini's crop back into the ORIGINAL, untouched template at
+      // the exact rectangle it was cut from -- resized to that rectangle's
+      // own pixel dimensions first (fit:"fill"), so the pasted-back canvas
+      // is guaranteed byte-identical to the original template everywhere
+      // outside templateGarmentBBox, and exactly that bbox's size/position
+      // inside it. This is what makes `resolved` (computed earlier against
+      // the template's own coordinates) directly usable below with zero
+      // remapping: the geometry Gemini's response actually has is never
+      // trusted, only its pixels are.
       try {
         let candidateMeta: sharp.Metadata;
         try {
@@ -695,49 +761,101 @@ export async function POST(req: Request) {
           throw new RendererError("Gemini's garment image is missing dimensions.", 500);
         }
 
-        // Gemini is not guaranteed to preserve the template's framing -- it
-        // can return the same output dimensions while still cropping/
-        // zooming/repositioning the garment within them (proven by
-        // repeated-generation testing, see scripts/investigate-geometry.mjs).
-        // Remapping by full canvas dimensions alone (the old
-        // remapResolvedPlacement) silently ignores exactly that. Detect
-        // where the garment actually landed in THIS response and remap
-        // relative to it instead.
-        geminiGarmentBBox = await detectGarmentBBox(candidateImage, {
-          role: "gemini-output",
-          product,
-          color,
-          placement,
-        });
-      } catch (bboxErr) {
-        if (bboxErr instanceof RendererError && generationAttempt < MAX_GEMINI_ATTEMPTS) {
+        // The splice-back step below force-stretches Gemini's returned
+        // image onto templateGarmentBBox's exact pixel dimensions
+        // (fit:"fill", no letterboxing) -- if Gemini's own output aspect
+        // ratio doesn't closely match the crop it was given (the
+        // COMPOSITION LOCK section of the prompt asks it not to reframe,
+        // but asking Gemini to also compose in a second image, INPUT 2,
+        // is a substantially harder task than the old blank-garment-only
+        // prompt and it can still drift), that stretch visibly warps the
+        // person/garment -- observed in practice as a grotesquely
+        // elongated figure. Treat a large aspect-ratio mismatch as the
+        // same class of "unusable generation" as an unreadable image
+        // buffer, so it retries a fresh generation instead of silently
+        // shipping a distorted mockup.
+        const expectedAspect = templateGarmentBBox.width / templateGarmentBBox.height;
+        const candidateAspect = candidateMeta.width / candidateMeta.height;
+        const aspectDeviation = Math.abs(candidateAspect - expectedAspect) / expectedAspect;
+        if (aspectDeviation > 0.08) {
+          throw new RendererError(
+            `Gemini's garment image has a different aspect ratio than requested (expected ~${expectedAspect.toFixed(3)}, got ~${candidateAspect.toFixed(3)}) -- stretching it to fit would visibly distort the garment/model.`,
+            502,
+          );
+        }
+
+        const resizedCrop = await sharp(candidateImage)
+          .resize({
+            width: templateGarmentBBox.width,
+            height: templateGarmentBBox.height,
+            fit: "fill",
+          })
+          .toBuffer();
+
+        geminiImage = await sharp(template)
+          .composite([
+            { input: resizedCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top },
+          ])
+          .png()
+          .toBuffer();
+      } catch (spliceErr) {
+        if (!(spliceErr instanceof RendererError)) throw spliceErr;
+        if (generationAttempt < MAX_GEMINI_ATTEMPTS) {
           console.warn("Nano Banana generation produced an unusable image, retrying:", {
             generationAttempt,
-            message: bboxErr.message,
+            message: spliceErr.message,
           });
-          continue;
+          continue printedArtworkAttempts;
         }
-        throw bboxErr;
+        console.warn("Nano Banana 'print via Gemini' path exhausted its attempts, falling back to flat overlay:", {
+          message: spliceErr.message,
+        });
+        printedArtworkFailure = spliceErr;
+        break printedArtworkAttempts;
       }
 
-      geminiImage = candidateImage;
-      break;
+      break printedArtworkAttempts;
     }
 
-    const remapped = remapResolvedPlacementToGarmentBBox(
-      resolved,
-      templateGarmentBBox,
-      geminiGarmentBBox,
-    );
+    let finalImage: Buffer;
+    if (printedArtworkFailure) {
+      // Fallback: the same reliable pipeline this route used before --
+      // Gemini only makes a BLANK garment photorealistic (a single, much
+      // simpler image, not asked to also compose in a second image), then
+      // the artwork is pasted on deterministically at the exact resolved
+      // geometry. Guarantees a correctly-placed, undistorted mockup even
+      // when "let Gemini print it" can't produce a usable result for this
+      // particular crop/artwork combination.
+      const blankPrompt = blankGarmentPrompt({ product, color, placement });
+      const blankRequestBody = JSON.stringify({
+        model,
+        input: [
+          { type: "text", text: blankPrompt },
+          { type: "image", mime_type: "image/png", data: templateCrop.toString("base64") },
+        ],
+        response_format: { type: "image", mime_type: "image/jpeg" },
+        generation_config: { temperature: 0, top_k: 1 },
+      });
 
-    console.info("Nano Banana garment-relative remap:", {
-      templateGarmentBBox,
-      geminiGarmentBBox,
-      resolved,
-      remapped,
-    });
+      const blankCandidate = await callGemini(blankRequestBody);
+      if (blankCandidate instanceof Response) return blankCandidate;
 
-    const finalImage = await compositeArtworkOntoBase(geminiImage, artwork, remapped);
+      const resizedBlankCrop = await sharp(blankCandidate)
+        .resize({ width: templateGarmentBBox.width, height: templateGarmentBBox.height, fit: "fill" })
+        .toBuffer();
+      const blankGeminiImage = await sharp(template)
+        .composite([{ input: resizedBlankCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top }])
+        .png()
+        .toBuffer();
+
+      finalImage = await compositeArtworkOntoBase(blankGeminiImage, artwork, resolved);
+    } else {
+      // Gemini's spliced-back output already has the artwork printed onto
+      // the fabric (see the comment above geminiRequestBody) -- no further
+      // Sharp compositing step needed or wanted here.
+      finalImage = geminiImage as Buffer;
+    }
+
     const storedMimeType = validateMockupData(finalImage, "image/png");
 
     // Best-effort lineage link to the draft's current Print Mockup (for

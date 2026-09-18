@@ -12,6 +12,7 @@ import { getPlacementStyle } from "src/studio/render/placement-css";
 import { previewArtworkBlend } from "src/studio/render/preview-blend";
 import { artworkOffsetPx, clampArtworkRotation } from "src/studio/render/transform";
 import { useContainerWidth } from "src/studio/ui/useContainerSize";
+import { useImageAspectRatio } from "src/studio/ui/useImageAspectRatio";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 
 type PreviewSide = "front" | "back";
@@ -80,15 +81,6 @@ export default function TryOn3DPreview({
     }
   }, [activePlacement]);
 
-  // Front templates are true 1:1 squares; back templates are a 1024x1536
-  // (2:3) portrait -- see getTemplateAspectRatio's own comment for the real
-  // measured dimensions. The container below used to be hardcoded
-  // aspect-square for both sides, which silently let the real back photo
-  // render narrower than the container (height-driven sizing, width:auto)
-  // and threw off the artwork overlay's percentage-based position, which
-  // is computed against the CONTAINER, not the image's own rendered box.
-  const previewAspectRatio = useMemo(() => getTemplateAspectRatio(previewSide), [previewSide]);
-
   const frontImage = useMemo(() => getFrontModelImage(product, color), [color, product]);
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
   const generatedMockupSide = activePlacement ? getPlacementSide(activePlacement) : "front";
@@ -100,6 +92,17 @@ export default function TryOn3DPreview({
     : previewSide === "front"
       ? frontImage
       : backImage;
+
+  // getTemplateAspectRatio's { front: 1, back: 1024/1536 } table is only a
+  // FALLBACK now, used before the actual image has loaded -- it went stale
+  // the moment the template PNGs on disk were replaced with differently
+  // shaped photos (see useImageAspectRatio's own comment). The real ratio
+  // is measured from the actual loaded image's naturalWidth/naturalHeight,
+  // per (product, color, side), so front and back always occupy the same
+  // container footprint that matches what's ACTUALLY on screen, not a
+  // guess that can silently drift out of sync with the asset files again.
+  const fallbackAspectRatio = useMemo(() => getTemplateAspectRatio(previewSide), [previewSide]);
+  const previewAspectRatio = useImageAspectRatio(modelImage, fallbackAspectRatio);
 
   // Trimmed to visible content client-side, using the exact same alpha
   // scan the server's trimToVisibleBounds runs, so this preview's box
