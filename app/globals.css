@@ -5012,3 +5012,405 @@ h6,
     padding: 20px 16px !important;
   }
 }
+
+/* ============================================================
+   FIGMA MATCH — final authoritative layer
+   Aligns the Studio builder with the approved Figma frame
+   ("THE STUDIO" product page). Appended last on purpose: the
+   studio CSS above is a stack of iterative override passes,
+   so source order (not more specificity) is what makes these
+   win. Desktop-only rules stay inside the >=1025px query so
+   the mobile layer below/above keeps its phone behaviour.
+   ============================================================ */
+
+/* 1. Flat white canvas — the Figma frame has no cream tint and
+      no blueprint grid behind the panels. */
+html,
+body {
+  background: #ffffff !important;
+}
+
+.studio-builder-shell {
+  background-image: none !important;
+}
+
+.studio-builder-shell,
+.studio-builder-frame,
+.studio-left-panel,
+.studio-right-panel,
+.studio-preview-panel {
+  background: #ffffff !important;
+  backdrop-filter: none !important;
+}
+
+/* 2. Hairline column rules (Figma uses a light 1px divider on
+      both sides of the preview, not a near-black rule). */
+.studio-builder-frame {
+  border-left: 1px solid rgba(5, 5, 5, 0.1) !important;
+  border-right: 1px solid rgba(5, 5, 5, 0.1) !important;
+}
+
+.studio-left-panel {
+  border-right: 1px solid rgba(5, 5, 5, 0.1) !important;
+}
+
+.studio-right-panel {
+  border-left: 1px solid rgba(5, 5, 5, 0.1) !important;
+}
+
+.studio-right-divider,
+.studio-right-divider-soft {
+  background: rgba(5, 5, 5, 0.1) !important;
+}
+
+/* 3. Copy the Figma frame does not carry: the helper captions
+      under each control heading and the autosave status row. */
+.studio-control-caption,
+.studio-save-row {
+  display: none !important;
+}
+
+/* 4. Square-ish corners — Figma uses a 4px radius everywhere,
+      not the 14px pill radius of the earlier pass. */
+.studio-product-button,
+.studio-build-button,
+.studio-fabric-card,
+.studio-fabric-menu,
+.studio-size-button,
+.studio-summary-card,
+.studio-quantity,
+.studio-add-button,
+.studio-wishlist-button {
+  border-radius: 4px !important;
+}
+
+@media (min-width: 1025px) {
+  /* 5. Control sizing / type scale as drawn in the frame. */
+  .studio-eyebrow,
+  .studio-right-label,
+  .studio-info-title,
+  .studio-summary-label {
+    font-size: 10px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.2em !important;
+  }
+
+  .studio-product-button,
+  .studio-build-button {
+    min-height: 48px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.18em !important;
+  }
+
+  .studio-product-button {
+    justify-content: center !important;
+  }
+
+  .studio-product-list {
+    gap: 10px !important;
+  }
+
+  .studio-colour-dot {
+    width: 40px !important;
+    height: 40px !important;
+  }
+
+  .studio-size-button {
+    min-height: 40px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.12em !important;
+  }
+
+  .studio-add-button,
+  .studio-wishlist-button {
+    min-height: 48px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.16em !important;
+  }
+
+  /* Figma's "Add to wishlist" is a plain text action beside the
+     filled primary button — no box around it. */
+  .studio-wishlist-button {
+    border: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: #050505 !important;
+  }
+
+  .studio-wishlist-button:hover:not(:disabled) {
+    background: transparent !important;
+    text-decoration: underline !important;
+    text-underline-offset: 3px !important;
+  }
+
+  /* 6. Price block: large serif italic over the tiny uppercase
+        shipping note. */
+  .studio-price {
+    font-size: 30px !important;
+    letter-spacing: 0.01em !important;
+  }
+
+  .studio-shipping-note {
+    font-size: 9px !important;
+    letter-spacing: 0.14em !important;
+    text-transform: uppercase !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  /* 7. Unselected product buttons are white with a hairline black
+        border in the frame, not a grey fill. */
+  .studio-product-button-idle {
+    background: #ffffff !important;
+    border-color: rgba(5, 5, 5, 0.85) !important;
+  }
+
+  .studio-product-button-idle:hover {
+    background: #fafafa !important;
+  }
+
+  .studio-product-button-active {
+    box-shadow: none !important;
+  }
+
+  /* 8. Quantity stepper and selection summary sit on the frame's
+        larger boxes. */
+  .studio-quantity {
+    min-height: 40px !important;
+    border: 1px solid rgba(5, 5, 5, 0.85) !important;
+  }
+
+  .studio-summary-card {
+    padding: 16px 18px !important;
+  }
+}
+
+@media (min-width: 1025px) {
+  /* 9. Shipping note under the price: one uppercase line across the
+        full column, not a wrapped two-line block. */
+  .studio-right-top,
+  .studio-price-stack {
+    width: 100% !important;
+  }
+
+  .studio-shipping-note {
+    margin-top: 10px !important;
+    width: 100% !important;
+    max-width: none !important;
+    font-size: 10px !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+    letter-spacing: 0.08em !important;
+    color: rgba(5, 5, 5, 0.5) !important;
+  }
+
+  /* 10. Size row: narrower boxes with the frame's wider gutters, and
+         an underlined "SIZE GUIDE" link. */
+  .studio-size-grid {
+    gap: 26px !important;
+  }
+
+  .studio-size-button {
+    min-height: 36px !important;
+    border-radius: 3px !important;
+    border: 1px solid rgba(5, 5, 5, 0.18) !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.06em !important;
+    color: #050505 !important;
+  }
+
+  .studio-size-button-active {
+    background: #050505 !important;
+    border-color: #050505 !important;
+    color: #ffffff !important;
+  }
+
+  .studio-size-guide-link {
+    font-size: 9.5px !important;
+    font-weight: 500 !important;
+    letter-spacing: 0.1em !important;
+    color: rgba(5, 5, 5, 0.55) !important;
+    text-decoration: underline !important;
+    text-underline-offset: 3px !important;
+  }
+
+  /* 11. Product info: quiet uppercase heading over readable body copy
+         running the full width of the column. */
+  .studio-info-title {
+    font-size: 11px !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.2em !important;
+    color: #050505 !important;
+  }
+
+  .studio-product-info p {
+    width: 100% !important;
+    max-width: none !important;
+    margin-top: 12px !important;
+    font-size: 13px !important;
+    font-weight: 400 !important;
+    line-height: 1.55 !important;
+    letter-spacing: 0 !important;
+    color: rgba(5, 5, 5, 0.78) !important;
+  }
+}
+
+/* ============================================================
+   FIGMA MATCH — measured rhythm
+   Every value below is taken off the Figma frame export and
+   converted at the frame->live column scale (353px design
+   column -> 333px live right column / 337px left column).
+   ============================================================ */
+
+@media (min-width: 1025px) {
+  /* --- Left column: product-type boxes and section rhythm --- */
+
+  /* Frame: 50px tall boxes, 18px apart (scaled: 47 / 17). */
+  .studio-product-button {
+    min-height: 47px !important;
+    height: 47px !important;
+    padding: 0 18px !important;
+  }
+
+  .studio-product-list {
+    gap: 17px !important;
+  }
+
+  /* Frame: 35/32/35px between a section's content and the next
+     section's label -> one 32px stack gap; 28/24/28px between a
+     label and its own content -> 24px. */
+  .studio-left-stack {
+    gap: 32px !important;
+  }
+
+  .studio-control-group {
+    gap: 24px !important;
+  }
+
+  .studio-colour-row {
+    gap: 11px !important;
+  }
+
+  .studio-build-button {
+    min-height: 54px !important;
+    height: 54px !important;
+  }
+
+  .studio-fabric-card {
+    min-height: 91px !important;
+  }
+
+  /* Frame label cap-height is 10px at 2x with 0.2em tracking. */
+  .studio-eyebrow,
+  .studio-right-label,
+  .studio-info-title,
+  .studio-summary-label {
+    font-size: 11px !important;
+  }
+
+  /* --- Right column: dividers --- */
+
+  /* The frame does not use one uniform rule: the line under the
+     price is the strongest, the one under quantity is barely
+     there, and the one above Product Info sits between them. */
+  .studio-right-divider {
+    height: 1px !important;
+    background: rgba(5, 5, 5, 0.3) !important;
+  }
+
+  .studio-right-divider-soft {
+    background: rgba(5, 5, 5, 0.06) !important;
+  }
+
+  .studio-action-row + .studio-right-divider {
+    background: rgba(5, 5, 5, 0.12) !important;
+  }
+
+  /* --- Right column: section rhythm ---
+     Sibling selectors (not nth-child) so a conditional node like
+     the wishlist error can appear without shifting the scale. */
+  .studio-right-sticky {
+    gap: 0 !important;
+  }
+
+  .studio-field-block {
+    gap: 0 !important;
+  }
+
+  .studio-price {
+    font-size: 28px !important;
+  }
+
+  .studio-shipping-note {
+    margin-top: 18px !important;
+    font-size: 8.5px !important;
+    letter-spacing: 0.05em !important;
+  }
+
+  .studio-right-top + .studio-right-divider {
+    margin-top: 22px !important;
+  }
+
+  .studio-right-divider + .studio-quantity-block {
+    margin-top: 40px !important;
+  }
+
+  .studio-quantity {
+    width: 141px !important;
+    min-height: 39px !important;
+  }
+
+  .studio-quantity-block + .studio-right-divider-soft {
+    margin-top: 28px !important;
+  }
+
+  .studio-right-divider-soft + .studio-field-block {
+    margin-top: 20px !important;
+  }
+
+  .studio-size-header + .studio-size-grid {
+    margin-top: 21px !important;
+  }
+
+  /* Frame: four 61px boxes, 29px apart, left aligned and ending
+     short of the column -- expressed as a share of the column so
+     it holds at any right-panel width. */
+  .studio-size-grid {
+    grid-template-columns: repeat(4, 17.3%) !important;
+    justify-content: start !important;
+    gap: 8.2% !important;
+  }
+
+  .studio-size-button {
+    min-height: 36px !important;
+  }
+
+  .studio-field-block + .studio-summary-card {
+    margin-top: 41px !important;
+  }
+
+  .studio-summary-card + .studio-action-row {
+    margin-top: 25px !important;
+  }
+
+  .studio-action-row + .studio-right-divider {
+    margin-top: 33px !important;
+  }
+
+  .studio-right-divider + .studio-product-info {
+    margin-top: 18px !important;
+  }
+
+  /* Frame body copy is 14px/1.68 -- that is what makes the first
+     line break after "the" exactly as drawn. */
+  .studio-product-info p {
+    margin-top: 18px !important;
+    font-size: 14.5px !important;
+    line-height: 1.68 !important;
+  }
+
+  .studio-model-note {
+    margin-top: 22px !important;
+  }
+}

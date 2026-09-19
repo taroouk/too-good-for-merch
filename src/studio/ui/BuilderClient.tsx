@@ -1660,7 +1660,7 @@ export default function BuilderClient({
 <CheckoutButton
   onCheckout={openCheckout}
   disabled={!canCheckout || savePending}
-  label={isBespokeRequestCta ? "Request a Quote" : "Checkout"}
+  label={isBespokeRequestCta ? "Request a Quote" : "Add to Bag"}
 />
 
                   <button
