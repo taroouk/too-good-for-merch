@@ -3,7 +3,12 @@ import { NextResponse } from "next/server";
 import { auth } from "src/auth";
 import { apiError, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
-import { CheckoutError, createCheckoutOrder } from "src/lib/orders/checkout";
+import {
+  CheckoutError,
+  createCheckoutOrder,
+  shippingAddressColumns,
+  validateCheckoutContact,
+} from "src/lib/orders/checkout";
 import { orderFailureUpdateFor } from "src/lib/orders/errors";
 import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
 import { rateLimitHeaders } from "src/lib/rate-limit";
@@ -144,10 +149,25 @@ export async function POST(req: Request) {
           409,
         );
       }
+      // The checkout page lets the customer edit their details and resubmit
+      // against the same order (e.g. after correcting the delivery
+      // address), so persist the latest contact + address on retry too.
+      const { customer, address } = validateCheckoutContact(customerInput(body.customer), body.shippingAddress);
+      order = await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          customerName: customer.name,
+          customerEmail: customer.email,
+          customerPhone: customer.phone,
+          ...shippingAddressColumns(address),
+        },
+        include: { items: true },
+      });
     } else {
       order = await createCheckoutOrder(session.user.id, {
         buildId: typeof body.buildId === "string" ? body.buildId : "",
         customer: customerInput(body.customer),
+        shippingAddress: body.shippingAddress,
         placements: body.placements,
         size: body.size,
       });

@@ -186,6 +186,14 @@ model Order {
   customerEmail        String?
   customerName         String?
   customerPhone        String?
+  // Delivery address captured at checkout (app/checkout/page.tsx). Null on
+  // orders placed before address collection existed.
+  shippingCountry      String?
+  shippingCity         String?
+  shippingRegion       String?
+  shippingAddressLine1 String?
+  shippingAddressLine2 String?
+  shippingPostalCode   String?
   orderNumber          String           @unique
   paymentStatus        PaymentStatus    @default(UNPAID)
   paymentMethod        PaymentMethod?

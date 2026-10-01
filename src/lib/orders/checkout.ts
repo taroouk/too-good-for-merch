@@ -10,7 +10,13 @@ import {
   normalizePlacements,
 } from "src/pricing/placements";
 import { canAccessBuild } from "src/studio/permissions";
-import { cleanText, validateCustomer, CustomerValidationError } from "src/lib/orders/customer";
+import {
+  cleanText,
+  validateCustomer,
+  validateShippingAddress,
+  CustomerValidationError,
+  type ShippingAddressInput,
+} from "src/lib/orders/customer";
 import { isPaymobEligible } from "src/lib/bespoke/eligibility";
 import { normalizeArtworkPlacement } from "src/lib/artwork/save";
 import { buildDesignSignature, canReuseOrder, type DesignSignature } from "src/lib/orders/reuse";
@@ -21,20 +27,42 @@ export { CheckoutError } from "src/lib/orders/errors";
 export type CheckoutInput = {
   buildId: string;
   customer: { name: string; email: string; phone: string };
+  shippingAddress?: unknown;
   placements?: unknown;
   size?: unknown;
 };
 
-export async function createCheckoutOrder(userId: string, input: CheckoutInput) {
-  const buildId = cleanText(input?.buildId, 128);
-  if (!buildId) throw new CheckoutError("A build is required.");
-  let customer;
+// Maps a validated address onto the Order.shipping* columns.
+export function shippingAddressColumns(address: ShippingAddressInput) {
+  return {
+    shippingCountry: address.country,
+    shippingCity: address.city,
+    shippingRegion: address.region || null,
+    shippingAddressLine1: address.line1,
+    shippingAddressLine2: address.line2 || null,
+    shippingPostalCode: address.postalCode || null,
+  };
+}
+
+// Validates contact details + delivery address together, surfacing either
+// failure as a 400 CheckoutError. Shared with the create-intent retry path
+// so an order reused by orderId gets the customer's latest details too.
+export function validateCheckoutContact(customerInput: unknown, addressInput: unknown) {
   try {
-    customer = validateCustomer(input.customer);
+    const customer = validateCustomer(customerInput as CheckoutInput["customer"]);
+    const address = validateShippingAddress(addressInput);
+    return { customer, address };
   } catch (error) {
     if (error instanceof CustomerValidationError) throw new CheckoutError(error.message, 400);
     throw error;
   }
+}
+
+export async function createCheckoutOrder(userId: string, input: CheckoutInput) {
+  const buildId = cleanText(input?.buildId, 128);
+  if (!buildId) throw new CheckoutError("A build is required.");
+  const { customer, address } = validateCheckoutContact(input.customer, input.shippingAddress);
+  const shippingColumns = shippingAddressColumns(address);
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
@@ -183,7 +211,12 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     if (existing && reusable) {
       return tx.order.update({
         where: { id: existing.id },
-        data: { customerName: customer.name, customerEmail: customer.email, customerPhone: customer.phone },
+        data: {
+          customerName: customer.name,
+          customerEmail: customer.email,
+          customerPhone: customer.phone,
+          ...shippingColumns,
+        },
         include: { items: true },
       });
     }
@@ -197,6 +230,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
         customerName: customer.name,
         customerEmail: customer.email,
         customerPhone: customer.phone,
+        ...shippingColumns,
         subtotalCents: subtotalPaymentCents,
         totalCents: totalPaymentCents,
         canonicalTotalUsdCents,

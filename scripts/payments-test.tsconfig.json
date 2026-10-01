@@ -20,6 +20,7 @@
     "../src/lib/orders/display.ts",
     "../src/lib/orders/totals.ts",
     "../src/lib/orders/customer.ts",
+    "../src/lib/geo/countries.ts",
     "../src/lib/orders/reuse.ts",
     "../src/lib/orders/errors.ts",
     "../src/lib/orders/__tests__/**/*.ts",

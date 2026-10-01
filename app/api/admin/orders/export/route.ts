@@ -2,6 +2,7 @@ import { PaymentStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "src/lib/prisma";
 import { getAdminUser } from "src/lib/admin/auth";
+import { formatShippingAddress } from "src/lib/orders/display";
 
 function csv(value: unknown) {
   const text = String(value ?? "");
@@ -31,8 +32,8 @@ export async function GET(req: Request) {
     take: 5000,
   });
   const rows = [
-    ["Order ID", "Order number", "Created", "Customer", "Email", "Phone", "Items", "Currency", "Total", "Payment status", "Payment method", "Transaction ID", "Order status"],
-    ...orders.map((order) => [order.id, order.orderNumber, order.createdAt.toISOString(), order.customerName, order.customerEmail, order.customerPhone, order.items.reduce((sum, item) => sum + item.quantity, 0), order.currency, (order.totalCents / 100).toFixed(2), order.paymentStatus, order.paymentMethod, order.paymobTransactionId, order.status]),
+    ["Order ID", "Order number", "Created", "Customer", "Email", "Phone", "Delivery address", "Items", "Currency", "Total", "Payment status", "Payment method", "Transaction ID", "Order status"],
+    ...orders.map((order) => [order.id, order.orderNumber, order.createdAt.toISOString(), order.customerName, order.customerEmail, order.customerPhone, formatShippingAddress(order).join(", "), order.items.reduce((sum, item) => sum + item.quantity, 0), order.currency, (order.totalCents / 100).toFixed(2), order.paymentStatus, order.paymentMethod, order.paymobTransactionId, order.status]),
   ];
   const content = rows.map((row) => row.map(csv).join(",")).join("\r\n");
   return new NextResponse(content, {

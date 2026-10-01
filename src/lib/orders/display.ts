@@ -119,3 +119,37 @@ export function resolveOrderMockupIds(
     aiMockupId: snapshotAiMockupId ?? liveDraft?.aiMockupId ?? null,
   };
 }
+
+// Customer-facing product name for the checkout order summary. A build's
+// own `name` is usually unset ("Untitled"), so derive it from what the
+// customer actually built: Bespoke (CUSTOM) builds, builds carrying any
+// artwork/mockup (Customised), or a bare garment (Plain).
+export function productDisplayName(draft: {
+  product: string | null;
+  primaryAssetId?: string | null;
+  savedArtworkId?: string | null;
+  printMockupId?: string | null;
+  aiMockupId?: string | null;
+}): string {
+  if (draft.product === "CUSTOM") return "Bespoke T-shirt";
+  const hasArtwork = Boolean(
+    draft.primaryAssetId || draft.savedArtworkId || draft.printMockupId || draft.aiMockupId,
+  );
+  return hasArtwork ? "Customised T-shirt" : "Plain T-shirt";
+}
+
+// Multi-line delivery address for admin/fulfilment views; empty when the
+// order predates address collection.
+export function formatShippingAddress(order: {
+  shippingAddressLine1: string | null;
+  shippingAddressLine2: string | null;
+  shippingCity: string | null;
+  shippingRegion: string | null;
+  shippingPostalCode: string | null;
+  shippingCountry: string | null;
+}): string[] {
+  const locality = [order.shippingCity, order.shippingRegion, order.shippingPostalCode].filter(Boolean).join(", ");
+  return [order.shippingAddressLine1, order.shippingAddressLine2, locality, order.shippingCountry].filter(
+    (line): line is string => Boolean(line),
+  );
+}

@@ -6,11 +6,32 @@ const globalForPrisma = globalThis as unknown as {
 
 const isNewClient = !globalForPrisma.prisma;
 
-export const prisma =
-  globalForPrisma.prisma ??
-  new PrismaClient({
-    log: ["error", "warn"],
+function createPrismaClient() {
+  const client = new PrismaClient({
+    log: [
+      { emit: "event", level: "error" },
+      { emit: "stdout", level: "warn" },
+    ],
   });
+  // Neon closes idle connections on its side (compute auto-suspend and the
+  // PgBouncer pooler's idle timeout). The query engine notices on its
+  // background connection check and logs "Error in PostgreSQL connection:
+  // Error { kind: Closed, cause: None }" -- but it just discards that
+  // connection and opens a fresh one for the next query, so nothing failed.
+  // Keep every other engine error visible; queries that really fail still
+  // reject with their own error (and are retried below where safe).
+  // `$on` is a property read, so skip it in the browser stub (see the
+  // `typeof window` note further down).
+  if (typeof window === "undefined") {
+    client.$on("error", (event) => {
+      if (/kind:\s*Closed/.test(event.message)) return;
+      console.error("prisma:error", event.message);
+    });
+  }
+  return client;
+}
+
+export const prisma = globalForPrisma.prisma ?? createPrismaClient();
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
@@ -38,7 +59,7 @@ const RETRYABLE_READ_ACTIONS = new Set([
 // singleton. Checked via error.code directly, not `instanceof Prisma.
 // PrismaClientKnownRequestError` -- this file imports only the plain
 // PrismaClient class, never the `Prisma` namespace/runtime.
-const RETRYABLE_CONNECTION_ERROR_CODES = new Set(["P1001", "P1017"]);
+const RETRYABLE_CONNECTION_ERROR_CODES = new Set(["P1017"]);
 const RETRY_DELAY_MS = 200;
 
 // P2024 ("Timed out fetching a new connection from the pool") is different
@@ -113,11 +134,16 @@ if (typeof window === "undefined") {
         try {
           return await next(params);
         } catch (error) {
-          if (isPrismaInitializationError(error)) {
+          // P1001 ("can't reach database server") on an already-initialised
+          // client is the same Neon wake-from-suspend situation as an
+          // initialization error -- a single 200ms retry (the P1017 path
+          // below) is far shorter than a cold compute takes to come back,
+          // so give it the same longer backoff.
+          if (isPrismaInitializationError(error) || (error as { code?: string } | null)?.code === "P1001") {
             if (attempt >= INIT_RETRY_DELAYS_MS.length) throw error;
             const delay = INIT_RETRY_DELAYS_MS[attempt];
             console.warn(
-              `prisma: initialization error on ${params.model ?? "?"}.${params.action} (likely Neon compute waking from suspend) -- retrying in ${delay}ms (attempt ${attempt + 1}/${INIT_RETRY_DELAYS_MS.length})`,
+              `prisma: database unreachable on ${params.model ?? "?"}.${params.action} (likely Neon compute waking from suspend) -- retrying in ${delay}ms (attempt ${attempt + 1}/${INIT_RETRY_DELAYS_MS.length})`,
             );
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;

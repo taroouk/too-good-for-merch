@@ -92,13 +92,13 @@ function billingData(order: PaymobOrder) {
     phone_number: order.customerPhone ?? "+201000000000",
     apartment: "NA",
     floor: "NA",
-    street: "NA",
+    street: [order.shippingAddressLine1, order.shippingAddressLine2].filter(Boolean).join(", ") || "NA",
     building: "NA",
     shipping_method: "NA",
-    postal_code: "NA",
-    city: "Cairo",
-    country: "EG",
-    state: "Cairo",
+    postal_code: order.shippingPostalCode || "NA",
+    city: order.shippingCity || "Cairo",
+    country: order.shippingCountry || "EG",
+    state: order.shippingRegion || order.shippingCity || "Cairo",
   };
 }
 

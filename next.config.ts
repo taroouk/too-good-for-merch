@@ -19,13 +19,13 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     // Everything the app renders (images, fonts, scripts, styles) is
-    // same-origin or inlined by Next itself -- there are no external
-    // browser-facing hosts (Paymob/Prisma/etc. are server-to-server only) --
-    // so a strict self-only CSP is safe here. 'unsafe-inline' is required
+    // same-origin or inlined by Next itself, so a strict self-only CSP is
+    // safe here. The one external browser-facing host is Paymob's hosted
+    // card form, which /checkout embeds in an <iframe> (frame-src below). 'unsafe-inline' is required
     // for Next's inline bootstrap/style tags; 'unsafe-eval' is dev-only
     // (needed by the dev-mode React refresh runtime, not shipped to prod).
     const isProduction = process.env.NODE_ENV === "production";
-    const csp = [
+    const cspDirectives = (frameAncestors: string) => [
       "default-src 'self'",
       `script-src 'self' 'unsafe-inline'${isProduction ? "" : " 'unsafe-eval'"}`,
       "style-src 'self' 'unsafe-inline'",
@@ -33,13 +33,14 @@ const nextConfig: NextConfig = {
       "font-src 'self'",
       "connect-src 'self'",
       "media-src 'self'",
-      "frame-src 'none'",
+      "frame-src https://accept.paymob.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
-      "frame-ancestors 'none'",
+      `frame-ancestors ${frameAncestors}`,
       ...(isProduction ? ["upgrade-insecure-requests"] : []),
     ].join("; ");
+    const csp = cspDirectives("'none'");
 
     return [
       {
@@ -58,6 +59,17 @@ const nextConfig: NextConfig = {
             value: "max-age=31536000; includeSubDomains",
           },
           { key: "Content-Security-Policy", value: csp },
+        ],
+      },
+      // Paymob's response callback (see app/api/payments/paymob/verify)
+      // loads inside the embedded card iframe on /checkout, so it alone may
+      // be framed -- by our own origin only. Later entries override the
+      // same header keys set above.
+      {
+        source: "/api/payments/paymob/verify",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: cspDirectives("'self'") },
         ],
       },
     ];

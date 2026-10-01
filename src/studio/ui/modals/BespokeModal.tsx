@@ -12,12 +12,10 @@ import type { PlacementKey } from "src/pricing/placements";
 // does. This is the canonical placement/template geometry the server
 // compositor also uses -- no local coordinate/aspect-ratio table here.
 import { getEffectiveScaleBounds } from "src/studio/render/transform";
-import { getPlacementSide, getTemplateAspectRatio } from "src/studio/render/placement-config";
+import { getPlacementSide } from "src/studio/render/placement-config";
+import { getEditorAspectRatio } from "src/studio/render/editor-surface";
 import { previewArtworkBlend } from "src/studio/render/preview-blend";
-import {
-  artworkOverlayOpacity,
-  shouldMountArtworkOverlay,
-} from "src/studio/artwork-overlay-visibility";
+import { shouldMountArtworkOverlay } from "src/studio/artwork-overlay-visibility";
 import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
 import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
 import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
@@ -44,7 +42,6 @@ type PlacementCard = {
 };
 
 type BespokeModalProps = {
-  generatedMockupUrl: string | null;
   bespokeShirtSrc: string;
   artworkUrl: string | null;
   // Trim-to-visible-content version of artworkUrl, used ONLY for the
@@ -63,9 +60,7 @@ type BespokeModalProps = {
   activeArtworkAsset: UserAssetDTO | null;
   artworkTransform: ArtworkTransform;
   mockupPending: boolean;
-  canGenerateMockup: boolean;
-  shouldShowGenerateButton: boolean;
-  isMockupStale: boolean;
+  savePending: boolean;
   mockupError: string | null;
   userAssets: UserAssetDTO[];
   selectedPrimaryAssetId?: string | null;
@@ -82,7 +77,6 @@ type BespokeModalProps = {
   onArtworkScaleChange: ChangeEventHandler<HTMLInputElement>;
   onZoomIn: () => void;
   onResetArtworkTransform: () => void;
-  onGenerateMockup: () => void;
   onSelectAsset: (asset: UserAssetDTO) => void;
   onSaveTShirt: () => void;
 };
@@ -92,7 +86,6 @@ function cn(...parts: Array<string | false | null | undefined>) {
 }
 
 export default function BespokeModal({
-  generatedMockupUrl,
   bespokeShirtSrc,
   artworkUrl,
   overlayArtworkUrl,
@@ -106,9 +99,7 @@ export default function BespokeModal({
   activeArtworkAsset,
   artworkTransform,
   mockupPending,
-  canGenerateMockup,
-  shouldShowGenerateButton,
-  isMockupStale,
+  savePending,
   mockupError,
   userAssets,
   selectedPrimaryAssetId,
@@ -125,25 +116,24 @@ export default function BespokeModal({
   onArtworkScaleChange,
   onZoomIn,
   onResetArtworkTransform,
-  onGenerateMockup,
   onSelectAsset,
   onSaveTShirt,
 }: BespokeModalProps) {
   useEscapeToClose(onClose);
 
-  // getTemplateAspectRatio's hardcoded table is only a FALLBACK, used
-  // before the actual displayed image has finished loading -- it goes
-  // stale the moment the template/mockup PNGs actually on disk are a
-  // different shape than the table assumes (which is exactly what
-  // happened: the front template went from a 2480x2480 square to a
-  // ~1118x2353 portrait). The real ratio is measured from whichever image
-  // is ACTUALLY being shown right now (generated mockup or blank shirt
-  // template) via its own naturalWidth/naturalHeight, so the canvas always
-  // matches what's on screen instead of a guess that can silently drift
-  // out of sync with the asset files again.
-  const bespokeImageSrc = generatedMockupUrl && !isMockupStale ? generatedMockupUrl : bespokeShirtSrc;
-  const fallbackAspectRatio = getTemplateAspectRatio(getPlacementSide(activePlacement));
-  const previewAspectRatio = useImageAspectRatio(bespokeImageSrc, fallbackAspectRatio);
+  // The canvas always shows the flat editor tee now (never the generated
+  // mockup), so its shape is that one image's shape. Still MEASURED from
+  // the loaded image rather than read from a table: a hardcoded ratio goes
+  // stale the moment the asset on disk is replaced with a differently
+  // cropped one, which is exactly what happened to the model templates
+  // before (a 2480x2480 square became a ~1118x2353 portrait) and would
+  // silently letterbox the artwork overlay's percentage-based box, which
+  // is computed against THIS container. getEditorAspectRatio is only the
+  // pre-load fallback -- the tee's own ratio, since a model template's
+  // ~0.49 portrait ratio would letterbox a ~1.09 landscape tee until it
+  // finished loading.
+  const fallbackAspectRatio = getEditorAspectRatio(getPlacementSide(activePlacement));
+  const previewAspectRatio = useImageAspectRatio(bespokeShirtSrc, fallbackAspectRatio);
 
   // Same per-placement ceiling the server's resolvePlacement already
   // enforces (getEffectiveScaleBounds) -- not a second, independently
@@ -179,27 +169,43 @@ export default function BespokeModal({
 
         <div className="studio-bespoke-scroll">
         <div className="studio-bespoke-preview">
-          {isMockupStale && generatedMockupUrl ? (
-            <div className="studio-bespoke-stale-badge">
-              Preview changed — AI mockup is outdated.
-            </div>
-          ) : null}
           <div ref={previewRef} className="studio-bespoke-canvas" style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", aspectRatio: previewAspectRatio }}>
-           {generatedMockupUrl && !isMockupStale ? (
-             <img
-               src={generatedMockupUrl}
-               alt="AI mockup preview"
-               className="studio-bespoke-shirt"
-               style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
-             />
-           ) : (
-             <img
-               src={bespokeShirtSrc}
-               alt="T-shirt preview"
-               className="studio-bespoke-shirt"
-               style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
-             />
-           )}
+           {/* Always the flat editor tee -- this canvas never swaps to the
+               generated mockup. The popup is the place you BUILD the
+               t-shirt, so it has to keep showing the thing you are
+               building and stay draggable/zoomable the whole time;
+               generating a mockup used to replace this image with a
+               photo of a model and freeze the canvas until something
+               re-staled it. The generated mockup is shown on the model
+               in the Live Model Preview outside the popup instead, which
+               is where a photoreal result belongs. */}
+           <img
+             src={bespokeShirtSrc}
+             alt="T-shirt preview"
+             className="studio-bespoke-shirt"
+             style={{ position: "relative", width: "100%", height: "100%", objectFit: "contain" }}
+           />
+
+            {/* No artwork selected yet: show the Figma placeholder in the
+                selected placement's box (same box the artwork would use),
+                so the customer sees where their design will go. Purely
+                decorative -- not draggable, ignored by screen readers. */}
+            {!artworkUrl ? (
+              <img
+                src="/images/artwork-placeholder.png"
+                alt=""
+                aria-hidden="true"
+                className="studio-bespoke-artwork-placeholder"
+                draggable={false}
+                style={{
+                  position: "absolute",
+                  zIndex: 30,
+                  objectFit: "contain",
+                  pointerEvents: "none",
+                  ...bespokeArtworkStyle,
+                }}
+              />
+            ) : null}
 
             {artworkUrl && shouldMountArtworkOverlay({ artworkUrl }) ? (
               <img
@@ -209,26 +215,21 @@ export default function BespokeModal({
                 style={{
                   position: "absolute",
                   zIndex: 40,
-                  // Kept mounted at all times (not conditionally removed
-                  // from the DOM) so onArtworkPointerDown is always
-                  // reachable -- a fresh, non-stale generated mockup only
-                  // hides it visually. Previously this <img> was removed
-                  // from the DOM entirely whenever !isMockupStale, which
-                  // meant there was no way to ever start a drag again:
-                  // dragging is the only thing that invalidates the
-                  // mockup (via discardMockups in updateArtworkTransform),
-                  // but dragging requires this element to already exist.
-                  // See src/studio/artwork-overlay-visibility.ts for the
-                  // extracted, unit-tested mount/opacity logic.
-                  //
-                  // previewArtworkBlend/bespokeArtworkStyle both set their
-                  // own `opacity` (blend's is always 1; style's tracks the
-                  // artwork's own alpha), so the visibility override must
-                  // spread LAST or one of theirs silently wins.
+                  // Mounted, visible and interactive whenever there is
+                  // artwork at all -- never gated on mockup freshness.
+                  // That gate is what made the canvas look "stuck": this
+                  // <img> is the only element carrying onPointerDown, and
+                  // dragging is the only thing that invalidates a mockup
+                  // (via discardMockups in updateArtworkTransform), so
+                  // hiding or unmounting it once a mockup was fresh left
+                  // no way to ever start a drag again. Now that the canvas
+                  // never swaps to the mockup either (see above), there is
+                  // nothing behind this overlay for a mockup to cover, so
+                  // there is no freshness-dependent opacity left at all.
+                  // See src/studio/artwork-overlay-visibility.ts.
                   ...previewArtworkBlend(color),
                   ...bespokeArtworkStyle,
                   transform: bespokeArtworkTransform,
-                  opacity: artworkOverlayOpacity({ generatedMockupUrl, isMockupStale }),
                 }}
                 draggable={false}
                 onPointerDown={onArtworkPointerDown}
@@ -347,19 +348,6 @@ export default function BespokeModal({
                   </button>
                 </div>
 
-                <div className="studio-nanobanana-actions">
-                  {shouldShowGenerateButton ? (
-                    <button
-                      type="button"
-                      onClick={onGenerateMockup}
-                      disabled={mockupPending || !canGenerateMockup}
-                      className="studio-nanobanana-button"
-                    >
-                      {mockupPending ? "Generating..." : "Generate AI Mockup"}
-                    </button>
-                  ) : null}
-                </div>
-
                 {mockupError ? (
                   <div className="studio-bespoke-error">{mockupError}</div>
                 ) : null}
@@ -410,12 +398,16 @@ export default function BespokeModal({
         </div>
 
         <div className="studio-bespoke-controls-footer">
+          {/* Generates the AI mockup when needed, saves, then closes --
+              see saveBespokeTShirt in BuilderClient.tsx. */}
           <button
             type="button"
             onClick={onSaveTShirt}
-            className="studio-bespoke-save-button"
+            disabled={mockupPending || savePending}
+            aria-busy={mockupPending || savePending}
+            className="studio-bespoke-save-button disabled:cursor-wait disabled:opacity-70"
           >
-            Save T-Shirt
+            {mockupPending ? "Generating..." : savePending ? "Saving..." : "Save T-Shirt"}
           </button>
         </div>
         </div>

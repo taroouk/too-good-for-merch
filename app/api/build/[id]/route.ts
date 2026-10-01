@@ -9,6 +9,8 @@ import {
   placementsFromCustomNotes,
   placementsOrDefault,
 } from "src/pricing/placements";
+import { productDisplayName } from "src/lib/orders/display";
+import { getGarmentTemplate } from "src/studio/render/placement-config";
 import { getUserId } from "src/studio/authz";
 import { canAccessBuild } from "src/studio/permissions";
 
@@ -39,6 +41,8 @@ export async function GET(
             customQuoteNote: true,
             savedArtworkId: true,
             aiMockupId: true,
+            printMockupId: true,
+            primaryAssetId: true,
           },
         },
       },
@@ -93,9 +97,29 @@ export async function GET(
           })
         : null;
 
+    // Order-summary thumbnail: the composited print mockup (garment +
+    // artwork) is the most faithful picture of what's being bought, then the
+    // AI mockup, then the raw saved artwork, and finally the plain garment
+    // photo for builds with no artwork at all.
+    const draft = build.draft;
+    let thumbnailUrl: string | null = null;
+    if (draft.printMockupId) thumbnailUrl = `/api/mockups/${draft.printMockupId}/file`;
+    else if (draft.aiMockupId) thumbnailUrl = `/api/mockups/${draft.aiMockupId}/file`;
+    else if (draft.savedArtworkId) thumbnailUrl = `/api/artworks/${draft.savedArtworkId}/file`;
+    else if (draft.product && draft.color) {
+      try {
+        const template = getGarmentTemplate(draft.product, draft.color, "front");
+        thumbnailUrl = `/images/${encodeURIComponent(template.file)}`;
+      } catch {
+        thumbnailUrl = null;
+      }
+    }
+
     return NextResponse.json(
       {
         totals,
+        displayName: productDisplayName(draft),
+        thumbnailUrl,
         build: {
           id: build.id,
           name: build.name,

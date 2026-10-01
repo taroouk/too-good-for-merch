@@ -8,6 +8,98 @@ import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import type { GarmentSide, PlacementBox, TemplateRef } from "./types";
 import { RendererError } from "./errors";
 
+// A rectangle in an image's own canvas-relative fractions: x/width are
+// fractions of the canvas WIDTH, y/height are fractions of the canvas
+// HEIGHT. Same anchor convention as PlacementBox (top-left corner).
+export type GarmentFrame = {
+  xPct: number;
+  yPct: number;
+  widthPct: number;
+  heightPct: number;
+};
+
+// Where the shirt's torso sits in each of the 8 model photos, read off a
+// 5%-gridline overlay composited onto every one of them (`node scripts/
+// measure-garment-frames.mjs grid`) -- the same "composite an overlay onto
+// the real photo and look at it" method placement-config.ts's own boxes
+// were calibrated with. Per (product, color, side) rather than per side
+// alone because these 8 files
+// are each an individually cropped photo: WHITE and BLACK of the same
+// product genuinely differ by a few percent in both framing and hem
+// height. Re-measure if any template photo is replaced.
+export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<GarmentSide, GarmentFrame>>> = {
+  FITTED: {
+    WHITE: {
+      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
+      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+    },
+    BLACK: {
+      front: { xPct: 0.185, yPct: 0.29, widthPct: 0.645, heightPct: 0.54 },
+      back: { xPct: 0.19, yPct: 0.265, widthPct: 0.63, heightPct: 0.43 },
+    },
+    CUSTOM: {
+      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
+      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+    },
+  },
+  OVERSIZED: {
+    WHITE: {
+      front: { xPct: 0.17, yPct: 0.28, widthPct: 0.66, heightPct: 0.51 },
+      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.68, heightPct: 0.5 },
+    },
+    BLACK: {
+      front: { xPct: 0.17, yPct: 0.27, widthPct: 0.66, heightPct: 0.53 },
+      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.66, heightPct: 0.505 },
+    },
+    CUSTOM: {
+      front: { xPct: 0.17, yPct: 0.28, widthPct: 0.66, heightPct: 0.51 },
+      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.68, heightPct: 0.5 },
+    },
+  },
+  CUSTOM: {
+    WHITE: {
+      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
+      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+    },
+    BLACK: {
+      front: { xPct: 0.185, yPct: 0.29, widthPct: 0.645, heightPct: 0.54 },
+      back: { xPct: 0.19, yPct: 0.265, widthPct: 0.63, heightPct: 0.43 },
+    },
+    CUSTOM: {
+      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
+      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+    },
+  },
+};
+
+// Where each print placement sits ON THE GARMENT, as fractions of the
+// shirt's torso (the GarmentFrame above): x/width from the wearer's right
+// side seam (viewer's left) across to the other seam, y from the shoulder
+// line down to the hem. Based on standard print placements for a ~20"
+// wide / ~28" long body (full front ~12" wide starting ~4" below the
+// shoulder, centre chest ~8.5", chest logos ~4"), and matching the Figma
+// placement cards (Left Chest on the viewer's left). Defining them on the
+// garment rather than on a photo means the SAME spec lands on the same
+// spot of the flat tee in the popup (editor-surface.ts) and of every model
+// photo here -- the earlier per-photo boxes covered ~94% of the torso for
+// Full Front/Back, i.e. seam to seam, out over the model's arms.
+const TORSO_PLACEMENTS: Partial<Record<PlacementType, PlacementBox>> = {
+  FULL_FRONT: { xPct: 0.2, yPct: 0.2, widthPct: 0.6 },
+  CENTER_FRONT: { xPct: 0.29, yPct: 0.24, widthPct: 0.42 },
+  LEFT_CHEST: { xPct: 0.17, yPct: 0.2, widthPct: 0.2 },
+  RIGHT_CHEST: { xPct: 0.63, yPct: 0.2, widthPct: 0.2 },
+  FULL_BACK: { xPct: 0.2, yPct: 0.17, widthPct: 0.6 },
+  CENTER_BACK: { xPct: 0.29, yPct: 0.2, widthPct: 0.42 },
+};
+
+export function getTemplateTorsoFrame(
+  product: ProductType,
+  color: GarmentColor,
+  side: GarmentSide,
+): GarmentFrame {
+  return TEMPLATE_FRAMES[product][color][side];
+}
+
 // Re-measured directly against the CURRENT real template photos
 // (public/images/TGFM White*.png, public/images/Oversized White*.png --
 // these files were replaced mid-project with new, differently-framed
@@ -19,6 +111,10 @@ import { RendererError } from "./errors";
 // new photos at all -- CENTER_BACK/FULL_BACK in particular were landing on
 // the model's hair, and LEFT_CHEST/RIGHT_CHEST overlapped each other and
 // sat on the collar instead of chest-pocket height.
+// NOTE: only the *_SLEEVE entries of FITTED_BOXES / OVERSIZED_BOXES are
+// still read -- every front/back placement is now computed from
+// TORSO_PLACEMENTS above (see getPlacementBox). The others are kept only
+// to satisfy the Record<PlacementType, ...> shape.
 const FITTED_BOXES: Record<PlacementType, PlacementBox> = {
   CENTER_FRONT: { xPct: 0.34, yPct: 0.4, widthPct: 0.32 },
   FULL_FRONT: { xPct: 0.2, yPct: 0.36, widthPct: 0.6 },
@@ -89,7 +185,17 @@ export function getPlacementBox(
   color: GarmentColor,
   placement: PlacementType,
 ): PlacementBox {
-  void color;
+  const torso = TORSO_PLACEMENTS[placement];
+  if (torso) {
+    const frame = getTemplateTorsoFrame(product, color, PLACEMENT_SIDES[placement]);
+    return {
+      xPct: frame.xPct + torso.xPct * frame.widthPct,
+      yPct: frame.yPct + torso.yPct * frame.heightPct,
+      widthPct: torso.widthPct * frame.widthPct,
+    };
+  }
+  // Sleeves keep their photo-calibrated boxes (the torso frame deliberately
+  // excludes the sleeves -- see GarmentFrame).
   const box = boxesForProduct(product)[placement];
   if (!box) {
     throw new RendererError(`No placement box configured for ${product}/${placement}.`, 400);

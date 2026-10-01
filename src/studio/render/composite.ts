@@ -2,6 +2,12 @@
 import sharp from "sharp";
 import { RendererError } from "./errors";
 import { trimToVisibleBounds } from "./garment-bbox";
+import {
+  DEFAULT_FABRIC_SHADING,
+  applyFabricShading,
+  canSampleShadingRegion,
+  type FabricShadingOptions,
+} from "./fabric-shading";
 import type { ResolvedPlacement } from "./types";
 
 // Shared by both the deterministic Print Mockup renderer (artwork onto the
@@ -17,6 +23,13 @@ export async function compositeArtworkOntoBase(
   baseImage: Buffer,
   artwork: Buffer,
   resolved: ResolvedPlacement,
+  // Fabric realism (see fabric-shading.ts): the garment's own light, shade
+  // and folds re-applied to the print, plus ink absorption. Pass
+  // `{ ...DEFAULT_FABRIC_SHADING, strength: 0 }` -- or null -- for the
+  // bare geometric composite. Defaulted ON deliberately: both callers (the
+  // Print Mockup and the AI Mockup post-composite) put artwork onto a
+  // photograph of real fabric, and both looked like stickers without it.
+  shading: FabricShadingOptions | null = DEFAULT_FABRIC_SHADING,
 ): Promise<Buffer> {
   // Trim to the artwork's own visible content FIRST, before anything below
   // reads its dimensions -- so resolved.width/height (the user's configured
@@ -57,12 +70,33 @@ export async function compositeArtworkOntoBase(
   const left = Math.round(resolved.left - (actualWidth - resolved.width) / 2);
   const top = Math.round(resolved.top - (actualHeight - resolved.height) / 2);
 
+  // Transfer the garment's own shading onto the print before compositing.
+  // Sampled from the exact pixels the print is about to cover, at the
+  // exact offset it will land on, so folds line up with the fabric they
+  // come from. Skipped when the placement is not fully on the base image
+  // (nothing to sample -- see canSampleShadingRegion) or when shading is
+  // switched off, in which case this is the original flat composite.
+  let printLayer = resizedArtwork;
+  if (shading && shading.strength > 0) {
+    const baseMeta = await sharp(baseImage).metadata();
+    const region = { left, top, width: actualWidth, height: actualHeight };
+    if (canSampleShadingRegion(region, baseMeta.width ?? 0, baseMeta.height ?? 0)) {
+      let garmentUnderPrint: Buffer;
+      try {
+        garmentUnderPrint = await sharp(baseImage).extract(region).png().toBuffer();
+      } catch {
+        throw new RendererError("Failed to sample the garment under the artwork.", 500);
+      }
+      printLayer = await applyFabricShading(resizedArtwork, garmentUnderPrint, shading);
+    }
+  }
+
   try {
     // sharp's .png() strips metadata (no ICC profile, no timestamps) by
     // default unless .withMetadata() is explicitly called, which keeps
     // output deterministic for identical pixel input.
     return await sharp(baseImage)
-      .composite([{ input: resizedArtwork, left, top }])
+      .composite([{ input: printLayer, left, top }])
       .png({ compressionLevel: 9 })
       .toBuffer();
   } catch {

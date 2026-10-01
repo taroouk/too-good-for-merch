@@ -37,8 +37,17 @@ import {
   getDragBounds,
   getEffectiveScaleBounds,
 } from "src/studio/render/transform";
-import { getPlacementStyle } from "src/studio/render/placement-css";
 import { getBespokeShirtImage } from "src/studio/render/bespoke-shirt-image";
+// The Bespoke popup designs on a FLAT tee, while everything outside it
+// (the Live Model Preview, the Print Mockup, the Gemini mockup) renders
+// onto the photographed-model templates. The stored transform stays in
+// template space; these convert it to/from the flat tee's own canvas for
+// display and for drag input only. See src/studio/render/editor-surface.ts.
+import {
+  getEditorPlacementStyle,
+  toEditorOffset,
+  toTemplateOffset,
+} from "src/studio/render/editor-surface";
 import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 import {
@@ -238,14 +247,20 @@ export default function BuilderClient({
     quantity: draft.quantity ?? 1,
   });
 
-  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(() =>
-    placementsFromCustomNotes(draft.customNotes),
-  );
-  const [activePlacement, setActivePlacement] = useState<PlacementKey>(
-    (typeof initialArtworkPlacement?.placement === "string" && initialArtworkPlacement.placement
+  const initialActivePlacement: PlacementKey =
+    typeof initialArtworkPlacement?.placement === "string" && initialArtworkPlacement.placement
       ? (initialArtworkPlacement.placement as PlacementKey)
-      : "CENTER_FRONT"),
-  );
+      : "CENTER_FRONT";
+  // Placement is single-select: exactly one placement is ever selected.
+  // Drafts saved back when it was multi-select (up to 4) may still carry
+  // several in customNotes -- keep only the one the artwork is placed on
+  // (or the first) so the popup never shows more than one as selected.
+  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(() => {
+    const saved = placementsFromCustomNotes(draft.customNotes);
+    if (saved.includes(initialActivePlacement)) return [initialActivePlacement];
+    return saved.slice(0, 1);
+  });
+  const [activePlacement, setActivePlacement] = useState<PlacementKey>(initialActivePlacement);
   const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
   const [, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
@@ -263,7 +278,6 @@ export default function BuilderClient({
   // Canonical saved-artwork URL (Artwork model). Set on "Save T-Shirt" and
   // seeded from the persisted value on load so a refresh/re-open shows the
   // exact saved image without regenerating anything.
-  const [savedArtworkUrl, setSavedArtworkUrl] = useState<string | null>(initialSavedArtworkUrl);
   const [savePending, setSavePending] = useState(false);
   const [inWishlist, setInWishlist] = useState(initialInWishlist);
   const [wishlistPending, setWishlistPending] = useState(false);
@@ -479,25 +493,47 @@ export default function BuilderClient({
 
   // A placement/product/color/transform change invalidates both tracks --
   // both compare against livePrintFingerprint (see above).
-  //
-  // Also clears savedArtworkUrl: the BespokeModal's generatedMockupUrl prop
-  // falls back to it (`aiMockupUrl ?? savedArtworkUrl`) so a previously
-  // Saved T-Shirt keeps rendering after a page reload even if the AI mockup
-  // row was pruned. But that same fallback, left uncleared, meant the
-  // canvas kept showing the last-Saved snapshot FOREVER once one existed --
-  // every edit already nulled aiMockupUrl via discardAiMockup above, but
-  // the fallback silently took over, so the preview looked permanently
-  // "stuck" on the saved image and dragging (which moves an overlay
-  // rendered invisible whenever generatedMockupUrl is truthy -- see
-  // artworkOverlayOpacity) appeared to do nothing. A live edit invalidates
-  // a saved snapshot exactly like it invalidates the print/AI mockups, so
-  // this must be discarded here too, not just at Save time.
   function discardMockups() {
     discardPrintMockup();
     discardAiMockup();
-    setSavedArtworkUrl(null);
     setMockupError(null);
   }
+
+  // Fit the whole builder into the window with no page scroll. From
+  // 1024px up, app/globals.css ("Figma pass", section 2) draws the design's
+  // 1392x816 content area at its real size; this zooms it down as one
+  // piece to fit the window (up to MAX_UPSCALE on large screens), and gives the
+  // shell exactly the remaining viewport height. Below 1024px the layout
+  // stacks and scrolls normally, so the variables are cleared.
+  const shellRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+    const LAYOUT_WIDTH = 1392;
+    const LAYOUT_HEIGHT = 816;
+    // Large screens (e.g. 1920x1080) scale the composition up too rather
+    // than leaving it at 1440 size with a band of empty space below.
+    const MAX_UPSCALE = 1.25;
+    const fit = () => {
+      if (window.innerWidth < 1024) {
+        shell.style.removeProperty("--studio-avail");
+        shell.style.removeProperty("--studio-fit");
+        return;
+      }
+      const top = shell.getBoundingClientRect().top + window.scrollY;
+      const available = Math.max(0, window.innerHeight - top);
+      const frame = shell.querySelector<HTMLElement>(".studio-builder-frame");
+      const width = frame?.clientWidth ?? shell.clientWidth;
+      shell.style.setProperty("--studio-avail", `${available}px`);
+      shell.style.setProperty(
+        "--studio-fit",
+        String(Math.min(MAX_UPSCALE, available / LAYOUT_HEIGHT, width / LAYOUT_WIDTH)),
+      );
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, []);
 
   useEffect(() => {
     setMounted(true);
@@ -691,6 +727,24 @@ export default function BuilderClient({
     startTransition(() => actionUpdateDraft(buildId, fd));
   }
 
+  // One-time cleanup for drafts saved while placement was multi-select:
+  // persist the single placement kept above, so checkout (which prices from
+  // the draft's saved placements) charges for what the customer now sees.
+  // Skipped when an admin quote is set -- save() would void that quote.
+  const placementsNormalizedRef = useRef(false);
+  useEffect(() => {
+    if (placementsNormalizedRef.current) return;
+    placementsNormalizedRef.current = true;
+    if (customQuoteUsdCents != null) return;
+    if (placementsFromCustomNotes(state.customNotes).length <= 1) return;
+    save({
+      ...state,
+      customNotes: upsertPlacementsInNotes(state.customNotes, selectedPlacements),
+    });
+    // Mount-only by design (guarded by the ref above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleUpload(file: File) {
     if (!ALLOWED_ARTWORK_MIME_TYPES.has(file.type)) {
       setMockupError("Artwork must be PNG, JPG, WEBP, or SVG.");
@@ -880,10 +934,23 @@ export default function BuilderClient({
     const containerWidth = previewNodeRef.current?.getBoundingClientRect().width;
     if (!containerWidth) return;
 
+    // The pixel delta is measured against the FLAT TEE canvas, so it is an
+    // editor-space offset -- convert it back to template space before
+    // adding it to the (template-space) origin, or the artwork would track
+    // the cursor at the wrong rate and everything downstream (clamping,
+    // persistence, the render) would receive the wrong numbers. This is
+    // the exact inverse of the toEditorOffset applied in
+    // bespokeArtworkTransform.
+    const editorDelta = {
+      x: (event.clientX - dragState.startX) / containerWidth,
+      y: (event.clientY - dragState.startY) / containerWidth,
+    };
+    const templateDelta = toTemplateOffset(editorDelta, state.product, state.color, activePlacement);
+
     updateArtworkTransform({
       ...dragState.origin,
-      x: dragState.origin.x + (event.clientX - dragState.startX) / containerWidth,
-      y: dragState.origin.y + (event.clientY - dragState.startY) / containerWidth,
+      x: dragState.origin.x + templateDelta.x,
+      y: dragState.origin.y + templateDelta.y,
     });
   }
 
@@ -1029,12 +1096,11 @@ export default function BuilderClient({
     openBespokeBuilder();
   }
 
-  function togglePlacement(key: PlacementKey) {
-    const next = selectedPlacements.includes(key)
-      ? selectedPlacements.filter((item) => item !== key)
-      : selectedPlacements.length >= 4
-        ? selectedPlacements
-        : [...selectedPlacements, key];
+  // Single-select: picking a placement replaces the previous one, and
+  // picking the current one again keeps it (never leaves none selected).
+  function selectPlacement(key: PlacementKey) {
+    const next: PlacementKey[] = [key];
+    if (selectedPlacements.length === 1 && selectedPlacements[0] === key) return;
 
     setSelectedPlacements(next);
 
@@ -1116,7 +1182,7 @@ export default function BuilderClient({
   }
 
   function handlePlacementClick(key: PlacementKey) {
-    togglePlacement(key);
+    selectPlacement(key);
     setActivePlacement(key);
   }
 
@@ -1128,7 +1194,20 @@ export default function BuilderClient({
   // which then failed generatePrintMockup's product check on the next
   // "Generate AI Mockup" click even though the user never touched product.
   // continueCustomRequest() above is the only place that should set CUSTOM.
+  // Save T-Shirt is the popup's single action: it generates the AI mockup
+  // first whenever one is needed (none yet, or stale against the current
+  // design -- the same condition that used to show a separate "Generate AI
+  // Mockup" button), then persists placement + artwork and closes. A failed
+  // generation keeps the popup open with the error, so nothing is lost.
   async function saveBespokeTShirt() {
+    if (savePending || mockupPending) return;
+
+    let hasFreshMockup = Boolean(aiMockupUrl) && !isAiMockupStale;
+    if (shouldShowGenerateAiButton) {
+      hasFreshMockup = await generateNanoBananaMockup();
+      if (!hasFreshMockup) return;
+    }
+
     save({ ...state });
 
     const placementPayload = {
@@ -1163,11 +1242,10 @@ export default function BuilderClient({
     // survives navigation/refresh and can be referenced by Wishlist /
     // Bespoke / Admin. Upserts on the source mockup -- a repeat save never
     // creates a second record. Silently a no-op if nothing is generated yet.
-    if (aiMockupUrl && state.primaryAssetId) {
+    if (hasFreshMockup && state.primaryAssetId) {
       setSavePending(true);
       try {
-        const result = await actionSaveArtwork(buildId, placementPayload);
-        setSavedArtworkUrl(result.url);
+        await actionSaveArtwork(buildId, placementPayload);
       } catch (error) {
         setMockupError(error instanceof Error ? error.message : "Could not save your artwork.");
       } finally {
@@ -1254,12 +1332,39 @@ export default function BuilderClient({
   // untrimmed asset URL.
   const bespokeOverlayArtworkUrl = useTrimmedArtworkUrl(artworkUrl);
 
+  // The popup's canvas is the FLAT tee, not the model photo, so the
+  // canonical template-space placement box has to be expressed in the flat
+  // tee's own canvas fractions before it can be used as a CSS box here --
+  // otherwise a box tuned against a photo where the garment covers ~60% of
+  // the width lands somewhere else entirely on a tee that fills its canvas.
+  // getEditorPlacementStyle does exactly that remap (through both surfaces'
+  // garment frames); it is NOT a second, canvas-tuned placement table.
   const bespokeArtworkStyle = useMemo(() => {
     if (!activePlacement) return {};
-    const resolvedProduct: ProductType = state.product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
-    const resolvedColor: GarmentColor = state.color === "BLACK" ? "BLACK" : "WHITE";
-    return getPlacementStyle(resolvedProduct, resolvedColor, activePlacement);
+    return getEditorPlacementStyle(state.product, state.color, activePlacement);
   }, [activePlacement, state.product, state.color]);
+
+  // What the Live Model Preview (outside the popup) shows on the model.
+  //
+  // The popup's own canvas is now permanently the flat editor tee -- it is
+  // where the t-shirt gets BUILT, so it has to stay the thing being built
+  // and stay draggable. That makes this preview the only place a photoreal
+  // result can land, so it shows the best available one: the Gemini AI
+  // mockup while it is fresh, otherwise the deterministic Print Mockup,
+  // otherwise (both stale/absent) TryOn3DPreview's own model photo with
+  // the live artwork overlay.
+  //
+  // Preferring the AI mockup only while it is FRESH matters: both mockups
+  // are invalidated by the same live fingerprint (see isAiMockupStale /
+  // isPrintMockupStale), so the instant the user drags, zooms or swaps
+  // artwork this falls back rather than leaving a stale photo of the
+  // previous design on the model.
+  const modelPreviewMockup = useMemo(() => {
+    if (aiMockupUrl && !isAiMockupStale) {
+      return { url: aiMockupUrl, isStale: false };
+    }
+    return { url: printMockupUrl, isStale: isPrintMockupStale };
+  }, [aiMockupUrl, isAiMockupStale, printMockupUrl, isPrintMockupStale]);
 
   const bespokeShirtSrc = useMemo(
     () => getBespokeShirtImage(state.product, state.color, activePlacement),
@@ -1269,11 +1374,24 @@ export default function BuilderClient({
   const bespokeArtworkTransform = useMemo(() => {
     const baseTransform =
       typeof bespokeArtworkStyle.transform === "string" ? bespokeArtworkStyle.transform : "";
-    const { x: offsetX, y: offsetY } = artworkOffsetPx(artworkTransform, bespokeCanvasWidth);
+    // artworkTransform is stored in TEMPLATE space (that's what gets
+    // persisted, validated and rendered); this canvas is the flat tee, so
+    // the offset is converted into the tee's own canvas-width units first
+    // -- the exact counterpart of the inverse conversion applied to drag
+    // input in handleArtworkPointerMove.
+    const editorOffset = toEditorOffset(artworkTransform, state.product, state.color, activePlacement);
+    const { x: offsetX, y: offsetY } = artworkOffsetPx(editorOffset, bespokeCanvasWidth);
     // P3-21c: rotate last, about the artwork's own center -- matches the
     // server compositor (src/studio/render/composite.ts).
     return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${artworkTransform.scale}) rotate(${artworkTransform.rotation}deg)`.trim();
-  }, [artworkTransform, bespokeArtworkStyle, bespokeCanvasWidth]);
+  }, [
+    activePlacement,
+    artworkTransform,
+    bespokeArtworkStyle,
+    bespokeCanvasWidth,
+    state.color,
+    state.product,
+  ]);
 
   // Single user-facing action: "Generate AI Mockup" always (re)generates a
   // fresh, deterministic Print Mockup from the CURRENT Studio artwork state
@@ -1288,10 +1406,13 @@ export default function BuilderClient({
   // color, and placement itself, server-side, from rows the draft already
   // owns -- no client-captured DOM screenshot, raw artwork, or transform
   // numbers are ever sent to it.
-  async function generateNanoBananaMockup() {
+  // Resolves true when a fresh AI mockup was generated. Returned directly
+  // (not read back from aiMockupUrl state) because saveBespokeTShirt awaits
+  // this and its own closure would still see the pre-generation state.
+  async function generateNanoBananaMockup(): Promise<boolean> {
     if (!state.primaryAssetId || !activeArtworkAsset) {
       setMockupError("Select artwork first.");
-      return;
+      return false;
     }
 
     setMockupPending(true);
@@ -1343,11 +1464,13 @@ export default function BuilderClient({
       if (typeof data.fingerprint === "string" && data.fingerprint) {
         setAiMockupFingerprint(data.fingerprint);
       }
+      return true;
     } catch (error) {
       discardAiMockup();
       setMockupError(
         error instanceof Error ? error.message : "Could not generate mockup.",
       );
+      return false;
     } finally {
       setMockupPending(false);
     }
@@ -1468,7 +1591,6 @@ export default function BuilderClient({
     mounted && showBespokeModal
       ? createPortal(
           <BespokeModal
-            generatedMockupUrl={aiMockupUrl ?? savedArtworkUrl}
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
             overlayArtworkUrl={bespokeOverlayArtworkUrl}
@@ -1482,9 +1604,7 @@ export default function BuilderClient({
             activeArtworkAsset={activeArtworkAsset}
             artworkTransform={artworkTransform}
             mockupPending={mockupPending}
-            canGenerateMockup={Boolean(state.primaryAssetId)}
-            shouldShowGenerateButton={shouldShowGenerateAiButton}
-            isMockupStale={isAiMockupStale}
+            savePending={savePending}
             mockupError={mockupError}
             userAssets={userAssets}
             selectedPrimaryAssetId={state.primaryAssetId}
@@ -1501,9 +1621,8 @@ export default function BuilderClient({
             onArtworkScaleChange={handleArtworkScaleChange}
             onZoomIn={() => changeArtworkScale(artworkTransform.scale + 0.1)}
             onResetArtworkTransform={resetArtworkTransform}
-            onGenerateMockup={() => void generateNanoBananaMockup()}
             onSelectAsset={(asset) => void selectAsset(asset)}
-            onSaveTShirt={saveBespokeTShirt}
+            onSaveTShirt={() => void saveBespokeTShirt()}
           />,
           document.body,
         )
@@ -1528,7 +1647,7 @@ export default function BuilderClient({
         }}
       />
 
-      <main className="studio-builder-shell">
+      <main ref={shellRef} className="studio-builder-shell">
         <div className="studio-builder-frame">
           <div className="studio-builder-grid">
             <section className="studio-left-panel" aria-label="Product controls">
@@ -1597,8 +1716,8 @@ export default function BuilderClient({
               artworkUrl={artworkUrl}
               activePlacement={activePlacement}
               artworkTransform={artworkTransform}
-              generatedMockupUrl={printMockupUrl}
-              isMockupStale={isPrintMockupStale}
+              generatedMockupUrl={modelPreviewMockup.url}
+              isMockupStale={modelPreviewMockup.isStale}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">
@@ -1685,10 +1804,10 @@ export default function BuilderClient({
                 <div className="studio-product-info">
                   <div className="studio-info-title">Product Info</div>
 
-                  <p>
-                    Constructed from 100% organic cotton, the Archive base is
-                    refined for everyday wear and premium artwork application.
-                  </p>
+                  {/* Copy ends here to match the Figma frame, which sets
+                      the Product Info paragraph as "Constructed from 100%
+                      organic cotton, the Archive" and hugs to it. */}
+                  <p>Constructed from 100% organic cotton, the Archive</p>
                 </div>
 
                 <div className="studio-model-note">

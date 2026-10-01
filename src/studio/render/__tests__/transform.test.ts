@@ -53,10 +53,15 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 340);
-      assert.equal(resolved.top, 400);
-      assert.equal(resolved.width, 320);
-      assert.equal(resolved.height, 160);
+      // CENTER_FRONT is now defined on the torso (TORSO_PLACEMENTS in
+      // placement-config.ts): x .29 / y .24 / width .42 of FITTED WHITE
+      // front's torso frame (x .18, y .295, w .64, h .53), so
+      // left = (.18 + .29*.64)*1000 = 365.6, top = (.295 + .24*.53)*1000
+      // = 422.2, width = .42*.64*1000 = 268.8, height = width/2.
+      assert.equal(resolved.left, 366);
+      assert.equal(resolved.top, 422);
+      assert.equal(resolved.width, 269);
+      assert.equal(resolved.height, 134);
       assert.equal(resolved.rotation, 0);
     },
 
@@ -95,7 +100,7 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 840);
+      assert.equal(resolved.left, 866);
     },
 
     "resolvePlacement rejects x/y beyond TRANSFORM_BOUNDS"() {

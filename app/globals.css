@@ -5414,3 +5414,1834 @@ body {
     margin-top: 22px !important;
   }
 }
+
+/* ============================================================
+   FIGMA MATCH — left "THE STUDIO" section, frame-exact
+   Source: Figma frame 360 x 685 (Hug), vertical auto layout,
+   gap 32, padding 16 horizontal / 24 vertical, corner radius 0,
+   fill #FFFFFF. Everything else below is measured off the frame
+   export at its own scale (1 CSS px = 1.4285 image px) and is
+   quoted in CSS px.
+
+   NOT gated behind the 1025px builder breakpoint on purpose:
+   the 360-wide frame is the narrow/stacked rendering too, and
+   the desktop grid column lands on the same 328px content box.
+   ============================================================ */
+
+/* Frame: 16 horizontal / 24 vertical padding, flat white, no
+   divider under the title (the frame draws none). */
+.studio-left-panel {
+  padding: 24px 16px !important;
+  background: #ffffff !important;
+}
+
+.studio-panel-header {
+  padding-bottom: 0 !important;
+  border-bottom: 0 !important;
+}
+
+/* Auto layout gap 32 between the frame's children (title,
+   product type, colour, fabric, build button). */
+.studio-left-stack {
+  margin-top: 32px !important;
+  gap: 32px !important;
+}
+
+/* Title: measured cap height 32.2px -> 44px type, tight leading. */
+.studio-title {
+  font-size: 44px !important;
+  line-height: 1.1 !important;
+}
+
+/* Section labels: measured cap height 9.1px -> 12.5px type, and
+   the measured label width only resolves at ~0.1em tracking
+   (not the 0.2em the earlier pass guessed). */
+.studio-left-panel .studio-eyebrow {
+  font-size: 12.5px !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.1em !important;
+}
+
+/* Label box top -> content top measures 36px across all three
+   groups; 15px label box + 21px gap. */
+.studio-control-group {
+  gap: 21px !important;
+}
+
+/* Product type: 46px tall boxes, 16px apart, 328px wide, and a
+   10px corner radius (measured off the black button's corner
+   profile -- the earlier 4px was eyeballed and wrong). */
+.studio-product-button {
+  min-height: 46px !important;
+  height: 46px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.08em !important;
+}
+
+.studio-product-list {
+  gap: 16px !important;
+}
+
+.studio-product-button-idle {
+  background: #ffffff !important;
+  border: 1px solid #050505 !important;
+  color: #050505 !important;
+}
+
+.studio-product-button-active {
+  background: #050505 !important;
+  border: 1px solid #050505 !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Colour: three 40px dots, 16px apart (152px row total). */
+.studio-colour-dot {
+  width: 40px !important;
+  height: 40px !important;
+}
+
+.studio-colour-row {
+  gap: 16px !important;
+}
+
+/* Fabric card: 89px tall, 10px radius, 13px/16px inner padding.
+   Inner type measured at 10.5 / 15.5 / 11px. */
+.studio-fabric-card {
+  min-height: 89px !important;
+  border-radius: 10px !important;
+  /* 10px (not 13) so the card lands on the frame's 89px with the
+     1px border included -- the inner text block already measures
+     the frame's 67px. */
+  padding: 10px 16px !important;
+}
+
+.studio-fabric-name {
+  font-size: 10.5px !important;
+}
+
+.studio-fabric-gsm {
+  font-size: 15.5px !important;
+}
+
+.studio-fabric-desc {
+  font-size: 11px !important;
+  line-height: 1.25 !important;
+}
+
+/* Build button: 53px tall, same 10px radius. */
+.studio-build-button {
+  min-height: 53px !important;
+  height: 53px !important;
+  border-radius: 10px !important;
+  font-size: 13px !important;
+  letter-spacing: 0.08em !important;
+}
+
+/* Frame width is fixed at 360 (328 content + 2x16 padding), so the
+   section keeps the design's measure instead of stretching with the
+   column. Constraining the content (not the panel) keeps the column
+   divider on the grid line where the page composition puts it. */
+.studio-panel-header,
+.studio-left-stack {
+  width: 328px !important;
+  max-width: 100% !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — right "order" section, frame-exact, ungated
+   Same frame geometry as the left section (360 wide = 328
+   content + 2x16 padding). The values are the ones measured off
+   the first frame export, re-scaled now that the true content
+   width is known (1 CSS px = 1.0732 image px there).
+
+   This repeats rules that already exist inside the 1025px
+   builder query above; source order is what frees them for the
+   stacked/narrow rendering, which is where the page actually is
+   below 1140px.
+   ============================================================ */
+
+.studio-right-panel {
+  padding: 24px 16px !important;
+  background: #ffffff !important;
+}
+
+.studio-right-sticky {
+  width: 328px !important;
+  max-width: 100% !important;
+  gap: 0 !important;
+}
+
+.studio-field-block {
+  gap: 0 !important;
+}
+
+/* Labels match the left section: cap height 9.3px -> 12.5px type
+   at 0.1em, not the 11px/0.2em of the earlier pass. */
+.studio-right-panel .studio-right-label,
+.studio-right-panel .studio-summary-label,
+.studio-right-panel .studio-info-title {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  line-height: 1.2 !important;
+  letter-spacing: 0.1em !important;
+}
+
+/* Price: measured digit height 18.6px -> 27px type. */
+.studio-price {
+  font-size: 27px !important;
+  letter-spacing: 0.01em !important;
+}
+
+.studio-right-top,
+.studio-price-stack {
+  width: 100% !important;
+}
+
+.studio-shipping-note {
+  margin-top: 18px !important;
+  width: 100% !important;
+  max-width: none !important;
+  font-size: 8.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.4 !important;
+  letter-spacing: 0.05em !important;
+  text-transform: uppercase !important;
+  color: rgba(5, 5, 5, 0.5) !important;
+}
+
+/* Three different rules, as drawn. */
+.studio-right-divider {
+  height: 1px !important;
+  background: rgba(5, 5, 5, 0.3) !important;
+}
+
+.studio-right-divider-soft {
+  background: rgba(5, 5, 5, 0.06) !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  background: rgba(5, 5, 5, 0.12) !important;
+}
+
+/* Vertical rhythm, sibling-driven so a conditional node (the
+   wishlist error) cannot shift the scale. */
+.studio-right-top + .studio-right-divider {
+  margin-top: 21px !important;
+}
+
+.studio-right-divider + .studio-quantity-block {
+  margin-top: 39px !important;
+}
+
+.studio-quantity-block + .studio-right-divider-soft {
+  margin-top: 28px !important;
+}
+
+.studio-right-divider-soft + .studio-field-block {
+  margin-top: 20px !important;
+}
+
+.studio-size-header + .studio-size-grid {
+  margin-top: 21px !important;
+}
+
+.studio-field-block + .studio-summary-card {
+  margin-top: 41px !important;
+}
+
+.studio-summary-card + .studio-action-row {
+  margin-top: 24px !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  margin-top: 33px !important;
+}
+
+.studio-right-divider + .studio-product-info {
+  margin-top: 19px !important;
+}
+
+/* Quantity stepper: 140 x 39. */
+.studio-quantity {
+  width: 140px !important;
+  min-height: 39px !important;
+  border: 1px solid rgba(5, 5, 5, 0.85) !important;
+  border-radius: 4px !important;
+}
+
+/* Size row: four 57px boxes 27px apart, left aligned and ending
+   short of the column -- as a share of the 328px measure. */
+.studio-size-grid {
+  grid-template-columns: repeat(4, 17.3%) !important;
+  justify-content: start !important;
+  gap: 8.2% !important;
+}
+
+.studio-size-button {
+  min-height: 36px !important;
+  border-radius: 3px !important;
+  border: 1px solid rgba(5, 5, 5, 0.18) !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.06em !important;
+  color: #050505 !important;
+}
+
+.studio-size-button-active {
+  background: #050505 !important;
+  border-color: #050505 !important;
+  color: #ffffff !important;
+}
+
+.studio-size-guide-link {
+  font-size: 9.5px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.1em !important;
+  color: rgba(5, 5, 5, 0.55) !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+
+.studio-summary-card {
+  border-radius: 4px !important;
+  padding: 16px 18px !important;
+}
+
+/* Primary action 156 wide; the wishlist action is plain text. */
+.studio-add-button,
+.studio-wishlist-button {
+  min-height: 46px !important;
+  border-radius: 4px !important;
+  font-size: 11px !important;
+  letter-spacing: 0.16em !important;
+}
+
+.studio-wishlist-button {
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #050505 !important;
+}
+
+.studio-wishlist-button:hover:not(:disabled) {
+  background: transparent !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+
+/* Body copy 14.5/1.6 -- this is what breaks the first line after
+   "the", exactly as the frame does. */
+.studio-product-info p {
+  width: 100% !important;
+  max-width: none !important;
+  margin-top: 18px !important;
+  font-size: 14.5px !important;
+  font-weight: 400 !important;
+  line-height: 1.6 !important;
+  letter-spacing: 0 !important;
+  color: rgba(5, 5, 5, 0.78) !important;
+}
+
+.studio-model-note {
+  margin-top: 22px !important;
+}
+
+/* The two actions sit side by side in the frame (156px filled
+   button + plain-text wishlist), not stacked -- the narrow
+   layout was letting them wrap. */
+.studio-action-row {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  flex-wrap: nowrap !important;
+  gap: 14px !important;
+}
+
+.studio-add-button {
+  flex: 0 0 156px !important;
+  width: 156px !important;
+}
+
+.studio-wishlist-button {
+  flex: 0 1 auto !important;
+  width: auto !important;
+  padding: 0 8px !important;
+}
+
+/* No vertical column rules: the frame is a flat white surface, so
+   the lines splitting the builder into three columns come off.
+   The horizontal rules inside the order section stay -- those are
+   part of the design. */
+.studio-builder-frame {
+  border-left: 0 !important;
+  border-right: 0 !important;
+}
+
+.studio-left-panel {
+  border-right: 0 !important;
+}
+
+.studio-right-panel {
+  border-left: 0 !important;
+}
+
+.studio-preview-panel {
+  border-left: 0 !important;
+  border-right: 0 !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — right "order" section, frame-exact
+   Source: Figma frame 360 x 659.74 (Hug), vertical auto layout,
+   padding 80 top / 16 sides / 24 bottom, corner radius 0.
+   Everything else measured off that frame's export at its own
+   scale (1 CSS px = 1.1824 image px) and quoted in CSS px.
+   Supersedes the earlier right-panel pass, which was scaled off
+   the first export before the true 328px measure was known.
+   ============================================================ */
+
+.studio-right-panel {
+  padding: 80px 16px 24px !important;
+}
+
+/* Price block: 27px type, note 6px under it. */
+.studio-price {
+  font-size: 27px !important;
+  line-height: 1.19 !important;
+}
+
+.studio-shipping-note {
+  margin-top: 6px !important;
+  font-size: 10.5px !important;
+  letter-spacing: 0.01em !important;
+  line-height: 1.4 !important;
+}
+
+/* Rules: measured greys 226/250/209 at 1px. */
+.studio-right-divider {
+  background: rgba(5, 5, 5, 0.3) !important;
+}
+
+.studio-right-divider-soft {
+  background: rgba(5, 5, 5, 0.05) !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  background: rgba(5, 5, 5, 0.25) !important;
+}
+
+/* Measured box-to-box rhythm down the frame. */
+.studio-right-top + .studio-right-divider {
+  margin-top: 15px !important;
+}
+
+.studio-right-divider + .studio-quantity-block {
+  margin-top: 32px !important;
+}
+
+.studio-quantity-block + .studio-right-divider-soft {
+  margin-top: 23px !important;
+}
+
+.studio-right-divider-soft + .studio-field-block {
+  margin-top: 15px !important;
+}
+
+.studio-size-header + .studio-size-grid {
+  margin-top: 16px !important;
+}
+
+.studio-field-block + .studio-summary-card {
+  margin-top: 39px !important;
+}
+
+.studio-summary-card + .studio-action-row {
+  margin-top: 24px !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  margin-top: 30px !important;
+}
+
+.studio-right-divider + .studio-product-info {
+  margin-top: 13px !important;
+}
+
+/* Quantity stepper: 139.5 x 48.2, flush to the right edge. */
+.studio-quantity {
+  width: 140px !important;
+  min-height: 48px !important;
+  height: 48px !important;
+}
+
+/* Size row: 56.6px boxes on a 83.7px pitch (27.1px gap), 36.4
+   tall, left aligned and stopping at 307 of the 328 measure. */
+.studio-size-button {
+  min-height: 36px !important;
+}
+
+.studio-size-guide-link {
+  font-size: 9px !important;
+}
+
+/* Selection summary: 72.7 tall, grey #EFEFEF, 18/17 padding. */
+.studio-summary-card {
+  background: #efefef !important;
+  padding: 18px 17px !important;
+}
+
+/* Actions: 155.6px button, then 44px to the start of the plain
+   wishlist text. Button type measures ~10px at 0.1em. */
+.studio-action-row {
+  gap: 44px !important;
+}
+
+.studio-add-button,
+.studio-wishlist-button {
+  min-height: 46px !important;
+  height: 46px !important;
+  font-size: 10px !important;
+  letter-spacing: 0.1em !important;
+}
+
+.studio-wishlist-button {
+  padding: 0 !important;
+}
+
+/* Product info: heading 13px under the rule, body 14.2/23.7. */
+.studio-product-info p {
+  margin-top: 10px !important;
+  font-size: 14.2px !important;
+  line-height: 23.7px !important;
+}
+
+/* Zero the container gaps that were stacking on top of the
+   measured margins above (they pushed everything from the
+   shipping note down by 8-28px). */
+.studio-price-stack {
+  gap: 0 !important;
+}
+
+.studio-product-info {
+  gap: 0 !important;
+}
+
+/* Summary card padding trimmed so the card lands on the frame's
+   72.7px with this build's inner text block. */
+.studio-summary-card {
+  padding: 14.5px 17px !important;
+}
+
+/* The note's line box was resolving to 1.78, not the 1.4 set
+   above, which pushed the whole column down ~4px. */
+.studio-shipping-note {
+  line-height: 14.7px !important;
+}
+
+/* An earlier pass left a 4px padding-top on the note, which is
+   what was still pushing the rule below it off by 4px. Size
+   trimmed to 9.6px so the note's ink width lands on the frame's
+   196px (this build's face is wider per cap height than the
+   design's). */
+.studio-shipping-note {
+  padding-top: 0 !important;
+  font-size: 9.6px !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — type: faces, weights, and casing
+   Weights derived from stem widths measured in the frame
+   exports (stem / em ratio), not guessed:
+     title  3.15px @ 44px  = 0.072 -> Light 300
+     price  2.10px @ 27px  = 0.078 -> Light 300
+     labels 1.50px @ 12.5  = 0.120 -> SemiBold 600
+     body   1.69px @ 14.2  = 0.119 -> Regular 400 (already)
+     button 1.60px @ 13px  = 0.123 -> SemiBold 600 (already)
+     note   0.90px @ 9.6   = 0.094 -> Regular 400 (already)
+   ============================================================ */
+
+/* The price was rendering in Times New Roman italic -- the frame
+   uses the same neo-grotesque oblique as the title, not a serif. */
+.studio-price {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue",
+    Arial, sans-serif !important;
+  font-style: italic !important;
+  font-weight: 300 !important;
+}
+
+.studio-title {
+  font-weight: 300 !important;
+}
+
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label,
+.studio-right-panel .studio-summary-label,
+.studio-right-panel .studio-info-title {
+  font-weight: 600 !important;
+}
+
+.studio-summary-value {
+  font-weight: 500 !important;
+}
+
+/* The frame sets the fabric name in caps ("200 GSM COTTON"); the
+   string in the data is title case, so the casing is done here
+   rather than by rewriting the copy. */
+.studio-fabric-gsm {
+  text-transform: uppercase !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — typeface
+   The project ships one family (League Spartan, SemiBold 600 and
+   Bold 700, loaded in app/layout.tsx as --font-league). These
+   studio elements were falling through to the Tailwind
+   ui-sans-serif/system-ui default, so none of them were using
+   it; this puts the project font on the whole section.
+   ============================================================ */
+
+.studio-left-panel,
+.studio-left-panel *,
+.studio-right-panel,
+.studio-right-panel * {
+  font-family: var(--font-league), ui-sans-serif, system-ui, sans-serif !important;
+}
+
+.studio-price {
+  font-family: var(--font-league), ui-sans-serif, system-ui, sans-serif !important;
+  font-style: italic !important;
+}
+
+/* Re-tuned for League Spartan's own metrics: the sizes/tracking
+   above were fitted to the system sans, and this face is narrower
+   on the caps and wider on the lowercase. Targets are the ink
+   widths measured in the frame exports. */
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label,
+.studio-right-panel .studio-info-title,
+.studio-right-panel .studio-summary-label {
+  letter-spacing: 0.19em !important;
+}
+
+.studio-title {
+  font-size: 44.6px !important;
+}
+
+.studio-shipping-note {
+  font-size: 10.4px !important;
+  letter-spacing: 0.034em !important;
+}
+
+.studio-product-info p {
+  font-size: 13px !important;
+}
+
+/* Remaining League Spartan calibration, each fitted to the ink
+   width measured in the frame export. */
+
+/* Body copy: this face's lowercase is narrower than the design's,
+   so 15.5px is what puts the first line on the frame's 283.3px
+   (and keeps the break after "the"). */
+.studio-product-info p {
+  font-size: 15.5px !important;
+}
+
+/* Button labels: 116.2px for "FITTED T-SHIRT". */
+.studio-product-button,
+.studio-build-button {
+  letter-spacing: 0.18em !important;
+}
+
+/* "SIZE GUIDE" 62.6px. */
+.studio-size-guide-link {
+  letter-spacing: 0.2em !important;
+}
+
+/* "ADD TO BAG" 69.3px / "ADD TO WISHLIST" 97.3px. */
+.studio-add-button,
+.studio-wishlist-button {
+  letter-spacing: 0.148em !important;
+}
+
+/* The frame sets "SELECTION SUMMARY" smaller and much tighter
+   than the section labels -- 108.3px, not the 111px of a 12-char
+   label -- so it gets its own values rather than the shared ones. */
+.studio-right-panel .studio-summary-label {
+  font-size: 10.2px !important;
+  letter-spacing: 0.06em !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — recalibration after the Light/Regular cuts
+   Everything below 600 used to snap up to SemiBold, so the sizes
+   and tracking above were fitted to a heavier (wider) rendering.
+   With League Spartan 300/400 now actually loading, these are the
+   corrections back onto the frame's measured ink widths.
+   Elements already set at 600 are unaffected and untouched.
+   ============================================================ */
+
+/* League Spartan Light is narrower than the frame's face here, so
+   "THE STUDIO" is brought up to the frame's 249.2px ink width on
+   size, with no added tracking. 50.21px, not the 48.1px a first
+   pass suggested -- that figure came off a measurement that still
+   had tracking in it, and at 48.1/normal the line only reaches
+   238.75px. */
+.studio-title {
+  font-size: 50.21px !important;
+  letter-spacing: normal !important;
+}
+
+/* 190.1 -> 196.2px */
+.studio-shipping-note {
+  letter-spacing: 0.049em !important;
+}
+
+/* 272.9 -> 283.3px on the first line; size, not tracking, since
+   this is running copy. */
+.studio-product-info p {
+  font-size: 16.1px !important;
+}
+
+/* 61.2 -> 62.6px */
+.studio-size-guide-link {
+  letter-spacing: 0.216em !important;
+}
+
+/* 67.5 -> 69.3px ("ADD TO BAG") / 95.8 -> 97.3px ("ADD TO WISHLIST") */
+.studio-add-button,
+.studio-wishlist-button {
+  letter-spacing: 0.162em !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — diffed against the live Chrome render
+   Measured both screenshots at their own scales (Figma 1.1799,
+   live 1.1921 image px per CSS px) and aligned on the rule under
+   the price. Everything else came within ~1px; these are the
+   items that did not.
+   ============================================================ */
+
+/* Selection summary value was 22% short: the frame's
+   "OVERSIZED / BLACK / 200 GSM" measures 220.4px, this build
+   renders that same string at 188.7px at 14px. */
+.studio-summary-value {
+  font-size: 16.36px !important;
+  margin-top: 7px !important;
+}
+
+/* Card internals: the frame puts 21.2px above the label cap and
+   19.5px from label cap to value cap; this build had 17.7 and
+   24.3. Padding-bottom trimmed so the card keeps its 72px. */
+.studio-summary-card {
+  padding: 18px 17px 13px !important;
+}
+
+/* Frame measures the build button at 54.2px, not 53. */
+.studio-build-button {
+  min-height: 54px !important;
+  height: 54px !important;
+}
+
+/* Product Info heading sat 4.3px high under its rule. */
+.studio-right-divider + .studio-product-info {
+  margin-top: 16px !important;
+}
+
+/* Section labels measured 108.2px in the live Chrome render against
+   the frame's 111.9px. Corrected on tracking, which costs nothing
+   vertically. (Measuring here in Claude's browser reported 111.3 --
+   that is the layout advance width; the screenshots measure ink, and
+   the two differ by the first/last glyph side bearings. Ink is what
+   is visible, so these are fitted to ink.) */
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label,
+.studio-right-panel .studio-info-title {
+  letter-spacing: 0.215em !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — colours, radii and the action row
+   Measured off the two screenshots at their own scales. Ink
+   alpha is derived from the pixel darkness of a rule spread over
+   its antialiased rows, divided by the image scale.
+   ============================================================ */
+
+/* The rule under the price is nearly solid in the frame (alpha
+   0.85), not the 0.30 an earlier pass set. Soft rule 0.09, and
+   the one above Product Info 0.24. */
+.studio-right-divider {
+  background: rgba(5, 5, 5, 0.85) !important;
+}
+
+.studio-right-divider-soft {
+  background: rgba(5, 5, 5, 0.09) !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  background: rgba(5, 5, 5, 0.24) !important;
+}
+
+/* Corner radii, read off the corner inset profiles: the summary
+   card curves over 8px and the primary action over 10px (same as
+   the product-type buttons), not the 4px set earlier. */
+.studio-summary-card {
+  border-radius: 8px !important;
+}
+
+.studio-add-button,
+.studio-wishlist-button {
+  border-radius: 10px !important;
+}
+
+/* Action row type: the frame's cap height is 8.5-9.3px against
+   6.7px here, with almost no tracking. 13px at 0.04em puts
+   "ADD TO BAG" on 69.5px and "ADD TO WISHLIST" on 101.7px. */
+.studio-add-button,
+.studio-wishlist-button {
+  font-size: 13px !important;
+  letter-spacing: 0.04em !important;
+}
+
+.studio-wishlist-button {
+  color: #000000 !important;
+}
+
+/* Price: frame stem/em is 0.085 against 0.070 here -- that is a
+   Regular, not a Light -- and its cap measures 17.8px, so 26px. */
+.studio-price {
+  font-size: 26px !important;
+  font-weight: 400 !important;
+}
+
+/* Text colours, taken from the darkest ink pixel of each block.
+   The frame does not use one colour for all labels: Quantity and
+   Size are black, Product Info and Selection Summary are greys. */
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label {
+  color: #000000 !important;
+}
+
+.studio-right-panel .studio-info-title {
+  color: #444444 !important;
+}
+
+.studio-right-panel .studio-summary-label {
+  color: #4b4b4b !important;
+}
+
+.studio-product-info p {
+  color: #1b1b1b !important;
+}
+
+/* ============================================================
+   FIGMA MATCH — solved against the clean frame export
+   Source: the 896x1473 PNG export of the order section
+   (2.59 image px per CSS px, cross-checked on three independent
+   divider spacings). Every type value below is solved so the
+   rendered glyphs match the export on BOTH axes: font-size from
+   the measured cap height, letter-spacing from the measured ink
+   width, using canvas actualBoundingBox metrics rather than
+   layout advance widths.
+
+   Line boxes are pinned in px so the larger sizes do not disturb
+   the vertical rhythm already verified against the frame.
+   ============================================================ */
+
+/* --- Rules and borders --- */
+
+/* The rule under the price is solid black in the export: two
+   fully black rows plus antialiasing = 0.97 alpha over 1px. */
+.studio-right-divider {
+  background: #000000 !important;
+}
+
+.studio-right-divider-soft {
+  background: rgba(0, 0, 0, 0.10) !important;
+}
+
+.studio-action-row + .studio-right-divider {
+  background: rgba(0, 0, 0, 0.22) !important;
+}
+
+/* Quantity box border reads 0 in the export -- solid black. */
+.studio-quantity {
+  width: 138.6px !important;
+  border: 1px solid #000000 !important;
+}
+
+/* Size box border reads 199 -> 0.22 alpha. Box 57.2 wide on a
+   27.4 gutter, as a share of the 328px measure. */
+.studio-size-grid {
+  grid-template-columns: repeat(4, 17.44%) !important;
+  gap: 8.35% !important;
+}
+
+.studio-size-button {
+  border: 1px solid rgba(0, 0, 0, 0.22) !important;
+  color: #1b1b1b !important;
+}
+
+/* --- Type: size from cap height, tracking from ink width --- */
+
+.studio-price {
+  font-size: 26.94px !important;
+  line-height: 31px !important;
+  letter-spacing: -0.0405em !important;
+  color: #000000 !important;
+}
+
+.studio-shipping-note {
+  font-size: 10.87px !important;
+  letter-spacing: 0.0302em !important;
+  color: #848484 !important;
+}
+
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label,
+.studio-right-panel .studio-info-title {
+  font-size: 13.5px !important;
+  line-height: 15px !important;
+  letter-spacing: 0.12em !important;
+}
+
+.studio-left-panel .studio-eyebrow,
+.studio-right-panel .studio-right-label {
+  color: #000000 !important;
+}
+
+.studio-right-panel .studio-info-title {
+  color: #474747 !important;
+}
+
+.studio-size-guide-link {
+  font-size: 13.5px !important;
+  letter-spacing: 0 !important;
+  color: #777777 !important;
+}
+
+.studio-right-panel .studio-summary-label {
+  font-size: 11.46px !important;
+  line-height: 12.2px !important;
+  letter-spacing: -0.0123em !important;
+  color: #474747 !important;
+}
+
+.studio-summary-value {
+  font-size: 18.03px !important;
+  line-height: 19.6px !important;
+  letter-spacing: -0.0471em !important;
+  color: #000000 !important;
+}
+
+.studio-add-button {
+  font-size: 12.65px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.0281em !important;
+}
+
+.studio-wishlist-button {
+  font-size: 13.85px !important;
+  font-weight: 400 !important;
+  letter-spacing: -0.0203em !important;
+  color: #000000 !important;
+}
+
+.studio-product-info p {
+  color: #1b1b1b !important;
+}
+
+/* The enlarged SIZE GUIDE link was setting the size header's
+   height and pushing everything below it down ~4px; pin its line
+   box to the label's. */
+.studio-size-guide-link {
+  line-height: 15px !important;
+}
+
+/* Size row re-solved off the export's four box edges (mean box
+   56.2 on a 27.3 gutter, row ending at 306.6 of the 328 measure). */
+.studio-size-grid {
+  grid-template-columns: repeat(4, 17.13%) !important;
+  gap: 8.32% !important;
+}
+
+/* Card is 72.2 tall in the export with a 16.6px left inset. */
+.studio-summary-card {
+  padding: 17px 16.6px 12.2px !important;
+}
+
+/* Action row measures 44.8, not 46. */
+.studio-add-button,
+.studio-wishlist-button {
+  min-height: 44.8px !important;
+  height: 44.8px !important;
+}
+
+/* The card was holding a min-height that centred its content and
+   kept it at 74px; pin it to the export's 72.2 and let the
+   padding place the label. */
+.studio-summary-card {
+  height: 72.2px !important;
+  min-height: 0 !important;
+  justify-content: flex-start !important;
+  padding: 17px 16.6px !important;
+}
+
+/* Trimming the card to 72.2 pulled everything under it up 2.4px. */
+.studio-action-row + .studio-right-divider {
+  margin-top: 32.4px !important;
+}
+
+/* ============================================================
+   Studio builder -- Figma pass (frame node 302-2, 1440px frame).
+   Values measured from the Figma screenshot (106% zoom, scaled back
+   to the 1440px frame), so approximate to ~1px until confirmed
+   against Dev Mode. Last in the file and prefixed with
+   .studio-builder-shell (+ !important) so it wins over every earlier
+   calibration layer above.
+
+   1. Components -- every width.
+   2. Desktop layout (>=1024px): the 1440 frame's three columns at
+      their exact sizes, zoomed to fit the window with no page scroll
+      (zoom factor set by the shellRef effect in BuilderClient.tsx).
+   3. Stacked layout (<1024px): title, model, controls, buy box.
+   ============================================================ */
+
+/* ---------- 1. Components (all widths) ---------- */
+
+/* League Spartan ships no italic face, so `font-style: italic` makes the
+   browser synthesise one at ~14deg -- steeper than the ~10deg slant in
+   the frame. Use the upright face, skewed to the design's angle. */
+.studio-builder-shell .studio-title,
+.studio-builder-shell .studio-price {
+  font-style: normal !important;
+  font-weight: 300 !important;
+  display: inline-block !important;
+  width: auto !important;
+  line-height: 1 !important;
+  transform: skewX(-10deg) !important;
+  transform-origin: left bottom !important;
+}
+.studio-builder-shell .studio-title {
+  letter-spacing: 0.02em !important;
+}
+.studio-builder-shell .studio-price {
+  letter-spacing: 0 !important;
+}
+
+.studio-builder-shell .studio-left-panel .studio-eyebrow,
+.studio-builder-shell .studio-right-panel .studio-right-label,
+.studio-builder-shell .studio-right-panel .studio-info-title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2em !important;
+  line-height: 1 !important;
+  color: #1a1a1a !important;
+}
+.studio-builder-shell .studio-control-heading {
+  margin: 0 !important;
+}
+.studio-builder-shell .studio-left-panel .studio-control-group {
+  gap: 20px !important;
+}
+
+.studio-builder-shell .studio-product-list {
+  gap: 18px !important;
+}
+.studio-builder-shell .studio-product-button {
+  height: 50px !important;
+  min-height: 50px !important;
+  border-radius: 7px !important;
+  border: 1.5px solid #000 !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2em !important;
+  justify-content: center !important;
+}
+.studio-builder-shell .studio-product-button-idle {
+  background: #fff !important;
+  color: #000 !important;
+}
+.studio-builder-shell .studio-product-button-active {
+  background: #000 !important;
+  color: #fff !important;
+}
+
+.studio-builder-shell .studio-colour-row {
+  gap: 14px !important;
+  align-items: center !important;
+  padding-left: 4px !important;
+}
+.studio-builder-shell .studio-colour-dot {
+  width: 43px !important;
+  height: 43px !important;
+  min-width: 43px !important;
+  border-radius: 999px !important;
+}
+.studio-builder-shell .studio-colour-dot-white {
+  border: 1px solid #cfcfcf !important;
+}
+.studio-builder-shell .studio-colour-dot-custom {
+  background: #e6e6e6 !important;
+  border: 1px solid #d4d4d4 !important;
+}
+/* Active swatch: 2px dark ring with a 2px white gap (51px overall). */
+.studio-builder-shell .studio-colour-dot-active {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000 !important;
+}
+
+.studio-builder-shell .studio-fabric-card {
+  height: 97px !important;
+  min-height: 97px !important;
+  padding: 0 18px !important;
+  gap: 13px !important;
+  border-radius: 12px !important;
+  border: 1.5px solid #cfcfcf !important;
+  background: #fff !important;
+  align-items: center !important;
+}
+.studio-builder-shell .studio-fabric-swatch {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+}
+.studio-builder-shell .studio-fabric-name {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em !important;
+  color: #333 !important;
+}
+.studio-builder-shell .studio-fabric-gsm {
+  font-size: 18px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.01em !important;
+  color: #111 !important;
+  margin-top: 2px !important;
+}
+.studio-builder-shell .studio-fabric-desc {
+  font-size: 14px !important;
+  font-weight: 300 !important;
+  line-height: 1 !important;
+  color: #555 !important;
+  margin-top: 4px !important;
+}
+.studio-builder-shell .studio-fabric-arrow {
+  width: 20px !important;
+  height: 20px !important;
+  color: #000 !important;
+}
+
+.studio-builder-shell .studio-build-button {
+  height: 57px !important;
+  min-height: 57px !important;
+  border-radius: 8px !important;
+  font-size: 20px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+
+.studio-builder-shell .studio-shipping-note {
+  margin-top: 8px !important;
+  font-size: 12px !important;
+  letter-spacing: 0.02em !important;
+  color: #777 !important;
+}
+.studio-builder-shell .studio-right-top + .studio-right-divider {
+  margin-top: 17px !important;
+  height: 1.5px !important;
+  background: #000 !important;
+}
+.studio-builder-shell .studio-right-divider + .studio-quantity-block {
+  margin-top: 37px !important;
+}
+.studio-builder-shell .studio-quantity {
+  width: 151px !important;
+  height: 51px !important;
+  border: 1.5px solid #000 !important;
+  border-radius: 0 !important;
+}
+.studio-builder-shell .studio-quantity {
+  display: flex !important;
+  align-items: stretch !important;
+}
+.studio-builder-shell .studio-quantity-button {
+  flex: none !important;
+  font-size: 18px !important;
+  width: 44px !important;
+}
+/* Takes whatever is left between the two 44px buttons (an earlier
+   layer fixed it at 89px, which pushed "+" out of the 151px box). */
+.studio-builder-shell .studio-quantity-input {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+  font-size: 20px !important;
+  font-weight: 400 !important;
+  text-align: center !important;
+}
+.studio-builder-shell .studio-quantity-block + .studio-right-divider-soft {
+  margin-top: 26px !important;
+  height: 1px !important;
+  background: #e2e2e2 !important;
+}
+.studio-builder-shell .studio-right-divider-soft + .studio-field-block {
+  margin-top: 20px !important;
+}
+.studio-builder-shell .studio-size-header {
+  height: 15px !important;
+  min-height: 0 !important;
+  align-items: center !important;
+  margin: 0 0 17px !important;
+}
+.studio-builder-shell .studio-size-guide-link {
+  font-size: 12px !important;
+  letter-spacing: 0.08em !important;
+  color: #555 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
+}
+.studio-builder-shell .studio-size-grid {
+  display: flex !important;
+  gap: 30px !important;
+  margin-top: 0 !important;
+}
+.studio-builder-shell .studio-size-button {
+  width: 62px !important;
+  height: 39px !important;
+  min-width: 62px !important;
+  border-radius: 0 !important;
+  border: 1px solid #c8c8c8 !important;
+  background: #fff !important;
+  color: #1b1b1b !important;
+  font-size: 15px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+}
+/* Bug fix: the active size had dark text on its black fill, so the
+   selected letter was invisible. */
+.studio-builder-shell .studio-size-button-active {
+  background: #000 !important;
+  border-color: #000 !important;
+  color: #fff !important;
+}
+
+.studio-builder-shell .studio-field-block + .studio-summary-card {
+  margin-top: 44px !important;
+}
+.studio-builder-shell .studio-summary-card {
+  height: 78px !important;
+  min-height: 78px !important;
+  padding: 0 17px !important;
+  border-radius: 8px !important;
+  background: #efefef !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+}
+.studio-builder-shell .studio-right-panel .studio-summary-label {
+  font-size: 12px !important;
+  font-weight: 400 !important;
+  letter-spacing: 0.02em !important;
+  color: #444 !important;
+}
+.studio-builder-shell .studio-summary-value {
+  margin-top: 6px !important;
+  font-size: 19px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em !important;
+}
+
+.studio-builder-shell .studio-summary-card + .studio-action-row {
+  margin-top: 27px !important;
+}
+.studio-builder-shell .studio-action-row {
+  display: flex !important;
+  gap: 0 !important;
+  align-items: center !important;
+}
+.studio-builder-shell .studio-add-button {
+  width: 170px !important;
+  min-width: 170px !important;
+  height: 49px !important;
+  border-radius: 8px !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+}
+.studio-builder-shell .studio-wishlist-button {
+  flex: 1 !important;
+  height: 49px !important;
+  font-size: 16px !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  text-align: center !important;
+}
+.studio-builder-shell .studio-action-row + .studio-right-divider {
+  margin-top: 35px !important;
+  height: 1.5px !important;
+  background: #e2e2e2 !important;
+}
+.studio-builder-shell .studio-right-divider + .studio-product-info {
+  margin-top: 15px !important;
+}
+.studio-builder-shell .studio-product-info .studio-info-title + p {
+  margin-top: 15px !important;
+}
+.studio-builder-shell .studio-product-info p {
+  font-size: 18px !important;
+  line-height: 25px !important;
+  color: #222 !important;
+}
+
+/* Front/back arrows sit below the model photo; its box must not clip
+   them. */
+.studio-builder-shell .studio-preview-inner,
+.studio-builder-shell .studio-preview-inner-clean {
+  overflow: visible !important;
+}
+.studio-builder-shell .studio-preview-side-switch {
+  top: calc(100% + 15px) !important;
+  bottom: auto !important;
+}
+
+/* ---------- 2. Desktop layout (>=1024px) ---------- */
+@media (min-width: 1024px) {
+  /* The project layout's p-6 wrapper (app/studio/projects/[buildId]/
+     layout.tsx) pads 24px above/below, which the frame doesn't have. */
+  .p-6:has(> .studio-builder-shell) {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+  }
+  .studio-builder-shell {
+    height: var(--studio-avail, calc(100vh - 74px)) !important;
+    min-height: 0 !important;
+  }
+  /* Full width (the base rule caps it at 1440px) so large screens can
+     scale the composition up; the grid inside stays centred. */
+  .studio-builder-shell .studio-builder-frame {
+    width: 100% !important;
+    display: flex !important;
+    justify-content: center !important;
+  }
+  /* The frame's content area is drawn at its real size (1392x816) and
+     zoomed down as one piece when the window is smaller, so laptops get
+     the same composition as the design rather than a reflowed one. */
+  .studio-builder-shell .studio-builder-grid {
+    flex: none !important;
+    width: 1392px !important;
+    height: 816px !important;
+    grid-template-columns: 458px minmax(0, 1fr) 458px !important;
+    zoom: var(--studio-fit, 1);
+  }
+  .studio-builder-shell .studio-left-panel {
+    padding: 24px 42px 24px 58px !important;
+    overflow: visible !important;
+  }
+  .studio-builder-shell .studio-right-panel {
+    padding: 80px 100px 24px 0 !important;
+    overflow: visible !important;
+  }
+  .studio-builder-shell .studio-left-stack,
+  .studio-builder-shell .studio-right-sticky,
+  .studio-builder-shell .studio-left-panel .studio-panel-header {
+    width: 358px !important;
+    max-width: 358px !important;
+  }
+  .studio-builder-shell .studio-left-stack {
+    gap: 36px !important;
+  }
+  .studio-builder-shell .studio-title {
+    font-size: 52px !important;
+  }
+  .studio-builder-shell .studio-price {
+    font-size: 32px !important;
+  }
+  /* Model photo ~362x738, top ~19px above the title, centred in the gap
+     between the control columns (x=440..958 -> 699, i.e. 21px left of
+     this panel's centre). Sized on the wrapper, not the <img>, so the
+     artwork overlay positioned against this box stays aligned. */
+  .studio-builder-shell .studio-preview-inner,
+  .studio-builder-shell .studio-preview-inner-clean {
+    flex: none !important;
+    width: 362px !important;
+    height: 738px !important;
+    max-width: none !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: -43px auto 0 !important;
+    transform: translateX(-21px) !important;
+  }
+}
+
+/* ---------- 3. Stacked layout (<1024px) ---------- */
+@media (max-width: 1023.98px) {
+  .p-6:has(> .studio-builder-shell) {
+    padding: 0 !important;
+  }
+  .studio-builder-shell,
+  .studio-builder-shell .studio-builder-frame {
+    height: auto !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    border: 0 !important;
+  }
+  .studio-builder-shell .studio-builder-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100% !important;
+    max-width: 560px !important;
+    height: auto !important;
+    margin: 0 auto !important;
+    padding: 0 20px 40px !important;
+    gap: 0 !important;
+  }
+  /* Flatten the left panel so its title and controls can sit either side
+     of the model: title -> model -> controls -> buy box. */
+  .studio-builder-shell .studio-left-panel {
+    display: contents !important;
+  }
+  .studio-builder-shell .studio-left-panel .studio-panel-header {
+    order: 0;
+    padding: 24px 0 8px !important;
+    margin: 0 !important;
+  }
+  .studio-builder-shell .studio-preview-panel {
+    order: 1;
+  }
+  .studio-builder-shell .studio-left-stack {
+    order: 2;
+  }
+  .studio-builder-shell .studio-right-panel {
+    order: 3;
+  }
+  .studio-builder-shell .studio-preview-panel,
+  .studio-builder-shell .studio-right-panel,
+  .studio-builder-shell .studio-left-stack,
+  .studio-builder-shell .studio-right-sticky {
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    overflow: visible !important;
+    position: static !important;
+  }
+  .studio-builder-shell .studio-title {
+    font-size: clamp(38px, 11vw, 52px) !important;
+  }
+  .studio-builder-shell .studio-price {
+    font-size: 30px !important;
+  }
+
+  /* Model: same 362:738 photo box as desktop, sized to ~62% of the
+     screen height so the arrows and the start of the controls are
+     visible on first load. */
+  .studio-builder-shell .studio-preview-panel {
+    padding-bottom: 56px !important;
+  }
+  .studio-builder-shell .studio-preview-chrome {
+    display: none !important;
+  }
+  .studio-builder-shell .studio-preview-inner,
+  .studio-builder-shell .studio-preview-inner-clean {
+    flex: none !important;
+    height: min(62svh, 560px) !important;
+    width: auto !important;
+    aspect-ratio: 362 / 738 !important;
+    max-width: 100% !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 8px auto 0 !important;
+    transform: none !important;
+  }
+
+  .studio-builder-shell .studio-left-stack {
+    gap: 32px !important;
+    margin-top: 8px !important;
+  }
+  .studio-builder-shell .studio-right-panel {
+    margin-top: 40px !important;
+    padding-top: 32px !important;
+    border-top: 1.5px solid #e2e2e2 !important;
+  }
+
+  /* Touch targets: at least ~44px tall, and rows fill the width. */
+  .studio-builder-shell .studio-product-button {
+    height: 52px !important;
+    min-height: 52px !important;
+  }
+  .studio-builder-shell .studio-size-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 12px !important;
+  }
+  .studio-builder-shell .studio-size-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 46px !important;
+  }
+  .studio-builder-shell .studio-action-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 12px !important;
+  }
+  .studio-builder-shell .studio-add-button,
+  .studio-builder-shell .studio-wishlist-button {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: 52px !important;
+  }
+  .studio-builder-shell .studio-wishlist-button {
+    border: 1.5px solid #000 !important;
+    border-radius: 8px !important;
+  }
+  .studio-builder-shell .studio-fabric-card {
+    height: auto !important;
+    min-height: 97px !important;
+    padding: 16px 18px !important;
+  }
+  .studio-builder-shell .studio-product-info p {
+    font-size: 16px !important;
+    line-height: 23px !important;
+  }
+  /* Front/back arrows: 44px tap area around the same 18px glyph. */
+  .studio-builder-shell .studio-preview-side-switch {
+    gap: 6px !important;
+    width: auto !important;
+    top: calc(100% + 6px) !important;
+  }
+  .studio-builder-shell .studio-preview-side-arrow {
+    width: 44px !important;
+    height: 44px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .studio-builder-shell .studio-builder-grid {
+    padding: 0 16px 32px !important;
+  }
+  .studio-builder-shell .studio-product-button {
+    font-size: 14px !important;
+    letter-spacing: 0.16em !important;
+  }
+  .studio-builder-shell .studio-build-button {
+    font-size: 18px !important;
+  }
+  .studio-builder-shell .studio-add-button,
+  .studio-builder-shell .studio-wishlist-button {
+    font-size: 14px !important;
+  }
+}
+
+/* ============================================================
+   Bespoke "Build your T-shirt" popup -- phone + tablet layout.
+   Everything up to 1024px (and landscape phones); the two-column
+   desktop popup starts at 1025px, matching the earlier layers: full-screen on phones
+   (the block above), a centred card on tablets. One scroll container
+   (.studio-bespoke-scroll); the preview/controls wrappers are
+   flattened with display:contents so their children can be ordered:
+
+     header (title)          scrolls away
+     shirt canvas            sticky -- stays visible while editing
+     placements              horizontal swipe strip
+     selected artwork + zoom
+     upload button
+     your uploads            4-up grid
+     Save                    sticky bottom bar (+ iPhone safe area)
+   ============================================================ */
+@media (max-width: 1024px), (max-width: 932px) and (max-height: 560px) {
+  .studio-bespoke-modal .studio-bespoke-scroll {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior: contain !important;
+    padding: 0 !important;
+    gap: 0 !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-preview,
+  .studio-bespoke-modal .studio-bespoke-controls,
+  .studio-bespoke-modal .studio-bespoke-controls-scroll {
+    display: contents !important;
+  }
+  /* Column flex would otherwise shrink these to fit the viewport
+     (e.g. Upload Artwork squashed from 50px to 23px); they must keep
+     their size and let the container scroll instead. */
+  .studio-bespoke-modal .studio-bespoke-controls-scroll > *,
+  .studio-bespoke-modal .studio-bespoke-preview > *,
+  .studio-bespoke-modal .studio-bespoke-controls-footer {
+    flex-shrink: 0 !important;
+  }
+
+  .studio-bespoke-modal .studio-modal-close {
+    top: 10px !important;
+    right: 10px !important;
+    width: 44px !important;
+    height: 44px !important;
+    z-index: 60 !important;
+    font-size: 26px !important;
+    background: #fff !important;
+    border: 1px solid #e4e4e4 !important;
+  }
+
+  /* -- 1. Header -- */
+  .studio-bespoke-modal .studio-bespoke-controls-scroll > div:first-child {
+    order: 0;
+    padding: 18px 68px 12px 20px !important;
+    background: #fff !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-kicker {
+    font-size: 11px !important;
+    letter-spacing: 0.2em !important;
+    color: #777 !important;
+    line-height: 1.2 !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-title {
+    margin-top: 6px !important;
+    font-size: 22px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em !important;
+    line-height: 1.1 !important;
+  }
+
+  /* -- 2. Sticky shirt. Keeps its own aspect ratio (inline style) so the
+     artwork overlay, positioned in % of this box, stays aligned; the
+     full-width backdrop is painted with a spread shadow + clip-path. */
+  .studio-bespoke-modal .studio-bespoke-stale-badge {
+    order: 1;
+    margin: 0 20px 8px !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-canvas {
+    order: 2;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 5 !important;
+    flex: none !important;
+    height: min(40svh, 360px) !important;
+    max-height: none !important;
+    width: auto !important;
+    max-width: calc(100% - 40px) !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #f7f7f5 !important;
+    box-shadow: 0 0 0 100vmax #f7f7f5 !important;
+    clip-path: inset(0 -100vmax) !important;
+  }
+
+  /* -- 3. Placements: horizontal swipe strip -- */
+  .studio-bespoke-modal .studio-bespoke-placement-area {
+    order: 3;
+    display: block !important;
+    padding: 18px 0 0 !important;
+    margin: 0 !important;
+    border-top: 1px solid #ececec !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-label {
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.16em !important;
+    line-height: 1.2 !important;
+    color: #1a1a1a !important;
+    margin: 0 0 12px !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-placement-area .studio-bespoke-label {
+    padding: 0 20px !important;
+  }
+  .studio-bespoke-modal .studio-placement-grid {
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    overscroll-behavior-x: contain !important;
+    scroll-snap-type: x mandatory !important;
+    scroll-padding: 0 20px !important;
+    padding: 2px 20px 6px !important;
+    scrollbar-width: none !important;
+  }
+  .studio-bespoke-modal .studio-placement-grid::-webkit-scrollbar {
+    display: none !important;
+  }
+  .studio-bespoke-modal .studio-placement-card {
+    flex: 0 0 72px !important;
+    width: 72px !important;
+    height: auto !important;
+    aspect-ratio: auto !important;
+    scroll-snap-align: start !important;
+    border-radius: 8px !important;
+    padding: 3px !important;
+  }
+  .studio-bespoke-modal .studio-placement-image {
+    width: 100% !important;
+    height: auto !important;
+    display: block !important;
+  }
+
+  /* -- 4. Selected artwork + transform tools -- */
+  .studio-bespoke-modal .studio-selected-artwork-area {
+    order: 4;
+    padding: 22px 20px 0 !important;
+    margin: 0 !important;
+  }
+  .studio-bespoke-modal .studio-selected-artwork-grid {
+    display: flex !important;
+  }
+  .studio-bespoke-modal .studio-selected-artwork-card,
+  .studio-bespoke-modal .studio-selected-artwork-add {
+    width: 96px !important;
+    height: 96px !important;
+    min-height: 0 !important;
+    aspect-ratio: 1 !important;
+    border-radius: 10px !important;
+    font-size: 14px !important;
+  }
+  .studio-bespoke-modal .studio-selected-artwork-remove {
+    width: 36px !important;
+    height: 36px !important;
+    top: 2px !important;
+    right: 2px !important;
+    font-size: 18px !important;
+  }
+  .studio-bespoke-modal .studio-artwork-tools {
+    margin-top: 14px !important;
+    display: grid !important;
+    gap: 12px !important;
+  }
+  .studio-bespoke-modal .studio-artwork-transform-controls {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+  .studio-bespoke-modal .studio-artwork-transform-controls input[type="range"] {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    height: 44px !important;
+  }
+  .studio-bespoke-modal .studio-artwork-zoom-button {
+    flex: none !important;
+    width: 44px !important;
+    height: 44px !important;
+    font-size: 20px !important;
+    border-radius: 8px !important;
+  }
+  .studio-bespoke-modal .studio-artwork-reset-button {
+    flex: none !important;
+    height: 44px !important;
+    padding: 0 14px !important;
+    font-size: 13px !important;
+    letter-spacing: 0.08em !important;
+    border-radius: 8px !important;
+  }
+  .studio-bespoke-modal .studio-nanobanana-button,
+  .studio-bespoke-modal .studio-bespoke-upload-button {
+    width: 100% !important;
+    height: 50px !important;
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.14em !important;
+    border-radius: 8px !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-error {
+    font-size: 13px !important;
+  }
+
+  /* -- 5. Upload button -- */
+  .studio-bespoke-modal .studio-bespoke-upload-button {
+    order: 5;
+    width: calc(100% - 40px) !important;
+    margin: 18px 20px 0 !important;
+  }
+
+  /* -- 6. Your uploads: 4-up grid -- */
+  .studio-bespoke-modal .studio-bespoke-controls-scroll > div:last-child {
+    order: 6;
+    padding: 22px 20px 24px !important;
+  }
+  .studio-bespoke-modal .studio-upload-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 10px !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  .studio-bespoke-modal .studio-upload-slot {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    aspect-ratio: 1 !important;
+    border-radius: 8px !important;
+  }
+  .studio-bespoke-modal .studio-upload-empty {
+    grid-column: 1 / -1 !important;
+    font-size: 13px !important;
+    color: #777 !important;
+  }
+
+  /* -- 7. Save: sticky bottom bar (in flow, so nothing is hidden
+     behind it) with room for the iPhone home indicator. -- */
+  .studio-bespoke-modal .studio-bespoke-controls-footer {
+    order: 7;
+    position: sticky !important;
+    bottom: 0 !important;
+    z-index: 10 !important;
+    margin-top: auto !important;
+    padding: 12px 20px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+    background: #fff !important;
+    border-top: 1px solid #ececec !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-save-button {
+    position: static !important;
+    width: 100% !important;
+    height: 52px !important;
+    margin: 0 !important;
+    border-radius: 8px !important;
+    box-shadow: none !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.14em !important;
+  }
+}
+
+/* Landscape phones: the sticky canvas would eat most of a ~400px-tall
+   screen, so it scrolls with the page there instead. */
+@media (max-width: 932px) and (max-height: 560px) {
+  .studio-bespoke-modal .studio-bespoke-canvas {
+    position: relative !important;
+    height: min(70svh, 300px) !important;
+  }
+}
+
+/* Tablets (641-1024px): same structure, as a centred card that fills
+   most of the screen, with a slightly larger shirt. */
+@media (min-width: 641px) and (max-width: 1024px) and (min-height: 561px) {
+  .studio-modal-overlay-soft {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 24px !important;
+    overflow: hidden !important;
+  }
+  .studio-bespoke-modal {
+    position: relative !important;
+    inset: auto !important;
+    display: flex !important;
+    flex-direction: column !important;
+    width: min(680px, 100%) !important;
+    max-width: none !important;
+    height: min(920px, calc(100dvh - 48px)) !important;
+    max-height: none !important;
+    border-radius: 16px !important;
+    overflow: hidden !important;
+  }
+  .studio-bespoke-modal .studio-bespoke-canvas {
+    height: min(44svh, 460px) !important;
+  }
+  .studio-bespoke-modal .studio-placement-card {
+    flex: 0 0 88px !important;
+    width: 88px !important;
+  }
+}

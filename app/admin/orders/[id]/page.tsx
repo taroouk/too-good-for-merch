@@ -9,6 +9,7 @@ import {
 import AdminToast from "src/components/admin/AdminToast";
 import {
   formatExchangeRate,
+  formatShippingAddress,
   formatMoney,
   isNewPricingModel,
   itemDisplayCurrency,
@@ -318,6 +319,18 @@ export default async function AdminOrderDetailsPage({
                 <div>
                   <p className="text-xs uppercase tracking-wide text-admin-faint">Phone</p>
                   <p className="mt-1 font-semibold text-admin-ink">{order.customerPhone ?? order.user?.phone ?? "No phone"}</p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-admin-faint">Delivery address</p>
+                  {formatShippingAddress(order).length ? (
+                    <p className="mt-1 font-semibold text-admin-ink">
+                      {formatShippingAddress(order).map((line) => (
+                        <span key={line} className="block">{line}</span>
+                      ))}
+                    </p>
+                  ) : (
+                    <p className="mt-1 font-semibold text-admin-ink">No address</p>
+                  )}
                 </div>
               </div>
             </Card>

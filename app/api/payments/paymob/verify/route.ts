@@ -37,6 +37,20 @@ async function statusResponse(orderId: string) {
   });
 }
 
+// Paymob's response callback lands here. Card payments are now embedded
+// in an <iframe> on /checkout, so this response usually renders INSIDE that
+// frame -- a plain 302 would load the order page within the small payment
+// box. Instead, navigate the top-level window (a no-op difference when the
+// callback arrives un-framed, e.g. wallet redirects). next.config.ts allows
+// this one path to be framed by our own origin.
+function topLevelRedirect(destination: string) {
+  const target = JSON.stringify(destination);
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Redirecting…</title></head><body style="font-family:system-ui,sans-serif;display:flex;min-height:100vh;align-items:center;justify-content:center;margin:0;color:#555"><p><a href=${target} target="_top">Continue</a></p><script>(window.top||window).location.replace(${target});</script></body></html>`;
+  return new Response(html, {
+    headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" },
+  });
+}
+
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (typeof body?.orderId !== "string") {
@@ -57,7 +71,7 @@ export async function GET(req: Request) {
     where: { paymobOrderId: remoteOrderId },
     select: { id: true, paymentStatus: true },
   });
-  if (!order) return NextResponse.redirect(new URL("/orders", url.origin));
+  if (!order) return topLevelRedirect("/orders");
 
   const destination =
     order.paymentStatus === PaymentStatus.PAID
@@ -65,5 +79,5 @@ export async function GET(req: Request) {
       : order.paymentStatus === PaymentStatus.FAILED
         ? `/orders/${order.id}/failed`
         : `/orders/${order.id}`;
-  return NextResponse.redirect(new URL(destination, url.origin));
+  return topLevelRedirect(destination);
 }
