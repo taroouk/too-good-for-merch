@@ -20,6 +20,7 @@ import { actionSaveArtwork } from "src/actions/artwork-actions";
 import { actionAddToWishlist } from "src/actions/wishlist-actions";
 import {
   actionAttachExistingAsset,
+  actionRemoveAsset,
   actionCreateAssetForBuilder,
 } from "src/actions/asset-actions";
 import { computeMockupFingerprint } from "src/db/mockup";
@@ -262,6 +263,7 @@ export default function BuilderClient({
   });
   const [activePlacement, setActivePlacement] = useState<PlacementKey>(initialActivePlacement);
   const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
+  const [removingAssetId, setRemovingAssetId] = useState<string | null>(null);
   const [, setUploadName] = useState("");
   const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
   const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(() => {
@@ -855,6 +857,32 @@ export default function BuilderClient({
       alert("Could not load this artwork.");
     } finally {
       setAttachingAssetId(null);
+    }
+  }
+
+  // The × on a "Your uploads" tile. Optimistic: the tile disappears at
+  // once and comes back if the server refuses. Removing the artwork that's
+  // currently on the shirt also takes it off the shirt (the server clears
+  // it from the draft too -- see actionRemoveAsset).
+  async function removeUserAsset(asset: UserAssetDTO) {
+    // Confirmation happens in the popup itself (BespokeModal's in-tile
+    // "Remove this upload?" prompt), so by here the customer has confirmed.
+    if (removingAssetId) return;
+
+    const isOnShirt = state.primaryAssetId === asset.id || artworkUrl === asset.url;
+    const previous = userAssets;
+    setRemovingAssetId(asset.id);
+    setUserAssets((prev) => prev.filter((item) => item.id !== asset.id));
+    if (isOnShirt) removeSelectedArtwork();
+
+    try {
+      const result = await actionRemoveAsset(buildId, asset.id);
+      if (!result.ok) throw new Error(result.error);
+    } catch {
+      setUserAssets(previous);
+      alert("Could not remove this upload. Please try again.");
+    } finally {
+      setRemovingAssetId(null);
     }
   }
 
@@ -1622,6 +1650,8 @@ export default function BuilderClient({
             onZoomIn={() => changeArtworkScale(artworkTransform.scale + 0.1)}
             onResetArtworkTransform={resetArtworkTransform}
             onSelectAsset={(asset) => void selectAsset(asset)}
+            onRemoveAsset={(asset) => void removeUserAsset(asset)}
+            removingAssetId={removingAssetId}
             onSaveTShirt={() => void saveBespokeTShirt()}
           />,
           document.body,

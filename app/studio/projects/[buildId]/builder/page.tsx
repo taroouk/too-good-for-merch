@@ -54,6 +54,8 @@ export default async function BuilderPage({
   const initialUserAssetsRaw = await prisma.asset.findMany({
     where: {
       url: { not: null },
+      // Removed via the × in "Your uploads" (see actionRemoveAsset).
+      hiddenAt: null,
       OR: userId ? [{ buildId }, { build: { userId } }] : [{ buildId }],
     },
     orderBy: { createdAt: "desc" },

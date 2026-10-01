@@ -146,6 +146,11 @@ model Asset {
   artworkSha256   String?           @db.VarChar(64)
   storageKey      String?
   url             String?
+  // Set when the customer removes the upload from "Your uploads" but it is
+  // still referenced by an order or a saved design (so the row and its
+  // bytes must survive for fulfilment). Unreferenced uploads are deleted
+  // outright instead -- see actionRemoveAsset in src/actions/asset-actions.ts.
+  hiddenAt        DateTime?
   build           Build             @relation(fields: [buildId], references: [id], onDelete: Cascade)
   usedAsPrimaryIn BuildDraft[]      @relation("DraftPrimaryAsset")
   placements      DesignPlacement[]

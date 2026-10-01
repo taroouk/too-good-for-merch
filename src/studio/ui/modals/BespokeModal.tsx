@@ -1,4 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
+import { useState } from "react";
 import type {
   CSSProperties,
   ChangeEventHandler,
@@ -78,6 +79,8 @@ type BespokeModalProps = {
   onZoomIn: () => void;
   onResetArtworkTransform: () => void;
   onSelectAsset: (asset: UserAssetDTO) => void;
+  onRemoveAsset: (asset: UserAssetDTO) => void;
+  removingAssetId: string | null;
   onSaveTShirt: () => void;
 };
 
@@ -117,9 +120,19 @@ export default function BespokeModal({
   onZoomIn,
   onResetArtworkTransform,
   onSelectAsset,
+  onRemoveAsset,
+  removingAssetId,
   onSaveTShirt,
 }: BespokeModalProps) {
-  useEscapeToClose(onClose);
+  // The upload whose × was pressed: its tile shows an inline "Remove this
+  // upload?" prompt instead of a browser confirm() dialog.
+  const [confirmingRemoveId, setConfirmingRemoveId] = useState<string | null>(null);
+
+  // Escape first dismisses an open remove prompt, then closes the popup.
+  useEscapeToClose(() => {
+    if (confirmingRemoveId) setConfirmingRemoveId(null);
+    else onClose();
+  });
 
   // The canvas always shows the flat editor tee now (never the generated
   // mockup), so its shape is that one image's shape. Still MEASURED from
@@ -370,24 +383,79 @@ export default function BespokeModal({
               {userAssets.length ? (
                 userAssets.map((asset) => {
                   const isCurrentActive = selectedPrimaryAssetId === asset.id || artworkUrl === asset.url;
+                  const isRemoving = removingAssetId === asset.id;
+                  const isConfirming = confirmingRemoveId === asset.id;
+                  // Select and remove are sibling buttons (a button can't
+                  // contain another button); the wrapper carries the tile's
+                  // position so the × can sit on its corner.
                   return (
-                    <button
-                      key={asset.id}
-                      type="button"
-                      onClick={() => onSelectAsset(asset)}
-                      className={cn(
-                        "studio-upload-slot",
-                        isCurrentActive ? "border-black border-[1.5px]" : ""
+                    <div key={asset.id} className="studio-upload-tile">
+                      <button
+                        type="button"
+                        onClick={() => onSelectAsset(asset)}
+                        className={cn(
+                          "studio-upload-slot",
+                          isCurrentActive ? "border-black border-[1.5px]" : ""
+                        )}
+                        style={{ padding: 0, overflow: "hidden" }}
+                        disabled={attachingAssetId === asset.id || isRemoving}
+                      >
+                        <img
+                          src={asset.url}
+                          alt={asset.fileName}
+                          className="studio-upload-image"
+                        />
+                      </button>
+                      {isConfirming ? (
+                        <div
+                          className="studio-upload-confirm"
+                          role="alertdialog"
+                          aria-label={`Remove ${asset.fileName}?`}
+                        >
+                          {/* Long and short labels: CSS picks one by the tile's
+                              own width (~80px phone tiles get the compact
+                              "Remove?" + icon buttons). */}
+                          <p className="studio-upload-confirm-text">
+                            <span className="studio-upload-confirm-long">Remove this upload?</span>
+                            <span className="studio-upload-confirm-short" aria-hidden="true">Remove?</span>
+                          </p>
+                          <div className="studio-upload-confirm-actions">
+                            <button
+                              type="button"
+                              className="studio-upload-confirm-cancel"
+                              onClick={() => setConfirmingRemoveId(null)}
+                              aria-label="Cancel"
+                              autoFocus
+                            >
+                              <span className="studio-upload-confirm-long">Cancel</span>
+                              <span className="studio-upload-confirm-short" aria-hidden="true">✕</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="studio-upload-confirm-remove"
+                              onClick={() => {
+                                setConfirmingRemoveId(null);
+                                onRemoveAsset(asset);
+                              }}
+                              aria-label="Remove"
+                            >
+                              <span className="studio-upload-confirm-long">Remove</span>
+                              <span className="studio-upload-confirm-short" aria-hidden="true">✓</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingRemoveId(asset.id)}
+                          disabled={isRemoving}
+                          className="studio-upload-remove"
+                          aria-label={`Remove ${asset.fileName}`}
+                        >
+                          ×
+                        </button>
                       )}
-                      style={{ padding: 0, overflow: "hidden" }}
-                      disabled={attachingAssetId === asset.id}
-                    >
-                      <img
-                        src={asset.url}
-                        alt={asset.fileName}
-                        className="studio-upload-image"
-                      />
-                    </button>
+                    </div>
                   );
                 })
               ) : (

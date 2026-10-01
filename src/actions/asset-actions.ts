@@ -102,6 +102,7 @@ export async function actionAttachExistingAsset(
     where: {
       id: sourceAssetId,
       url: { not: null },
+      hiddenAt: null,
       OR: allowedSourceWhere,
     },
     select: {
@@ -151,4 +152,51 @@ export async function actionAttachExistingAsset(
   revalidatePath(`/studio/projects/${buildId}/designs`);
 
   return copied;
+}
+
+// Removes an upload from the customer's "Your uploads" (the × on each
+// tile in the Build Your T-Shirt popup). Same ownership rule as
+// actionAttachExistingAsset: uploads on this build, or on any build the
+// signed-in user owns.
+//
+// An upload can be referenced by a placed order (OrderItem.assetId) or a
+// saved design (DesignPlacement.assetId) -- deleting it there would strip
+// the artwork from something that still has to be printed. So:
+//   - unreferenced -> the row (and its bytes) is deleted outright;
+//   - referenced   -> it is only hidden (hiddenAt), kept for fulfilment.
+// Either way any of the user's drafts that had it selected are cleared.
+export async function actionRemoveAsset(buildId: string, assetId: string) {
+  const userId = await getUserId();
+  await assertBuildAccess(userId, buildId);
+
+  const ownedBuildsWhere = userId ? [{ buildId }, { build: { userId } }] : [{ buildId }];
+
+  const asset = await prisma.asset.findFirst({
+    where: { id: assetId, hiddenAt: null, OR: ownedBuildsWhere },
+    select: {
+      id: true,
+      _count: { select: { orderItems: true, placements: true } },
+    },
+  });
+  if (!asset) return { ok: false as const, error: "Upload not found." };
+
+  const referenced = asset._count.orderItems > 0 || asset._count.placements > 0;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.buildDraft.updateMany({
+      where: {
+        primaryAssetId: asset.id,
+        build: userId ? { OR: [{ id: buildId }, { userId }] } : { id: buildId },
+      },
+      data: { primaryAssetId: null },
+    });
+    if (referenced) {
+      await tx.asset.update({ where: { id: asset.id }, data: { hiddenAt: new Date() } });
+    } else {
+      await tx.asset.delete({ where: { id: asset.id } });
+    }
+  });
+
+  revalidatePath(`/studio/projects/${buildId}/assets`);
+  return { ok: true as const };
 }

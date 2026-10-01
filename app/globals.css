@@ -7245,3 +7245,162 @@ body {
     width: 88px !important;
   }
 }
+
+/* "Your uploads" tile: select button + remove (×) button side by side in
+   one positioned wrapper (see BespokeModal.tsx). All widths. */
+.studio-bespoke-modal .studio-upload-tile {
+  position: relative;
+  min-width: 0;
+}
+.studio-bespoke-modal .studio-upload-tile > .studio-upload-slot {
+  width: 100%;
+}
+.studio-bespoke-modal .studio-upload-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  border: 1px solid #e2e2e2;
+  background: rgba(255, 255, 255, 0.95);
+  color: #111;
+  font-size: 16px;
+  line-height: 1;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+}
+.studio-bespoke-modal .studio-upload-remove:hover:not(:disabled) {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+.studio-bespoke-modal .studio-upload-remove:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+/* Phones/tablets: a bigger tap target, same visual size. */
+@media (max-width: 1024px) {
+  .studio-bespoke-modal .studio-upload-remove {
+    width: 32px;
+    height: 32px;
+    top: 2px;
+    right: 2px;
+    font-size: 18px;
+  }
+}
+
+/* In-tile "Remove this upload?" prompt (replaces the browser confirm()).
+   Sized in container units so it reads well on both ~80px phone tiles and
+   ~200px desktop tiles. */
+.studio-bespoke-modal .studio-upload-tile {
+  container-type: inline-size;
+}
+.studio-bespoke-modal .studio-upload-confirm {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(6px, 6cqw, 14px);
+  padding: clamp(6px, 6cqw, 16px);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, 0.82);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  color: #fff;
+  text-align: center;
+  animation: studioUploadConfirmIn 140ms ease-out;
+}
+@keyframes studioUploadConfirmIn {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+.studio-bespoke-modal .studio-upload-confirm-text {
+  margin: 0;
+  font-size: clamp(10px, 7cqw, 14px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+.studio-bespoke-modal .studio-upload-confirm-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(4px, 4cqw, 8px);
+  width: 100%;
+}
+.studio-bespoke-modal .studio-upload-confirm-cancel,
+.studio-bespoke-modal .studio-upload-confirm-remove {
+  flex: 1 1 0;
+  min-width: min(64px, 100%);
+  min-height: 32px;
+  padding: 0 clamp(6px, 5cqw, 14px);
+  border-radius: 6px;
+  font-size: clamp(10px, 6cqw, 13px);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.studio-bespoke-modal .studio-upload-confirm-cancel {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  color: #fff;
+}
+.studio-bespoke-modal .studio-upload-confirm-cancel:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+.studio-bespoke-modal .studio-upload-confirm-remove {
+  background: #fff;
+  border: 1px solid #fff;
+  color: #111;
+}
+.studio-bespoke-modal .studio-upload-confirm-remove:hover {
+  background: #e11d48;
+  border-color: #e11d48;
+  color: #fff;
+}
+.studio-bespoke-modal .studio-upload-confirm button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.studio-bespoke-modal .studio-upload-confirm-short {
+  display: none;
+}
+/* Small tiles (phones): "Remove?" + two round icon buttons. */
+@container (max-width: 130px) {
+  .studio-bespoke-modal .studio-upload-confirm-long {
+    display: none;
+  }
+  .studio-bespoke-modal .studio-upload-confirm-short {
+    display: inline;
+  }
+  .studio-bespoke-modal .studio-upload-confirm-actions {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .studio-bespoke-modal .studio-upload-confirm-cancel,
+  .studio-bespoke-modal .studio-upload-confirm-remove {
+    flex: none;
+    min-width: 0;
+    width: 30px;
+    height: 30px;
+    min-height: 0;
+    padding: 0;
+    border-radius: 999px;
+    font-size: 14px;
+    letter-spacing: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
