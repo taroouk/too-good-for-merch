@@ -8,17 +8,18 @@ import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
+import { getFreshPrintMockup, upsertPrintMockup } from "src/db/mockup";
 import {
-  computeMockupFingerprint,
-  getFreshPrintMockup,
-  upsertPrintMockup,
-} from "src/db/mockup";
+  normalizeArtworkLayers,
+  sideFingerprint,
+  sidesWithLayers,
+  type ArtworkLayer,
+} from "src/studio/artwork-layers";
 import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
 import {
   BASELINE_RENDER_DPI,
-  getRenderer,
-  getPlacementSide,
   loadTemplateBuffer,
+  renderLayers,
   RendererError,
 } from "src/studio/render";
 
@@ -72,92 +73,103 @@ export async function POST(req: Request) {
 
     const buildId = stringValue(body.buildId);
     const draftId = stringValue(body.draftId);
-    const assetId = stringValue(body.assetId);
     const product = asEnum(body.product, PRODUCTS);
     const color = asEnum(body.color, COLORS);
-    const placement = asEnum(body.placement, PLACEMENTS) as PlacementKey | null;
-    const x = numValue(body.x);
-    const y = numValue(body.y);
-    const scale = numValue(body.scale);
-    const rotation = numValue(body.rotation) ?? 0;
     const dpiInput = numValue(body.dpi) ?? DEFAULT_PREVIEW_DPI;
     const dpi = Math.max(MIN_DPI, Math.min(MAX_DPI, dpiInput));
 
-    if (!buildId || !draftId || !assetId) {
-      return apiError("Missing buildId, draftId, or assetId.", 400);
+    if (!buildId || !draftId) {
+      return apiError("Missing buildId or draftId.", 400);
     }
     if (!product) return apiError("Missing or invalid product.", 400);
     if (!color) return apiError("Missing or invalid color.", 400);
-    if (!placement) return apiError("Missing or invalid placement.", 400);
-    if (x === null || y === null || scale === null) {
-      return apiError("Missing artwork transform (x, y, scale).", 400);
+
+    // Multi-artwork: `layers` (all on one garment side). The original
+    // single-artwork shape (assetId + placement + x/y/scale/rotation) is
+    // still accepted and treated as a one-layer design.
+    let layers: ArtworkLayer[];
+    if (Array.isArray(body.layers)) {
+      layers = normalizeArtworkLayers(body.layers);
+    } else {
+      const assetId = stringValue(body.assetId);
+      const placement = asEnum(body.placement, PLACEMENTS) as PlacementKey | null;
+      const x = numValue(body.x);
+      const y = numValue(body.y);
+      const scale = numValue(body.scale);
+      if (!assetId) return apiError("Missing assetId.", 400);
+      if (!placement) return apiError("Missing or invalid placement.", 400);
+      if (x === null || y === null || scale === null) {
+        return apiError("Missing artwork transform (x, y, scale).", 400);
+      }
+      layers = normalizeArtworkLayers([{ assetId, placement, x, y, scale, rotation: numValue(body.rotation) ?? 0 }]);
     }
+    if (!layers.length) return apiError("No artwork to render.", 400);
+    const sides = sidesWithLayers(layers);
+    if (sides.length !== 1) {
+      return apiError("All artworks in one print mockup must be on the same side.", 400);
+    }
+    const side = sides[0];
 
     // Lightweight existence + ownership check only -- do not select
     // artworkData here. The BYTEA bytes are fetched exactly once, later,
     // only after authorization succeeds (see renderPromise below).
-    const asset = await prisma.asset.findFirst({
-      where: { id: assetId, buildId },
+    const assetIds = [...new Set(layers.map((layer) => layer.assetId))];
+    const assets = await prisma.asset.findMany({
+      where: { id: { in: assetIds }, buildId },
       select: {
         id: true,
         build: { select: { id: true, userId: true } },
       },
     });
-    if (!asset) {
+    if (assets.length !== assetIds.length) {
       return apiError("Artwork asset not found.", 404);
     }
 
     const allowed =
-      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, asset.build));
+      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, assets[0].build));
     if (!allowed) {
       return apiError("Forbidden.", 403);
     }
 
-    const fingerprint = computeMockupFingerprint({
-      assetId,
-      placement,
-      x,
-      y,
-      scale,
-      product,
-      color,
-      rotation,
-      dpi,
-    });
+    const fingerprint = sideFingerprint({ layers, product, color, dpi }) as string;
 
-    const existing = await getFreshPrintMockup(draftId, fingerprint);
+    const existing = await getFreshPrintMockup(draftId, fingerprint, side);
     if (existing) {
       return apiOk({
         imageUrl: existing.url,
         printMockupId: existing.id,
         fingerprint,
+        side,
         cached: true,
       });
     }
 
-    const dedupKey = `${draftId}:${fingerprint}`;
+    const dedupKey = `${draftId}:${side}:${fingerprint}`;
     const existingInFlight = inFlight.get(dedupKey);
     if (existingInFlight) {
       const result = await existingInFlight;
-      return apiOk({ ...result, fingerprint, cached: true });
+      return apiOk({ ...result, fingerprint, side, cached: true });
     }
 
     const renderPromise = (async () => {
-      const artwork = await getArtwork(assetId);
-      if (!artwork) {
-        throw new RendererError("Artwork file missing.", 404);
+      const artworkByAsset = new Map<string, Buffer>();
+      for (const id of assetIds) {
+        const artwork = await getArtwork(id);
+        if (!artwork) throw new RendererError("Artwork file missing.", 404);
+        artworkByAsset.set(id, artwork);
       }
 
-      const side = getPlacementSide(placement);
       const template = await loadTemplateBuffer(product as ProductType, color as GarmentColor, side);
 
-      const rendered = await getRenderer().render({
-        artwork,
+      const rendered = await renderLayers({
         template,
         product: product as ProductType,
         color: color as GarmentColor,
-        placement,
-        transform: { x, y, scale, rotation },
+        layers: layers.map((layer) => ({
+          artwork: artworkByAsset.get(layer.assetId) as Buffer,
+          placement: layer.placement,
+          transform: { x: layer.x, y: layer.y, scale: layer.scale, rotation: layer.rotation },
+        })),
         dpi,
       });
 
@@ -165,15 +177,16 @@ export async function POST(req: Request) {
 
       const mockup = await upsertPrintMockup(draftId, {
         buildId,
-        assetId,
+        assetId: layers[0].assetId,
         mimeType: storedMimeType,
         data: rendered.data,
         width: rendered.width,
         height: rendered.height,
         fingerprint,
         model: "sharp",
-        placement,
+        placement: layers.map((layer) => layer.placement).join(","),
         prompt: null,
+        side,
       });
 
       return {
@@ -187,7 +200,7 @@ export async function POST(req: Request) {
     inFlight.set(dedupKey, renderPromise);
     try {
       const result = await renderPromise;
-      return apiOk({ ...result, fingerprint });
+      return apiOk({ ...result, fingerprint, side });
     } finally {
       inFlight.delete(dedupKey);
     }

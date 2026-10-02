@@ -91,6 +91,26 @@ model BuildDraft {
   // compositor, which still receives transform numbers per-request.
   artworkPlacement Json?
 
+  // Multi-artwork designs: up to 4 { placement, assetId, x, y, scale,
+  // rotation } layers, one per placement (src/studio/artwork-layers.ts).
+  // primaryAssetId/artworkPlacement above keep mirroring the first layer
+  // for older consumers; null here means a single-artwork (legacy) design.
+  artworkLayers Json?
+
+  // printMockup*/aiMockup* above hold the FRONT of the garment; designs
+  // with artwork on the back also get a back mockup. Plain ids (no
+  // relation): Mockup rows are Build-scoped and cascade with the Build.
+  backPrintMockupId          String?
+  backPrintMockupFingerprint String?
+  backAiMockupId             String?
+  backAiMockupFingerprint    String?
+
+  // Each product type (FITTED / OVERSIZED / CUSTOM) keeps its own design.
+  // The fields above always hold the CURRENT product's design; the others
+  // wait here, keyed by product: { layers, printMockupId, ..., backAiMockup
+  // Fingerprint }. Swapped atomically by actionSwitchProduct.
+  productDesigns Json?
+
   // Admin-set price for a Bespoke/Custom (product == CUSTOM) build -- the
   // only way a CUSTOM product ever gets a real price, since computePrice()
   // always returns mode:"custom" for it (see src/pricing/engine.ts). Valid

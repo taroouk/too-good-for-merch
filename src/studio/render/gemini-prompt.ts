@@ -191,3 +191,83 @@ Garment context:
 - ${view} view
 `.trim();
 }
+
+// Multi-artwork version of printedArtworkPrompt: INPUT 1 is the garment,
+// INPUT 2..N+1 are the artworks, each with its own placement box on the
+// same garment side. Only used for two or more artworks -- a single
+// artwork keeps using printedArtworkPrompt verbatim, so one-artwork
+// generations are unchanged.
+export function printedArtworksPrompt({
+  product,
+  color,
+  side,
+  prints,
+}: {
+  product: string | null;
+  color: string | null;
+  side: "front" | "back";
+  prints: Array<{ placementLabel: string; box: ArtworkPlacementBox }>;
+}): string {
+  const productLabel = labelFromEnum(product, "T-shirt");
+  const colorLabel = labelFromEnum(color, "White");
+  const count = prints.length;
+  const rotationNote = (deg: number) =>
+    Math.abs(deg) < 0.5
+      ? "upright, with no rotation"
+      : `rotated ${Math.abs(deg).toFixed(1)} degrees ${deg > 0 ? "clockwise" : "counter-clockwise"} from upright`;
+
+  const inputs = prints
+    .map(
+      (print, index) => `INPUT ${index + 2} - ARTWORK ${index + 1} (${print.placementLabel}):
+The exact graphic/logo/image for this print. Reproduce its content, shape, and colors EXACTLY as given -- do not redraw, restyle, recolor, simplify, or reinterpret it.`,
+    )
+    .join("\n\n");
+
+  const placements = prints
+    .map(
+      (print, index) => `ARTWORK ${index + 1} (INPUT ${index + 2}, ${print.placementLabel}):
+- Horizontal position: left edge at ${pct(print.box.leftPct)} of the garment image's width, spanning ${pct(print.box.widthPct)} of its width.
+- Vertical position: top edge at ${pct(print.box.topPct)} of the garment image's height, spanning ${pct(print.box.heightPct)} of its height.
+- Orientation: ${rotationNote(print.box.rotationDeg)}.`,
+    )
+    .join("\n\n");
+
+  return `
+CRITICAL INSTRUCTIONS - READ CAREFULLY. YOU ARE A PHOTOREALISTIC GARMENT PRINTING ENGINE, NOT A CREATIVE DESIGNER.
+
+TASK: This is a photorealism EDIT of the exact input image, not a new photoshoot. You are given ${count + 1} input images. Re-render INPUT 1 to look like a real photograph of the SAME garment, now with ALL ${count} artworks (INPUT 2 to INPUT ${count + 1}) printed onto its fabric, each exactly at its own position described below -- keeping the shot itself (subject, pose, camera distance/angle, crop, framing) identical to INPUT 1.
+
+INPUT 1 - GARMENT REFERENCE:
+A clean render of a ${colorLabel} ${productLabel} (${side} view), with no artwork, logo, or print on it. This defines the garment's exact type, color, and the exact shot (composition, framing, camera angle) that your output must match.
+
+${inputs}
+
+PRINT PLACEMENTS (on the garment shown in INPUT 1). Every position is measured against the FULL garment image frame (0% = left/top edge of the image, 100% = right/bottom edge), not against the shirt's own edges. Each artwork goes ONLY in its own box -- never swap, merge, duplicate, or overlap them.
+
+${placements}
+
+YOUR TASK:
+Produce a photorealistic version of INPUT 1 with every artwork printed at its own position, as if REALLY manufactured onto this garment:
+- Preserve the garment type (${productLabel}), color (${colorLabel}), structure, and silhouette.
+- Render realistic fabric texture, folds, wrinkles, and natural lighting/shadow -- on the blank fabric AND every printed area.
+- Each print must look physically embedded in the fabric (following folds/curvature, catching the same light, fabric texture subtly showing through the ink), NOT a flat sticker.
+- Do not distort any artwork's own aspect ratio, content, or colors.
+
+COMPOSITION LOCK -- treat every point below as equally critical as the garment itself:
+- If INPUT 1 shows the garment worn by a person, the output MUST also show it worn by the same person in the same pose. Do NOT remove the person or switch to a flat-lay / ghost-mannequin shot.
+- If a person is present: preserve their exact identity, face, expression, skin tone, hair, and body shape unchanged.
+- If INPUT 1 has no person, the output MUST also have no person.
+- Match INPUT 1's camera framing, crop, angle, and aspect ratio exactly -- no zooming, cropping, or reframing; no added background.
+- CRITICAL: the output's aspect ratio and pixel dimensions MUST be IDENTICAL to INPUT 1's. The artwork inputs are references for content/colors ONLY -- their shapes must never influence the output canvas.
+
+STRICT PROHIBITIONS - ANY VIOLATION INVALIDATES THE OUTPUT:
+1. Do NOT add any logo, artwork, graphic, print, or text other than the ${count} given artworks, each placed exactly as described.
+2. Do NOT redraw, restyle, recolor, or reinterpret any artwork.
+3. Do NOT change the garment type, color, or silhouette, or substitute a different garment.
+4. Do NOT change the composition, framing, crop, camera angle, or aspect ratio.
+
+Garment context:
+- ${colorLabel} ${productLabel}
+- ${side} view
+`.trim();
+}

@@ -17,6 +17,18 @@
 // resolve the "src/*" baseUrl alias at runtime.
 import type { ArtworkPlacement } from "../artwork/save";
 
+// One artwork of a multi-artwork design (src/studio/artwork-layers.ts --
+// structurally identical; not imported so this module stays dependency-free
+// for its unit tests).
+export type SignatureLayer = {
+  placement: string;
+  assetId: string;
+  x: number;
+  y: number;
+  scale: number;
+  rotation: number;
+};
+
 export type DesignSignature = {
   product: string;
   fabric: string;
@@ -26,6 +38,10 @@ export type DesignSignature = {
   primaryAssetId: string | null;
   placements: string[];
   transform: ArtworkPlacement | null;
+  // Every artwork (multi-artwork designs). Absent on orders placed before
+  // layers existed -- those are single-artwork, fully described by
+  // primaryAssetId + transform above.
+  layers?: SignatureLayer[] | null;
 };
 
 export function buildDesignSignature(input: {
@@ -37,6 +53,7 @@ export function buildDesignSignature(input: {
   primaryAssetId: string | null;
   placements: string[];
   transform: ArtworkPlacement | null;
+  layers?: SignatureLayer[] | null;
 }): DesignSignature {
   return {
     product: input.product,
@@ -49,6 +66,8 @@ export function buildDesignSignature(input: {
     // different order must compare equal.
     placements: [...input.placements].sort(),
     transform: input.transform,
+    // Order-independent, like placements.
+    layers: input.layers ? [...input.layers].sort((a, b) => a.placement.localeCompare(b.placement)) : null,
   };
 }
 
@@ -63,7 +82,28 @@ export function designSignaturesMatch(a: DesignSignature | null, b: DesignSignat
     a.primaryAssetId === b.primaryAssetId &&
     a.placements.length === b.placements.length &&
     a.placements.every((p, i) => p === b.placements[i]) &&
-    transformsMatch(a.transform, b.transform)
+    transformsMatch(a.transform, b.transform) &&
+    layersMatch(a.layers ?? null, b.layers ?? null)
+  );
+}
+
+// A signature without layers (an order placed before multi-artwork) is a
+// single-artwork design whose artwork is already compared through
+// primaryAssetId + transform -- it can only match a design of at most one
+// layer. Otherwise every layer must match exactly.
+function layersMatch(a: SignatureLayer[] | null, b: SignatureLayer[] | null): boolean {
+  if (!a || !b) return (a ?? b ?? []).length <= 1;
+  if (a.length !== b.length) return false;
+  const sorted = (list: SignatureLayer[]) => [...list].sort((x, y) => x.placement.localeCompare(y.placement));
+  const [sa, sb] = [sorted(a), sorted(b)];
+  return sa.every(
+    (layer, i) =>
+      layer.placement === sb[i].placement &&
+      layer.assetId === sb[i].assetId &&
+      layer.x === sb[i].x &&
+      layer.y === sb[i].y &&
+      layer.scale === sb[i].scale &&
+      layer.rotation === sb[i].rotation,
   );
 }
 

@@ -56,7 +56,7 @@ async function createAssetRecord(buildId: string, formData: FormData) {
       url: stored?.url ?? null,
       status: stored ? "READY" : "PENDING_UPLOAD",
     },
-    select: { id: true, buildId: true, fileName: true, url: true },
+    select: { id: true, buildId: true, fileName: true, url: true, artworkSha256: true },
   });
 }
 
@@ -127,6 +127,7 @@ export async function actionAttachExistingAsset(
       buildId: source.buildId,
       fileName: source.fileName,
       url: source.url,
+      artworkSha256: source.artworkSha256,
     };
   }
 
@@ -145,7 +146,7 @@ export async function actionAttachExistingAsset(
       status: source.status,
       url: `/api/assets/${copiedId}/file`,
     },
-    select: { id: true, buildId: true, fileName: true, url: true },
+    select: { id: true, buildId: true, fileName: true, url: true, artworkSha256: true },
   });
 
   revalidatePath(`/studio/projects/${buildId}/assets`);
@@ -171,29 +172,44 @@ export async function actionRemoveAsset(buildId: string, assetId: string) {
 
   const ownedBuildsWhere = userId ? [{ buildId }, { build: { userId } }] : [{ buildId }];
 
-  const asset = await prisma.asset.findFirst({
+  const target = await prisma.asset.findFirst({
     where: { id: assetId, hiddenAt: null, OR: ownedBuildsWhere },
+    select: { id: true, artworkSha256: true },
+  });
+  if (!target) return { ok: false as const, error: "Upload not found." };
+
+  // "Your uploads" shows one tile per image (deduped by content hash), but
+  // picking an image from another project copies it (actionAttachExisting
+  // Asset), so the same image can have several rows. Remove them all, or a
+  // remaining copy would reappear after a reload.
+  const copies = await prisma.asset.findMany({
+    where: {
+      hiddenAt: null,
+      OR: ownedBuildsWhere,
+      ...(target.artworkSha256 ? { artworkSha256: target.artworkSha256 } : { id: target.id }),
+    },
     select: {
       id: true,
       _count: { select: { orderItems: true, placements: true } },
     },
   });
-  if (!asset) return { ok: false as const, error: "Upload not found." };
-
-  const referenced = asset._count.orderItems > 0 || asset._count.placements > 0;
+  const ids = copies.map((copy) => copy.id);
+  const keep = copies.filter((c) => c._count.orderItems > 0 || c._count.placements > 0).map((c) => c.id);
+  const drop = ids.filter((id) => !keep.includes(id));
 
   await prisma.$transaction(async (tx) => {
     await tx.buildDraft.updateMany({
       where: {
-        primaryAssetId: asset.id,
+        primaryAssetId: { in: ids },
         build: userId ? { OR: [{ id: buildId }, { userId }] } : { id: buildId },
       },
       data: { primaryAssetId: null },
     });
-    if (referenced) {
-      await tx.asset.update({ where: { id: asset.id }, data: { hiddenAt: new Date() } });
-    } else {
-      await tx.asset.delete({ where: { id: asset.id } });
+    if (keep.length) {
+      await tx.asset.updateMany({ where: { id: { in: keep } }, data: { hiddenAt: new Date() } });
+    }
+    if (drop.length) {
+      await tx.asset.deleteMany({ where: { id: { in: drop } } });
     }
   });
 

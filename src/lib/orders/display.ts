@@ -9,6 +9,7 @@
 // Relative, not "src/..." -- scripts/payments-test.tsconfig.json compiles
 // this module without the app's path aliases.
 import { PAYMENT_CURRENCY } from "./totals";
+import { normalizeArtworkLayers, type ArtworkLayer } from "../../studio/artwork-layers";
 
 // The one non-guessing signal for "was this order priced under the
 // USD-canonical checkout model" (see src/lib/orders/checkout.ts): that code
@@ -97,7 +98,14 @@ export function orderTotalFilterLabel(bound: "Min" | "Max"): string {
 export const ORDER_TOTAL_FILTER_HINT =
   `Amount filters match the ${PAYMENT_CURRENCY} payment total, not the canonical USD total.`;
 
-export type OrderMockupIds = { printMockupId: string | null; aiMockupId: string | null };
+export type OrderMockupIds = {
+  printMockupId: string | null;
+  aiMockupId: string | null;
+  // Multi-artwork designs with artwork on the back (purchase-time snapshot
+  // only -- older orders have none).
+  backPrintMockupId: string | null;
+  backAiMockupId: string | null;
+};
 
 // P1-8: Mockup rows are append-only (src/db/mockup.ts always creates a new
 // row and only reassigns the BuildDraft.printMockupId/aiMockupId pointer),
@@ -117,7 +125,17 @@ export function resolveOrderMockupIds(
   return {
     printMockupId: snapshotPrintMockupId ?? liveDraft?.printMockupId ?? null,
     aiMockupId: snapshotAiMockupId ?? liveDraft?.aiMockupId ?? null,
+    backPrintMockupId: typeof preview?.backPrintMockupId === "string" ? preview.backPrintMockupId : null,
+    backAiMockupId: typeof preview?.backAiMockupId === "string" ? preview.backAiMockupId : null,
   };
+}
+
+// Every artwork frozen onto the order at checkout (OrderItem.preview.layers,
+// src/lib/orders/checkout.ts) -- what production prints. Empty for orders
+// placed before multi-artwork; those use the item's single asset + transform.
+export function orderArtworkLayers(itemPreview: unknown): ArtworkLayer[] {
+  const preview = itemPreview && typeof itemPreview === "object" ? (itemPreview as Record<string, unknown>) : null;
+  return normalizeArtworkLayers(preview?.layers);
 }
 
 // Customer-facing product name for the checkout order summary. A build's

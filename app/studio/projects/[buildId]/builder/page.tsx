@@ -3,6 +3,7 @@ import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
+import { draftArtworkLayers } from "src/studio/artwork-layers";
 
 export default async function BuilderPage({
   params,
@@ -37,6 +38,11 @@ export default async function BuilderPage({
           aiMockupId: true,
           aiMockupFingerprint: true,
           aiMockup: { select: { id: true, mimeType: true } },
+          artworkLayers: true,
+          backPrintMockupId: true,
+          backPrintMockupFingerprint: true,
+          backAiMockupId: true,
+          backAiMockupFingerprint: true,
         },
       },
       designs: {
@@ -59,23 +65,37 @@ export default async function BuilderPage({
       OR: userId ? [{ buildId }, { build: { userId } }] : [{ buildId }],
     },
     orderBy: { createdAt: "desc" },
-    take: 24,
+    take: 48,
     select: {
       id: true,
       buildId: true,
       url: true,
       fileName: true,
+      artworkSha256: true,
     },
   });
 
-  const initialUserAssets = initialUserAssetsRaw
-    .filter((asset): asset is typeof asset & { url: string } => Boolean(asset.url))
-    .map((asset) => ({
-      id: asset.id,
-      buildId: asset.buildId,
-      url: asset.url,
-      fileName: asset.fileName,
-    }));
+  // One tile per image: picking an upload from another project copies it
+  // into this one (actionAttachExistingAsset), so the same image can exist
+  // as several rows -- dedupe by content hash, preferring this project's
+  // copy, and put the artwork currently on the shirt first.
+  const primaryAssetId = build.draft.primaryAssetId;
+  const byImage = new Map<string, { id: string; buildId: string; url: string; fileName: string; hash: string | null }>();
+  for (const asset of initialUserAssetsRaw) {
+    if (!asset.url) continue;
+    const key = asset.artworkSha256 ?? asset.id;
+    const dto = { id: asset.id, buildId: asset.buildId, url: asset.url, fileName: asset.fileName, hash: asset.artworkSha256 };
+    const existing = byImage.get(key);
+    const better =
+      !existing ||
+      asset.id === primaryAssetId ||
+      (existing.id !== primaryAssetId && existing.buildId !== buildId && asset.buildId === buildId);
+    if (better) byImage.set(key, dto);
+  }
+  const deduped = [...byImage.values()];
+  const primaryIndex = deduped.findIndex((asset) => asset.id === primaryAssetId);
+  if (primaryIndex > 0) deduped.unshift(...deduped.splice(primaryIndex, 1));
+  const initialUserAssets = deduped.slice(0, 24);
 
   const placementsCount = build.designs.reduce(
     (acc, d) => acc + d.placements.length,
@@ -107,6 +127,25 @@ export default async function BuilderPage({
         })
       : null;
 
+  // Multi-artwork design (or the single legacy artwork as one layer), with
+  // each layer's image URL -- looked up directly rather than from the
+  // "Your uploads" list, which is capped and deduped.
+  const draftLayers = draftArtworkLayers(build.draft);
+  const layerAssets = draftLayers.length
+    ? await prisma.asset.findMany({
+        where: { id: { in: draftLayers.map((layer) => layer.assetId) }, buildId },
+        select: { id: true, url: true, fileName: true, artworkSha256: true },
+      })
+    : [];
+  const layerAssetById = new Map(layerAssets.map((asset) => [asset.id, asset]));
+  const initialLayers = draftLayers.flatMap((layer) => {
+    const asset = layerAssetById.get(layer.assetId);
+    return asset?.url
+      ? [{ ...layer, url: asset.url, fileName: asset.fileName, hash: asset.artworkSha256 }]
+      : [];
+  });
+  const mockupFileUrl = (id: string | null) => (id ? `/api/mockups/${id}/file` : null);
+
   const initialInWishlist = userId
     ? Boolean(
         await prisma.wishlistItem.findUnique({
@@ -133,6 +172,11 @@ export default async function BuilderPage({
       initialSavedArtworkUrl={initialSavedArtworkUrl}
       initialArtworkPlacement={initialArtworkPlacement}
       initialInWishlist={initialInWishlist}
+      initialLayers={initialLayers}
+      initialBackMockupUrl={mockupFileUrl(build.draft.backPrintMockupId)}
+      initialBackMockupFingerprint={build.draft.backPrintMockupFingerprint ?? null}
+      initialBackAiMockupUrl={mockupFileUrl(build.draft.backAiMockupId)}
+      initialBackAiMockupFingerprint={build.draft.backAiMockupFingerprint ?? null}
     />
   );
 }

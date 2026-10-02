@@ -14,6 +14,10 @@ export type MockupInput = {
   // The Print Mockup this AI mockup was generated from -- null only for
   // legacy rows predating the Print Mockup flow.
   parentId?: string | null;
+  // Which garment side this mockup shows. The draft's printMockup*/
+  // aiMockup* columns are the FRONT (and every pre-layers single-artwork
+  // mockup); "back" writes the backPrintMockup*/backAiMockup* columns.
+  side?: "front" | "back";
 };
 
 export type MockupRecord = {
@@ -23,46 +27,9 @@ export type MockupRecord = {
   createdAt: Date;
 };
 
-export function computeMockupFingerprint(input: {
-  assetId: string | null;
-  placement: string;
-  x: number;
-  y: number;
-  scale: number;
-  product: string | null;
-  color: string | null;
-  rotation?: number;
-  dpi?: number;
-}): string {
-  const parts: Array<string | number> = [
-    input.assetId ?? "none",
-    input.placement,
-    // x/y are fractions of the container/template width (see
-    // src/studio/render/transform.ts), not raw px -- round to the same
-    // decimal precision as scale, not to the nearest integer.
-    Math.round(input.x * 1000) / 1000,
-    Math.round(input.y * 1000) / 1000,
-    Math.round(input.scale * 1000) / 1000,
-    input.product ?? "none",
-    input.color ?? "none",
-  ];
-
-  // rotation/dpi are appended only when the caller provides them, so the
-  // hash for callers that don't (the AI mockup flow, which has no dpi
-  // concept and no rotation control) stays byte-for-byte identical to
-  // before this change -- no AI mockup persistence/API behavior changes.
-  // The Print Mockup flow always provides both, since both affect the
-  // rendered output and must invalidate the print cache when they change.
-  if (input.rotation !== undefined) {
-    parts.push(Math.round(input.rotation * 1000) / 1000);
-  }
-  if (input.dpi !== undefined) {
-    parts.push(Math.round(input.dpi));
-  }
-
-  const raw = parts.join("|");
-  return createHash("sha256").update(raw).digest("hex");
-}
+// Pure (no Prisma) so the Builder and unit tests can use it -- see
+// src/studio/mockup-fingerprint.ts.
+export { computeMockupFingerprint } from "../studio/mockup-fingerprint";
 
 export async function upsertMockupForDraft(
   draftId: string,
@@ -90,11 +57,14 @@ export async function upsertMockupForDraft(
 
   await prisma.buildDraft.update({
     where: { id: draftId },
-    data: {
-      aiMockupId: created.id,
-      aiMockupFingerprint: input.fingerprint,
-      aiMockupGeneratedAt: created.createdAt,
-    },
+    data:
+      input.side === "back"
+        ? { backAiMockupId: created.id, backAiMockupFingerprint: input.fingerprint }
+        : {
+            aiMockupId: created.id,
+            aiMockupFingerprint: input.fingerprint,
+            aiMockupGeneratedAt: created.createdAt,
+          },
     select: { id: true },
   });
 
@@ -171,11 +141,14 @@ export async function upsertPrintMockup(
 
   await prisma.buildDraft.update({
     where: { id: draftId },
-    data: {
-      printMockupId: created.id,
-      printMockupFingerprint: input.fingerprint,
-      printMockupGeneratedAt: created.createdAt,
-    },
+    data:
+      input.side === "back"
+        ? { backPrintMockupId: created.id, backPrintMockupFingerprint: input.fingerprint }
+        : {
+            printMockupId: created.id,
+            printMockupFingerprint: input.fingerprint,
+            printMockupGeneratedAt: created.createdAt,
+          },
     select: { id: true },
   });
 
@@ -193,7 +166,22 @@ export async function upsertPrintMockup(
 export async function getFreshPrintMockup(
   draftId: string,
   fingerprint: string,
+  side: "front" | "back" = "front",
 ): Promise<MockupRecord | null> {
+  if (side === "back") {
+    const backDraft = await prisma.buildDraft.findUnique({
+      where: { id: draftId },
+      select: { backPrintMockupId: true, backPrintMockupFingerprint: true },
+    });
+    if (!backDraft?.backPrintMockupId || backDraft.backPrintMockupFingerprint !== fingerprint) return null;
+    const row = await prisma.mockup.findUnique({
+      where: { id: backDraft.backPrintMockupId },
+      select: { id: true, mimeType: true, createdAt: true },
+    });
+    if (!row) return null;
+    return { id: row.id, url: `/api/mockups/${row.id}/file`, mimeType: row.mimeType ?? "image/png", createdAt: row.createdAt };
+  }
+
   const draft = await prisma.buildDraft.findUnique({
     where: { id: draftId },
     select: {

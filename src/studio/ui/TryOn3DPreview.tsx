@@ -27,19 +27,29 @@ type PlacementKey =
   | "CENTER_BACK"
   | "FULL_BACK";
 
+// One artwork on the model: same { placement, x, y, scale, rotation } as a
+// design layer (src/studio/artwork-layers.ts), plus its image URL.
+export type PreviewArtwork = {
+  placement: PlacementKey;
+  url: string;
+  x: number;
+  y: number;
+  scale: number;
+  rotation?: number;
+};
+
+export type PreviewSideMockup = { url: string | null; isStale: boolean };
+
 type TryOn3DPreviewProps = {
   product: ProductType | null;
   color: GarmentColor | null;
-  artworkUrl: string | null;
+  // Every artwork in the design (front and back); each side shows its own.
+  artworks: PreviewArtwork[];
+  // The placement being edited -- the preview turns to its side.
   activePlacement?: PlacementKey;
-  artworkTransform?: {
-    x: number;
-    y: number;
-    scale: number;
-    rotation?: number;
-  };
-  generatedMockupUrl?: string | null;
-  isMockupStale?: boolean;
+  // The generated mockup for each side (shown instead of the live overlays
+  // while it is fresh).
+  mockups: Record<PreviewSide, PreviewSideMockup>;
 };
 
 // هنا دي صور الموديلز الأصلية بتاعتك بدون أي تغيير
@@ -63,14 +73,55 @@ function getPreviewLabel(product: ProductType | null, color: GarmentColor | null
   return `${productLabel} / ${colorLabel}`;
 }
 
+// One live artwork overlay. Its own component because the client-side
+// trim (useTrimmedArtworkUrl, a hook) has to run per artwork.
+function ArtworkOverlay({
+  artwork,
+  product,
+  color,
+  containerWidth,
+}: {
+  artwork: PreviewArtwork;
+  product: ProductType | null;
+  color: GarmentColor | null;
+  containerWidth: number;
+}) {
+  // Same alpha-scan trim the server's trimToVisibleBounds runs, so the box
+  // aspect ratio matches what sharp-renderer.ts composites.
+  const trimmedUrl = useTrimmedArtworkUrl(artwork.url);
+
+  // Canonical placement geometry (placement-config.ts via placement-css.ts).
+  const style = useMemo(() => {
+    const resolvedProduct: ProductType = product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
+    const resolvedColor: GarmentColor = color === "BLACK" ? "BLACK" : "WHITE";
+    return getPlacementStyle(resolvedProduct, resolvedColor, artwork.placement);
+  }, [product, color, artwork.placement]);
+
+  // x/y are fractions of the container width (transform.ts); P3-21c: rotate
+  // about the artwork's own center, matching composite.ts.
+  const transform = useMemo(() => {
+    const base = typeof style.transform === "string" ? style.transform : "";
+    const { x: offsetX, y: offsetY } = artworkOffsetPx(artwork, containerWidth);
+    const rotation = clampArtworkRotation(artwork.rotation);
+    return `${base} translate(${offsetX}px, ${offsetY}px) scale(${artwork.scale}) rotate(${rotation}deg)`.trim();
+  }, [style, artwork, containerWidth]);
+
+  return (
+    <img
+      src={trimmedUrl ?? artwork.url}
+      alt="Artwork overlay"
+      style={{ position: "absolute", zIndex: 30, ...previewArtworkBlend(color), ...style, transform }}
+      draggable={false}
+    />
+  );
+}
+
 export default function TryOn3DPreview({
   product,
   color,
-  artworkUrl,
+  artworks,
   activePlacement,
-  artworkTransform,
-  generatedMockupUrl,
-  isMockupStale,
+  mockups,
 }: TryOn3DPreviewProps) {
   const [previewSide, setPreviewSide] = useState<PreviewSide>("front");
 
@@ -83,12 +134,12 @@ export default function TryOn3DPreview({
 
   const frontImage = useMemo(() => getFrontModelImage(product, color), [color, product]);
   const backImage = useMemo(() => getBackModelImage(product, color), [color, product]);
-  const generatedMockupSide = activePlacement ? getPlacementSide(activePlacement) : "front";
-  const showingGeneratedMockup = Boolean(
-    generatedMockupUrl && previewSide === generatedMockupSide && !isMockupStale,
-  );
+  // Each side shows its own generated mockup while it's fresh; otherwise the
+  // plain model photo with that side's artworks overlaid live.
+  const sideMockup = mockups[previewSide];
+  const showingGeneratedMockup = Boolean(sideMockup?.url && !sideMockup.isStale);
   const modelImage = showingGeneratedMockup
-    ? generatedMockupUrl!
+    ? (sideMockup.url as string)
     : previewSide === "front"
       ? frontImage
       : backImage;
@@ -104,46 +155,18 @@ export default function TryOn3DPreview({
   const fallbackAspectRatio = useMemo(() => getTemplateAspectRatio(previewSide), [previewSide]);
   const previewAspectRatio = useImageAspectRatio(modelImage, fallbackAspectRatio);
 
-  // Trimmed to visible content client-side, using the exact same alpha
-  // scan the server's trimToVisibleBounds runs, so this preview's box
-  // aspect ratio (width fixed, height: auto -> driven by this image's
-  // intrinsic aspect ratio) matches what sharp-renderer.ts actually
-  // composites, including for asymmetric transparent padding. See
-  // useTrimmedArtworkUrl.ts.
-  const trimmedArtworkUrl = useTrimmedArtworkUrl(artworkUrl);
+  const sideArtworks = useMemo(
+    () =>
+      showingGeneratedMockup
+        ? []
+        : artworks.filter((artwork) => getPlacementSide(artwork.placement) === previewSide),
+    [artworks, previewSide, showingGeneratedMockup],
+  );
 
-  const shouldShowArtwork = useMemo(() => {
-    if (showingGeneratedMockup) return false;
-    if (!artworkUrl || !activePlacement) return false;
-    return previewSide === getPlacementSide(activePlacement);
-  }, [artworkUrl, activePlacement, previewSide, showingGeneratedMockup]);
-
-  // Canonical placement geometry -- the same shared config the server
-  // compositor renders from (src/studio/render/placement-config.ts),
-  // converted to CSS via placement-css.ts. No local coordinate table here.
-  const artworkStyle = useMemo(() => {
-    if (!activePlacement) return {};
-    const resolvedProduct: ProductType = product === "OVERSIZED" ? "OVERSIZED" : "FITTED";
-    const resolvedColor: GarmentColor = color === "BLACK" ? "BLACK" : "WHITE";
-    return getPlacementStyle(resolvedProduct, resolvedColor, activePlacement);
-  }, [product, color, activePlacement]);
-
-  // artworkTransform.x/y are fractions of the preview container's own
-  // width (see src/studio/render/transform.ts) -- track the container's
-  // live rendered width (fluid, w-full) to convert back to real px for
-  // CSS translate().
+  // artwork x/y are fractions of the preview container's own width -- track
+  // the container's live rendered width to convert them to real px.
   const containerRef = useRef<HTMLDivElement | null>(null);
   const containerWidth = useContainerWidth(containerRef);
-  const artworkTransformStyle = useMemo(() => {
-    const baseTransform = typeof artworkStyle.transform === "string" ? artworkStyle.transform : "";
-    const transform = artworkTransform ?? { x: 0, y: 0, scale: 1 };
-    const { x: offsetX, y: offsetY } = artworkOffsetPx(transform, containerWidth);
-    // P3-21c: rotate about the artwork's own center, matching the server
-    // compositor, which rotates the artwork buffer and re-centers it on the
-    // resolved anchor (src/studio/render/composite.ts).
-    const rotation = clampArtworkRotation(transform.rotation);
-    return `${baseTransform} translate(${offsetX}px, ${offsetY}px) scale(${transform.scale}) rotate(${rotation}deg)`.trim();
-  }, [artworkStyle, artworkTransform, containerWidth]);
 
   function cnDot(active: boolean) {
     return active
@@ -181,21 +204,16 @@ export default function TryOn3DPreview({
           }}
         />
 
-        {/* ده اللوجو اللي بينزل فوق صورتك الأصلية بالإحداثيات المظبوطة */}
-        {shouldShowArtwork ? (
-          <img
-            src={trimmedArtworkUrl ?? artworkUrl!}
-            alt="Artwork overlay"
-            style={{ 
-              position: "absolute", 
-              zIndex: 30, 
-              ...previewArtworkBlend(color),
-              ...artworkStyle,
-              transform: artworkTransformStyle,
-            }}
-            draggable={false}
+        {/* Every artwork on the visible side, at the canonical placement geometry. */}
+        {sideArtworks.map((artwork) => (
+          <ArtworkOverlay
+            key={artwork.placement}
+            artwork={artwork}
+            product={product}
+            color={color}
+            containerWidth={containerWidth}
           />
-        ) : null}
+        ))}
 
         <div className="studio-preview-side-switch" aria-label="Preview side switch">
           <button type="button" onClick={() => setPreviewSide(s => s === "front" ? "back" : "front")} className="studio-preview-side-arrow">‹</button>

@@ -84,7 +84,9 @@ export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<Ga
 // photo here -- the earlier per-photo boxes covered ~94% of the torso for
 // Full Front/Back, i.e. seam to seam, out over the model's arms.
 const TORSO_PLACEMENTS: Partial<Record<PlacementType, PlacementBox>> = {
-  FULL_FRONT: { xPct: 0.2, yPct: 0.2, widthPct: 0.6 },
+  // Full Front matches the Figma popup frame: the placeholder spans ~77%
+  // of the torso, starting just under the chest line.
+  FULL_FRONT: { xPct: 0.115, yPct: 0.305, widthPct: 0.775 },
   CENTER_FRONT: { xPct: 0.29, yPct: 0.24, widthPct: 0.42 },
   LEFT_CHEST: { xPct: 0.17, yPct: 0.2, widthPct: 0.2 },
   RIGHT_CHEST: { xPct: 0.63, yPct: 0.2, widthPct: 0.2 },

@@ -1,5 +1,5 @@
 // file: src/studio/render/index.ts
-import { SharpMockupRenderer } from "./engines/sharp-renderer";
+import { SharpMockupRenderer, renderLayeredMockup } from "./engines/sharp-renderer";
 import type { MockupRenderer } from "./types";
 
 export * from "./types";
@@ -36,4 +36,23 @@ export function getRenderer(): MockupRenderer {
 
   cachedEngine = engine;
   return cachedRenderer;
+}
+
+// Several artworks on one garment side (multi-artwork designs). Exposed
+// through this seam like getRenderer(); a single layer delegates to the
+// active engine's own render(), so one-artwork output is unchanged.
+export async function renderLayers(req: Parameters<typeof renderLayeredMockup>[0]) {
+  if (req.layers.length === 1) {
+    const [only] = req.layers;
+    return getRenderer().render({
+      artwork: only.artwork,
+      template: req.template,
+      product: req.product,
+      color: req.color,
+      placement: only.placement,
+      transform: only.transform,
+      dpi: req.dpi,
+    });
+  }
+  return renderLayeredMockup(req);
 }

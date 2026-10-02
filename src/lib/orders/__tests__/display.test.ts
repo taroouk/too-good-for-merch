@@ -65,34 +65,39 @@ export async function runAll() {
       assert.deepEqual(resolveOrderMockupIds(preview, liveDraft), {
         printMockupId: "print-at-purchase",
         aiMockupId: "ai-at-purchase",
+        backPrintMockupId: null,
+        backAiMockupId: null,
       });
     },
 
     "resolveOrderMockupIds falls back to the live BuildDraft pointers for orders placed before the snapshot existed"() {
       const liveDraft = { printMockupId: "print-legacy", aiMockupId: "ai-legacy" };
-      assert.deepEqual(resolveOrderMockupIds(null, liveDraft), {
-        printMockupId: "print-legacy",
-        aiMockupId: "ai-legacy",
-      });
-      assert.deepEqual(resolveOrderMockupIds({}, liveDraft), {
-        printMockupId: "print-legacy",
-        aiMockupId: "ai-legacy",
-      });
+      const expected = { printMockupId: "print-legacy", aiMockupId: "ai-legacy", backPrintMockupId: null, backAiMockupId: null };
+      assert.deepEqual(resolveOrderMockupIds(null, liveDraft), expected);
+      assert.deepEqual(resolveOrderMockupIds({}, liveDraft), expected);
     },
 
     "resolveOrderMockupIds returns nulls when neither a snapshot nor a live draft has a mockup"() {
-      assert.deepEqual(resolveOrderMockupIds(null, null), { printMockupId: null, aiMockupId: null });
-      assert.deepEqual(resolveOrderMockupIds({}, { printMockupId: null, aiMockupId: null }), {
-        printMockupId: null,
-        aiMockupId: null,
-      });
+      const none = { printMockupId: null, aiMockupId: null, backPrintMockupId: null, backAiMockupId: null };
+      assert.deepEqual(resolveOrderMockupIds(null, null), none);
+      assert.deepEqual(resolveOrderMockupIds({}, { printMockupId: null, aiMockupId: null }), none);
     },
 
     "resolveOrderMockupIds ignores malformed preview data instead of throwing"() {
-      assert.deepEqual(resolveOrderMockupIds("not-an-object", null), { printMockupId: null, aiMockupId: null });
-      assert.deepEqual(resolveOrderMockupIds({ printMockupId: 123, aiMockupId: true }, null), {
-        printMockupId: null,
-        aiMockupId: null,
+      const none = { printMockupId: null, aiMockupId: null, backPrintMockupId: null, backAiMockupId: null };
+      assert.deepEqual(resolveOrderMockupIds("not-an-object", null), none);
+      assert.deepEqual(resolveOrderMockupIds({ printMockupId: 123, aiMockupId: true, backAiMockupId: 5 }, null), none);
+    },
+
+    // Multi-artwork orders: back-of-garment mockups come only from the
+    // purchase-time snapshot (there is no live-draft fallback for them).
+    "resolveOrderMockupIds returns the back mockups frozen at checkout"() {
+      const preview = { printMockupId: "pf", aiMockupId: "af", backPrintMockupId: "pb", backAiMockupId: "ab" };
+      assert.deepEqual(resolveOrderMockupIds(preview, null), {
+        printMockupId: "pf",
+        aiMockupId: "af",
+        backPrintMockupId: "pb",
+        backAiMockupId: "ab",
       });
     },
 

@@ -115,3 +115,74 @@ export class SharpMockupRenderer implements MockupRenderer {
     };
   }
 }
+
+// Multi-artwork designs (src/studio/artwork-layers.ts): several artworks on
+// the SAME garment side, each resolved against its own placement and
+// composited in turn onto the running result, then size-normalized exactly
+// once -- the same per-artwork steps as SharpMockupRenderer.render (trim,
+// resolvePlacement off the trimmed aspect, compositeArtworkOntoBase, the
+// canonical reference-width/dpi resize). Kept separate from render() so the
+// single-artwork path (and its committed golden hash) is untouched.
+export async function renderLayeredMockup(req: {
+  template: Buffer;
+  product: RenderRequest["product"];
+  color: RenderRequest["color"];
+  layers: Array<{ artwork: Buffer; placement: RenderRequest["placement"]; transform: RenderRequest["transform"] }>;
+  dpi: number;
+}): Promise<RenderedMockup> {
+  if (!req.layers.length) throw new RendererError("No artwork to render.", 400);
+  if (req.layers.length === 1) {
+    const [only] = req.layers;
+    return new SharpMockupRenderer().render({
+      artwork: only.artwork,
+      template: req.template,
+      product: req.product,
+      color: req.color,
+      placement: only.placement,
+      transform: only.transform,
+      dpi: req.dpi,
+    });
+  }
+
+  let templateMeta: sharp.Metadata;
+  try {
+    templateMeta = await sharp(req.template).metadata();
+  } catch {
+    throw new RendererError("Garment template image could not be read.", 500);
+  }
+  if (!templateMeta.width || !templateMeta.height) {
+    throw new RendererError("Garment template image is missing dimensions.", 500);
+  }
+
+  let composited = req.template;
+  for (const layer of req.layers) {
+    const trimmedMeta = await sharp(await trimToVisibleBounds(layer.artwork)).metadata();
+    const artworkMeta = await sharp(layer.artwork).metadata();
+    const resolved = resolvePlacement({
+      product: req.product,
+      color: req.color,
+      placement: layer.placement,
+      transform: layer.transform,
+      templateWidth: templateMeta.width,
+      templateHeight: templateMeta.height,
+      artworkWidth: trimmedMeta.width ?? artworkMeta.width ?? 1,
+      artworkHeight: trimmedMeta.height ?? artworkMeta.height ?? 1,
+    });
+    composited = await compositeArtworkOntoBase(composited, layer.artwork, resolved);
+  }
+
+  const dpiScale = (req.dpi || BASELINE_RENDER_DPI) / BASELINE_RENDER_DPI;
+  const side = getPlacementSide(req.layers[0].placement);
+  const combinedScale = (getTemplateReferenceWidth(req.product, side) / templateMeta.width) * dpiScale;
+  const targetWidth = Math.max(1, Math.round(templateMeta.width * combinedScale));
+  const targetHeight = Math.max(1, Math.round(templateMeta.height * combinedScale));
+  let data = composited;
+  if (targetWidth !== templateMeta.width || targetHeight !== templateMeta.height) {
+    data = await sharp(composited)
+      .resize({ width: targetWidth, height: targetHeight, fit: "fill" })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+  }
+  const outputMeta = await sharp(data).metadata();
+  return { data, mimeType: "image/png", width: outputMeta.width ?? targetWidth, height: outputMeta.height ?? targetHeight };
+}

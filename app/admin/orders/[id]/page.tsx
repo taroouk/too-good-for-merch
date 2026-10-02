@@ -16,7 +16,9 @@ import {
   orderPaymentBreakdown,
   orderUsdSurcharges,
   resolveOrderMockupIds,
+  orderArtworkLayers,
 } from "src/lib/orders/display";
+import { placementLabel } from "src/pricing/placements";
 import Breadcrumbs from "src/components/admin/ui/Breadcrumbs";
 import Card from "src/components/admin/ui/Card";
 import Badge from "src/components/admin/ui/Badge";
@@ -131,7 +133,26 @@ export default async function AdminOrderDetailsPage({
   const itemCurrency = itemDisplayCurrency(order);
   // P1-8: prefer the purchase-time mockup snapshot on the first item's
   // preview over the live (mutable) BuildDraft pointers.
-  const { printMockupId, aiMockupId } = resolveOrderMockupIds(order.items[0]?.preview, order.build?.draft);
+  const { printMockupId, aiMockupId, backPrintMockupId, backAiMockupId } = resolveOrderMockupIds(
+    order.items[0]?.preview,
+    order.build?.draft,
+  );
+  // Multi-artwork orders: every artwork with its placement and position, as
+  // frozen at checkout (what production prints).
+  const printLayers = orderArtworkLayers(order.items[0]?.preview);
+  const printLayerAssets = printLayers.length
+    ? await prisma.asset.findMany({
+        where: { id: { in: printLayers.map((layer) => layer.assetId) } },
+        select: { id: true, url: true, fileName: true },
+      })
+    : [];
+  const printLayerAssetById = new Map(printLayerAssets.map((asset) => [asset.id, asset]));
+  const mockupCards = [
+    { id: printMockupId, title: "Print mockup — front", note: "Deterministic compositor output, used for production." },
+    { id: backPrintMockupId, title: "Print mockup — back", note: "Deterministic compositor output, used for production." },
+    { id: aiMockupId, title: "AI mockup — front", note: "AI-enhanced preview shown to the customer." },
+    { id: backAiMockupId, title: "AI mockup — back", note: "AI-enhanced preview shown to the customer." },
+  ].filter((card): card is { id: string; title: string; note: string } => Boolean(card.id));
   // P3-21d: a payment-currency breakdown that reconciles exactly, plus the
   // canonical USD tax/shipping snapshot reported alongside it (never summed
   // into it -- see src/lib/orders/display.ts).
@@ -227,32 +248,53 @@ export default async function AdminOrderDetailsPage({
               </div>
             </Card>
 
-            {printMockupId || aiMockupId ? (
+            {printLayers.length > 1 ? (
+              <Card title="Print artworks" subtitle="Every artwork on this order, with its placement and position as approved at checkout.">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {printLayers.map((layer) => {
+                    const asset = printLayerAssetById.get(layer.assetId);
+                    return (
+                      <div key={layer.placement} className="flex gap-4 rounded-2xl border border-admin-border p-4 text-sm">
+                        <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl bg-admin-canvas text-xs text-admin-faint">
+                          {asset?.url ? (
+                            <img src={asset.url} alt={asset.fileName} className="h-full w-full rounded-xl object-contain" />
+                          ) : (
+                            "No file"
+                          )}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-semibold text-admin-ink">{placementLabel(layer.placement)}</p>
+                          <p className="mt-1 truncate text-admin-muted">{asset?.fileName ?? layer.assetId}</p>
+                          <p className="mt-2 text-xs text-admin-faint">
+                            Offset x {layer.x.toFixed(3)}, y {layer.y.toFixed(3)} · scale {layer.scale.toFixed(2)} · rotation {layer.rotation.toFixed(1)}°
+                          </p>
+                          {asset?.url ? (
+                            <a href={asset.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs font-semibold text-admin-ink underline">
+                              Open file
+                            </a>
+                          ) : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            ) : null}
+
+            {mockupCards.length ? (
               <Card title="Mockups">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {printMockupId ? (
-                    <div className="overflow-hidden rounded-2xl border border-admin-border">
-                      <a href={`/api/mockups/${printMockupId}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
-                        <img src={`/api/mockups/${printMockupId}/file`} alt="Print mockup" className="h-full w-full object-contain" />
+                  {mockupCards.map((card) => (
+                    <div key={card.id} className="overflow-hidden rounded-2xl border border-admin-border">
+                      <a href={`/api/mockups/${card.id}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
+                        <img src={`/api/mockups/${card.id}/file`} alt={card.title} className="h-full w-full object-contain" />
                       </a>
                       <div className="p-4 text-xs">
-                        <p className="font-semibold text-admin-ink">Print mockup</p>
-                        <p className="mt-1 text-admin-faint">Deterministic compositor output, used for production.</p>
+                        <p className="font-semibold text-admin-ink">{card.title}</p>
+                        <p className="mt-1 text-admin-faint">{card.note}</p>
                       </div>
                     </div>
-                  ) : null}
-
-                  {aiMockupId ? (
-                    <div className="overflow-hidden rounded-2xl border border-admin-border">
-                      <a href={`/api/mockups/${aiMockupId}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
-                        <img src={`/api/mockups/${aiMockupId}/file`} alt="AI mockup" className="h-full w-full object-contain" />
-                      </a>
-                      <div className="p-4 text-xs">
-                        <p className="font-semibold text-admin-ink">AI mockup</p>
-                        <p className="mt-1 text-admin-faint">AI-enhanced preview shown to the customer.</p>
-                      </div>
-                    </div>
-                  ) : null}
+                  ))}
                 </div>
               </Card>
             ) : null}

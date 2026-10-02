@@ -45,6 +45,8 @@
     "../src/studio/render/types.ts",
     "../src/studio/guest-token.ts",
     "../src/studio/mockup-staleness.ts",
+    "../src/studio/mockup-fingerprint.ts",
+    "../src/studio/artwork-layers.ts",
     "../src/studio/__tests__/**/*.ts",
     "../src/studio/ui/modals/modal-a11y.ts",
     "../src/studio/ui/modals/__tests__/**/*.ts",

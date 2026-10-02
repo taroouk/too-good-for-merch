@@ -15,7 +15,7 @@ import type {
   ProductType,
 } from "@prisma/client";
 
-import { actionUpdateDraft, actionSaveArtworkPlacement } from "src/actions/build-actions";
+import { actionUpdateDraft, actionSaveArtworkLayers, actionSwitchProduct } from "src/actions/build-actions";
 import { actionSaveArtwork } from "src/actions/artwork-actions";
 import { actionAddToWishlist } from "src/actions/wishlist-actions";
 import {
@@ -23,8 +23,15 @@ import {
   actionRemoveAsset,
   actionCreateAssetForBuilder,
 } from "src/actions/asset-actions";
-import { computeMockupFingerprint } from "src/db/mockup";
-import { isMockupStale } from "src/studio/mockup-staleness";
+import {
+  MAX_ARTWORK_LAYERS,
+  layersForSide,
+  sideFingerprint,
+  sidesWithLayers,
+  type ArtworkLayer,
+} from "src/studio/artwork-layers";
+import { getPlacementSide } from "src/studio/render/placement-config";
+import { getEditorPlacementBox } from "src/studio/render/editor-surface";
 import { WHATSAPP_URL } from "src/lib/whatsapp";
 // transform.ts and placement-css.ts have zero server-only imports (no
 // node:fs, no sharp) -- safe to import directly from a client component.
@@ -51,11 +58,7 @@ import {
 } from "src/studio/render/editor-surface";
 import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
-import {
-  placementsFromCustomNotes,
-  upsertPlacementsInNotes,
-  type PlacementKey,
-} from "src/pricing/placements";
+import { upsertPlacementsInNotes, type PlacementKey } from "src/pricing/placements";
 import CheckoutButton from "src/studio/ui/components/CheckoutButton";
 import ColorSelector from "src/studio/ui/components/ColorSelector";
 import FabricSelector from "src/studio/ui/components/FabricSelector";
@@ -88,9 +91,31 @@ type UserAssetDTO = {
   buildId?: string | null;
   url: string;
   fileName: string;
+  // Content hash (Asset.artworkSha256): the same image can exist as several
+  // rows (picking an upload from another project copies it), so "Your
+  // uploads" dedupes on this rather than on id.
+  hash?: string | null;
 };
 
+// Moves `asset` to the front of "Your uploads" and drops every other entry
+// for the same image (same id, same content hash, or an explicit `alsoDrop`
+// id such as the source row an attach just copied from).
+function withAssetFirst(list: UserAssetDTO[], asset: UserAssetDTO, alsoDrop?: string): UserAssetDTO[] {
+  return [
+    asset,
+    ...list.filter(
+      (item) =>
+        item.id !== asset.id &&
+        item.id !== alsoDrop &&
+        !(asset.hash && item.hash === asset.hash),
+    ),
+  ];
+}
+
 type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
+
+// One artwork in the design, with what the editor needs to draw it.
+type EditorLayer = ArtworkLayer & { url: string; fileName?: string; hash?: string | null };
 
 type BuilderClientProps = {
   buildId: string;
@@ -127,6 +152,13 @@ type BuilderClientProps = {
   } | null;
   // Whether this build is already in the signed-in user's wishlist.
   initialInWishlist?: boolean;
+  // Multi-artwork design (src/studio/artwork-layers.ts) and the back-side
+  // mockups (front ones are initialMockup*/initialAiMockup*).
+  initialLayers?: EditorLayer[];
+  initialBackMockupUrl?: string | null;
+  initialBackMockupFingerprint?: string | null;
+  initialBackAiMockupUrl?: string | null;
+  initialBackAiMockupFingerprint?: string | null;
 };
 
 type SizeOption = "S" | "M" | "L" | "XL";
@@ -234,6 +266,11 @@ export default function BuilderClient({
   initialSavedArtworkUrl = null,
   initialArtworkPlacement = null,
   initialInWishlist = false,
+  initialLayers = [],
+  initialBackMockupUrl = null,
+  initialBackMockupFingerprint = null,
+  initialBackAiMockupUrl = null,
+  initialBackAiMockupFingerprint = null,
 }: BuilderClientProps) {
   const router = useRouter();
   const { status } = useSession();
@@ -242,32 +279,46 @@ export default function BuilderClient({
 
   const [state, setState] = useState<DraftDTO>({
     ...draft,
+    // The active layer's artwork (see otherLayers below); falls back to the
+    // legacy single artwork for drafts saved before layers existed.
+    primaryAssetId:
+      initialLayers.find(
+        (layer) =>
+          layer.placement ===
+          (typeof initialArtworkPlacement?.placement === "string" ? initialArtworkPlacement.placement : null),
+      )?.assetId ??
+      initialLayers[0]?.assetId ??
+      draft.primaryAssetId,
     product: draft.product ?? ("FITTED" as ProductType),
     color: draft.color ?? ("WHITE" as GarmentColor),
     fabric: draft.fabric ?? ("ESSENTIALS_170" as FabricType),
     quantity: draft.quantity ?? 1,
   });
 
-  const initialActivePlacement: PlacementKey =
+  // Multi-artwork: up to MAX_ARTWORK_LAYERS artworks, one per placement.
+  // The one being edited (the "active" layer) lives in the same single-
+  // artwork state the editor always used -- activePlacement, artworkUrl,
+  // artworkTransform, state.primaryAssetId -- so dragging/zooming/uploading
+  // are unchanged; every other artwork waits in otherLayers. Switching
+  // placement swaps the active layer in and out (switchPlacement).
+  const savedPlacementKey =
     typeof initialArtworkPlacement?.placement === "string" && initialArtworkPlacement.placement
       ? (initialArtworkPlacement.placement as PlacementKey)
-      : "CENTER_FRONT";
-  // Placement is single-select: exactly one placement is ever selected.
-  // Drafts saved back when it was multi-select (up to 4) may still carry
-  // several in customNotes -- keep only the one the artwork is placed on
-  // (or the first) so the popup never shows more than one as selected.
-  const [selectedPlacements, setSelectedPlacements] = useState<PlacementKey[]>(() => {
-    const saved = placementsFromCustomNotes(draft.customNotes);
-    if (saved.includes(initialActivePlacement)) return [initialActivePlacement];
-    return saved.slice(0, 1);
-  });
+      : null;
+  const initialActiveLayer =
+    initialLayers.find((layer) => layer.placement === savedPlacementKey) ?? initialLayers[0] ?? null;
+  const initialActivePlacement: PlacementKey =
+    initialActiveLayer?.placement ?? savedPlacementKey ?? "CENTER_FRONT";
+  const [otherLayers, setOtherLayers] = useState<EditorLayer[]>(() =>
+    initialLayers.filter((layer) => layer !== initialActiveLayer),
+  );
   const [activePlacement, setActivePlacement] = useState<PlacementKey>(initialActivePlacement);
   const [userAssets, setUserAssets] = useState<UserAssetDTO[]>(initialUserAssets);
   const [removingAssetId, setRemovingAssetId] = useState<string | null>(null);
   const [, setUploadName] = useState("");
-  const [artworkUrl, setArtworkUrl] = useState<string | null>(null);
+  const [artworkUrl, setArtworkUrl] = useState<string | null>(initialActiveLayer?.url ?? null);
   const [artworkTransform, setArtworkTransform] = useState<ArtworkTransform>(() => {
-    const p = initialArtworkPlacement;
+    const p = initialActiveLayer ?? initialArtworkPlacement;
     if (!p) return DEFAULT_ARTWORK_TRANSFORM;
     const bounds = getEffectiveScaleBounds(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
     return {
@@ -306,6 +357,15 @@ export default function BuilderClient({
   const [aiMockupFingerprint, setAiMockupFingerprint] = useState<string | null>(
     initialAiMockupFingerprint ?? null,
   );
+  // Back-of-garment mockups (the states above are the front).
+  const [backPrintMockupUrl, setBackPrintMockupUrl] = useState<string | null>(initialBackMockupUrl);
+  const [backPrintMockupFingerprint, setBackPrintMockupFingerprint] = useState<string | null>(
+    initialBackMockupFingerprint,
+  );
+  const [backAiMockupUrl, setBackAiMockupUrl] = useState<string | null>(initialBackAiMockupUrl);
+  const [backAiMockupFingerprint, setBackAiMockupFingerprint] = useState<string | null>(
+    initialBackAiMockupFingerprint,
+  );
   const [mockupPending, setMockupPending] = useState(false);
   const [mockupError, setMockupError] = useState<string | null>(null);
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -343,6 +403,8 @@ export default function BuilderClient({
   const [customQuoteNote, setCustomQuoteNote] = useState<string | null>(initialCustomQuoteNote);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  // Ids for optimistic "Your uploads" tiles until the server returns the real one.
+  const tempUploadCounterRef = useRef(0);
   const fabricMenuRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{
     pointerId: number;
@@ -361,9 +423,33 @@ export default function BuilderClient({
     useMeasuredRefCallback<HTMLDivElement>();
 
   const qty = useMemo(() => clampQty(Number(state.quantity ?? 1)), [state.quantity]);
+  // The active layer (the artwork being edited) as a layer, when there is one.
+  const activeLayer = useMemo<EditorLayer | null>(() => {
+    if (!artworkUrl || !state.primaryAssetId) return null;
+    return {
+      placement: activePlacement,
+      assetId: state.primaryAssetId,
+      url: artworkUrl,
+      x: artworkTransform.x,
+      y: artworkTransform.y,
+      scale: artworkTransform.scale,
+      rotation: artworkTransform.rotation ?? 0,
+    };
+  }, [activePlacement, artworkTransform, artworkUrl, state.primaryAssetId]);
+
+  // Every artwork in the design, the active one first (it is what the
+  // legacy primaryAssetId/artworkPlacement mirror on save).
+  const allLayers = useMemo<EditorLayer[]>(
+    () => (activeLayer ? [activeLayer, ...otherLayers.filter((l) => l.placement !== activeLayer.placement)] : otherLayers),
+    [activeLayer, otherLayers],
+  );
+
+  // Placements carrying artwork -- these are what get priced and what the
+  // placement cards show as selected.
+  const selectedPlacements = useMemo<PlacementKey[]>(() => allLayers.map((layer) => layer.placement), [allLayers]);
   const pricingPlacements = useMemo<PlacementKey[]>(
-    () => (selectedPlacements.length ? selectedPlacements : ["CENTER_FRONT"]),
-    [selectedPlacements],
+    () => (selectedPlacements.length ? selectedPlacements : [activePlacement]),
+    [activePlacement, selectedPlacements],
   );
 
   const allFabricOptions = [
@@ -397,13 +483,20 @@ export default function BuilderClient({
     (fabric) => !(state.product === "FITTED" && fabric.key === "HEAVYWEIGHT_300"),
   );
 
+  // The five placements in the Figma popup ("Back" is the full back).
+  // Center Back is no longer offered, but stays visible on a design that
+  // already uses it so that artwork can still be seen, edited or removed.
   const placementCards: Array<{ key: PlacementKey; label: string; image: string }> = [
     { key: "FULL_FRONT", label: "Full Front", image: "/images/Frame 1.png" },
     { key: "CENTER_FRONT", label: "Center Front", image: "/images/Frame 2.png" },
     { key: "LEFT_CHEST", label: "Left Chest", image: "/images/Frame 3.png" },
     { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/Frame 4.png" },
-    { key: "FULL_BACK", label: "Full Back", image: "/images/Frame 5.png" },
-    { key: "CENTER_BACK", label: "Center Back", image: "/images/Frame 6.png" },
+    { key: "FULL_BACK", label: "Back", image: "/images/Frame 5.png" },
+    ...(activePlacement === "CENTER_BACK" ||
+    initialLayers.some((layer) => layer.placement === "CENTER_BACK") ||
+    otherLayers.some((layer) => layer.placement === "CENTER_BACK")
+      ? [{ key: "CENTER_BACK" as PlacementKey, label: "Center Back", image: "/images/Frame 6.png" }]
+      : []),
   ];
 
   const currentFabric =
@@ -430,74 +523,42 @@ export default function BuilderClient({
   // use, so a fresh print mockup doesn't immediately appear stale against
   // its own just-persisted fingerprint. Both isPrintMockupStale and
   // isAiMockupStale compare against it.
-  const livePrintFingerprint = useMemo(
-    () =>
-      computeMockupFingerprint({
-        assetId: state.primaryAssetId ?? null,
-        placement: activePlacement,
-        x: artworkTransform.x,
-        y: artworkTransform.y,
-        scale: artworkTransform.scale,
-        // Resolved (never "CUSTOM") -- matches what generatePrintMockup/
-        // generateNanoBananaMockup below actually send for Bespoke, so this
-        // fingerprint is byte-for-byte what the server computes and a
-        // freshly-generated Bespoke mockup is never immediately marked
-        // stale against its own fingerprint. Identity for FITTED/OVERSIZED,
-        // so no behavior change for any non-Bespoke build.
-        product: resolveMockupProduct(state.product),
-        color: resolveMockupColor(state.color),
-        rotation: artworkTransform.rotation,
-        dpi: BASELINE_RENDER_DPI,
-      }),
-    [artworkTransform, activePlacement, state.primaryAssetId, state.product, state.color],
+  // One fingerprint per garment side, over every artwork on that side
+  // (src/studio/artwork-layers.ts) -- identical to the old single-artwork
+  // fingerprint for a one-artwork side, so existing mockups stay fresh.
+  // Resolved product/color (never "CUSTOM") and the baseline dpi: exactly
+  // what the print/AI routes compute, so a freshly generated mockup is never
+  // immediately stale against its own fingerprint.
+  const mockupProduct = resolveMockupProduct(state.product);
+  const mockupColor = resolveMockupColor(state.color);
+  const liveFingerprints = useMemo(
+    () => ({
+      front: sideFingerprint({ layers: layersForSide(allLayers, "front"), product: mockupProduct, color: mockupColor, dpi: BASELINE_RENDER_DPI }),
+      back: sideFingerprint({ layers: layersForSide(allLayers, "back"), product: mockupProduct, color: mockupColor, dpi: BASELINE_RENDER_DPI }),
+    }),
+    [allLayers, mockupColor, mockupProduct],
   );
 
-  const isPrintMockupStale = useMemo(
-    () =>
-      isMockupStale({
-        url: printMockupUrl,
-        fingerprint: printMockupFingerprint,
-        liveFingerprint: livePrintFingerprint,
-      }),
-    [printMockupUrl, printMockupFingerprint, livePrintFingerprint],
-  );
+  // Generated mockups per side (front = the original state names).
+  const sideMockups = {
+    front: { printUrl: printMockupUrl, printFp: printMockupFingerprint, aiUrl: aiMockupUrl, aiFp: aiMockupFingerprint },
+    back: { printUrl: backPrintMockupUrl, printFp: backPrintMockupFingerprint, aiUrl: backAiMockupUrl, aiFp: backAiMockupFingerprint },
+  } as const;
 
-  const isAiMockupStale = useMemo(
-    () =>
-      isMockupStale({
-        url: aiMockupUrl,
-        fingerprint: aiMockupFingerprint,
-        liveFingerprint: livePrintFingerprint,
-      }),
-    [aiMockupUrl, aiMockupFingerprint, livePrintFingerprint],
-  );
-
-  const shouldShowGenerateAiButton = useMemo(() => {
-    // Bespoke (state.product === "CUSTOM") is a legitimate case now too --
-    // generatePrintMockup/generateNanoBananaMockup below resolve it onto
-    // the FITTED/OVERSIZED template it's already being previewed against
-    // (see resolveMockupProduct/resolveMockupColor), so this button is not
-    // gated on product type.
-    if (!state.primaryAssetId || !activeArtworkAsset) return false;
-    if (!aiMockupUrl) return true;
-    return isAiMockupStale;
-  }, [aiMockupUrl, isAiMockupStale, state.primaryAssetId, activeArtworkAsset]);
-
-  function discardPrintMockup() {
-    setPrintMockupUrl(null);
-    setPrintMockupFingerprint(null);
+  function isSideAiFresh(side: "front" | "back") {
+    const live = liveFingerprints[side];
+    const mockup = sideMockups[side];
+    return Boolean(live && mockup.aiUrl && mockup.aiFp === live);
   }
 
-  function discardAiMockup() {
-    setAiMockupUrl(null);
-    setAiMockupFingerprint(null);
-  }
+  // Sides whose AI mockup is missing or out of date for the current design.
+  const sidesNeedingGeneration = sidesWithLayers(allLayers).filter((side) => !isSideAiFresh(side));
 
-  // A placement/product/color/transform change invalidates both tracks --
-  // both compare against livePrintFingerprint (see above).
+  // Any design change makes the affected side's mockups stale on their own
+  // (their fingerprint no longer matches liveFingerprints), and the other
+  // side's mockups stay valid -- so nothing is thrown away here any more;
+  // only a leftover error message is cleared.
   function discardMockups() {
-    discardPrintMockup();
-    discardAiMockup();
     setMockupError(null);
   }
 
@@ -729,25 +790,56 @@ export default function BuilderClient({
     startTransition(() => actionUpdateDraft(buildId, fd));
   }
 
-  // One-time cleanup for drafts saved while placement was multi-select:
-  // persist the single placement kept above, so checkout (which prices from
-  // the draft's saved placements) charges for what the customer now sees.
-  // Skipped when an admin quote is set -- save() would void that quote.
-  const placementsNormalizedRef = useRef(false);
+
+  // Persist the design whenever its artworks change (debounced -- a drag
+  // changes the active layer's x/y many times a second). The priced
+  // placements in customNotes are kept in step on the client too: save()
+  // (product/quantity/...) re-sends customNotes from local state, and must
+  // never put back a stale placement list.
+  const persistedLayersKeyRef = useRef<string | null>(null);
+  const layersPayload = useMemo(
+    () => allLayers.map(({ placement, assetId, x, y, scale, rotation }) => ({ placement, assetId, x, y, scale, rotation })),
+    [allLayers],
+  );
+  const layersKey = JSON.stringify(layersPayload);
+  // True while actionSwitchProduct swaps designs: the layers on screen are
+  // being replaced and must not be saved (to either product) meanwhile.
+  const switchingProductRef = useRef(false);
   useEffect(() => {
-    if (placementsNormalizedRef.current) return;
-    placementsNormalizedRef.current = true;
-    if (customQuoteUsdCents != null) return;
-    if (placementsFromCustomNotes(state.customNotes).length <= 1) return;
-    save({
-      ...state,
-      customNotes: upsertPlacementsInNotes(state.customNotes, selectedPlacements),
-    });
-    // Mount-only by design (guarded by the ref above).
+    if (persistedLayersKeyRef.current === null) {
+      persistedLayersKeyRef.current = layersKey; // what the page loaded with
+      return;
+    }
+    if (switchingProductRef.current) return;
+    if (persistedLayersKeyRef.current === layersKey) return;
+
+    const placements = layersPayload.map((layer) => layer.placement);
+    if (placements.length) {
+      setState((current) => {
+        const nextNotes = upsertPlacementsInNotes(current.customNotes, placements);
+        if (nextNotes === current.customNotes) return current;
+        // Mirrors the server: a placement change voids an admin quote.
+        setCustomQuoteUsdCents(null);
+        setCustomQuoteNote(null);
+        return { ...current, customNotes: nextNotes };
+      });
+    }
+
+    const timer = window.setTimeout(() => {
+      persistedLayersKeyRef.current = layersKey;
+      void actionSaveArtworkLayers(buildId, layersPayload, state.product).catch(() => {
+        // Not null (that means "initial load, skip"): any value that
+        // differs from the next key makes the next change retry the save.
+        persistedLayersKeyRef.current = "__save-failed__";
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+    // state.product is read only to tag the save (see actionSaveArtworkLayers).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [buildId, layersKey, layersPayload]);
 
   async function handleUpload(file: File) {
+    if (!canAddArtworkToActivePlacement()) return;
     if (!ALLOWED_ARTWORK_MIME_TYPES.has(file.type)) {
       setMockupError("Artwork must be PNG, JPG, WEBP, or SVG.");
       return;
@@ -764,7 +856,8 @@ export default function BuilderClient({
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
     discardMockups();
 
-    const tempId = `temp-${Date.now()}`;
+    tempUploadCounterRef.current += 1;
+    const tempId = `temp-upload-${tempUploadCounterRef.current}`;
     const newLocalAsset: UserAssetDTO = {
       id: tempId,
       buildId,
@@ -783,18 +876,16 @@ export default function BuilderClient({
       actionCreateAssetForBuilder(buildId, fd).then((res: CreatedAssetDTO) => {
         if (res && res.id) {
           const persistedUrl = res.url;
-          setUserAssets((prev) =>
-            prev.map((a) =>
-              a.id === tempId
-                ? {
-                    id: res.id,
-                    buildId: res.buildId ?? buildId,
-                    url: persistedUrl || localUrl,
-                    fileName: res.fileName ?? file.name,
-                  }
-                : a,
-            )
-          );
+          // Re-uploading an image that's already in "Your uploads" (same
+          // content hash) replaces its tile rather than adding a second one.
+          const persisted: UserAssetDTO = {
+            id: res.id,
+            buildId: res.buildId ?? buildId,
+            url: persistedUrl || localUrl,
+            fileName: res.fileName ?? file.name,
+            hash: res.artworkSha256 ?? null,
+          };
+          setUserAssets((prev) => withAssetFirst(prev, persisted, tempId));
           // Promote the preview from the temporary blob: URL to the durable
           // server URL now that the upload is confirmed persisted -- only if
           // nothing else (replace/remove) has changed the preview in the
@@ -822,12 +913,14 @@ export default function BuilderClient({
   }
 
   async function selectAsset(asset: UserAssetDTO) {
+    if (!canAddArtworkToActivePlacement()) return;
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
     discardMockups();
 
     if (!asset.buildId || asset.buildId === buildId) {
+      setUserAssets((prev) => withAssetFirst(prev, asset));
       save({ ...state, primaryAssetId: asset.id });
       return;
     }
@@ -843,13 +936,12 @@ export default function BuilderClient({
         buildId: attached.buildId,
         url: attached.url,
         fileName: attached.fileName,
+        hash: attached.artworkSha256 ?? asset.hash ?? null,
       };
 
-      setUserAssets((prev) =>
-        prev.some((item) => item.id === nextAsset.id)
-          ? prev.map((item) => (item.id === nextAsset.id ? nextAsset : item))
-          : [nextAsset, ...prev],
-      );
+      // The attach copied the image into this project: show the copy, first,
+      // in place of the tile that was clicked (never both).
+      setUserAssets((prev) => withAssetFirst(prev, nextAsset, asset.id));
       setArtworkUrl(nextAsset.url);
       setUploadName(nextAsset.fileName);
       save({ ...state, primaryAssetId: nextAsset.id });
@@ -872,7 +964,9 @@ export default function BuilderClient({
     const isOnShirt = state.primaryAssetId === asset.id || artworkUrl === asset.url;
     const previous = userAssets;
     setRemovingAssetId(asset.id);
-    setUserAssets((prev) => prev.filter((item) => item.id !== asset.id));
+    setUserAssets((prev) =>
+      prev.filter((item) => item.id !== asset.id && !(asset.hash && item.hash === asset.hash)),
+    );
     if (isOnShirt) removeSelectedArtwork();
 
     try {
@@ -1113,46 +1207,204 @@ export default function BuilderClient({
     }
   }
 
-  function continueCustomRequest() {
-    save({
-      ...state,
-      product: "CUSTOM" as ProductType,
-      customNotes: state.customNotes ?? "",
-    });
-
+  async function continueCustomRequest() {
     setShowCustomPopup(false);
+    await switchProduct("CUSTOM" as ProductType);
     openBespokeBuilder();
   }
 
   // Single-select: picking a placement replaces the previous one, and
   // picking the current one again keeps it (never leaves none selected).
-  function selectPlacement(key: PlacementKey) {
-    const next: PlacementKey[] = [key];
-    if (selectedPlacements.length === 1 && selectedPlacements[0] === key) return;
-
-    setSelectedPlacements(next);
-
-    save({
-      ...state,
-      customNotes: upsertPlacementsInNotes(state.customNotes, next),
+  // Make `key` the placement being edited: the current artwork (if any) is
+  // parked in otherLayers and the artwork already on `key` (if any) is
+  // loaded into the editor state. Nothing is lost either way.
+  function switchPlacement(key: PlacementKey) {
+    if (key === activePlacement) return;
+    const target = otherLayers.find((layer) => layer.placement === key) ?? null;
+    setOtherLayers((prev) => {
+      const rest = prev.filter((layer) => layer.placement !== key);
+      return activeLayer ? [...rest.filter((l) => l.placement !== activeLayer.placement), activeLayer] : rest;
     });
+    setActivePlacement(key);
+    if (target) {
+      setArtworkUrl(target.url);
+      setUploadName(target.fileName ?? "");
+      setArtworkTransform({ x: target.x, y: target.y, scale: target.scale, rotation: target.rotation });
+      setState((current) => ({ ...current, primaryAssetId: target.assetId }));
+    } else {
+      setArtworkUrl(null);
+      setUploadName("");
+      setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+      setState((current) => ({ ...current, primaryAssetId: null }));
+    }
+    setMockupError(null);
+  }
+
+  // Removes the artwork on `placement` (the × on a Selected Artwork card).
+  function removeLayer(placement: PlacementKey) {
+    setMockupError(null);
+    if (placement === activePlacement) {
+      removeSelectedArtwork();
+      return;
+    }
+    setOtherLayers((prev) => prev.filter((layer) => layer.placement !== placement));
+  }
+
+  // Putting artwork on an EMPTY placement adds a layer -- refused past
+  // MAX_ARTWORK_LAYERS. Replacing the artwork on a placement that already
+  // has one is always allowed.
+  function canAddArtworkToActivePlacement() {
+    if (activeLayer) return true;
+    if (otherLayers.length < MAX_ARTWORK_LAYERS) return true;
+    setMockupError(`You can add up to ${MAX_ARTWORK_LAYERS} artworks. Remove one to add another.`);
+    return false;
+  }
+
+  // Drag & drop from "Your uploads" onto the shirt: the artwork goes to the
+  // placement nearest the drop point, among the placements of the side
+  // currently shown (front or back), replacing whatever was there.
+  function placementAtDropPoint(clientX: number, clientY: number): PlacementKey | null {
+    const canvas = previewNodeRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return null;
+    const fx = (clientX - rect.left) / rect.width;
+    const fy = (clientY - rect.top) / rect.height;
+    const side = getPlacementSide(activePlacement);
+    let best: { key: PlacementKey; distance: number } | null = null;
+    for (const card of placementCards) {
+      if (getPlacementSide(card.key) !== side) continue;
+      const box = getEditorPlacementBox(state.product, state.color, card.key);
+      // Placement boxes are width-anchored (height follows the artwork), so
+      // use a square-ish box: its height in canvas-height units.
+      const heightFrac = box.heightPct ?? (box.widthPct * rect.width) / rect.height;
+      const cx = box.xPct + box.widthPct / 2;
+      const cy = box.yPct + heightFrac / 2;
+      const inside = fx >= box.xPct && fx <= box.xPct + box.widthPct && fy >= box.yPct && fy <= box.yPct + heightFrac;
+      // Prefer the smallest box that contains the point (a chest box over
+      // the full-front box it sits inside), else the nearest centre.
+      const distance = (inside ? -1 / box.widthPct : 0) + Math.hypot(fx - cx, (fy - cy) * (rect.height / rect.width));
+      if (!best || distance < best.distance) best = { key: card.key, distance };
+    }
+    return best?.key ?? null;
+  }
+
+  function dropAssetOnShirt(assetId: string, clientX: number, clientY: number) {
+    const asset = userAssets.find((item) => item.id === assetId);
+    const target = placementAtDropPoint(clientX, clientY);
+    if (!asset || !target) return;
+    const occupied = allLayers.some((layer) => layer.placement === target);
+    if (!occupied && allLayers.length >= MAX_ARTWORK_LAYERS) {
+      setMockupError(`You can add up to ${MAX_ARTWORK_LAYERS} artworks. Remove one to add another.`);
+      return;
+    }
+    if (target === activePlacement) {
+      void selectAsset(asset);
+      return;
+    }
+    // switchPlacement's state lands on the next render; the effect below
+    // then puts the dropped asset on the (new) active placement.
+    pendingDropAssetRef.current = asset;
+    switchPlacement(target);
+  }
+
+  const pendingDropAssetRef = useRef<UserAssetDTO | null>(null);
+  useEffect(() => {
+    const pending = pendingDropAssetRef.current;
+    if (!pending) return;
+    pendingDropAssetRef.current = null;
+    void selectAsset(pending);
+    // Runs once per placement switch caused by a drop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePlacement]);
+
+  // Each product type keeps its own design: switching parks the current
+  // product's artworks + mockups on the server and loads the target
+  // product's own (empty the first time) -- see actionSwitchProduct. So a
+  // design and its generated mockups only ever appear on their own model.
+  const [switchingProduct, setSwitchingProduct] = useState(false);
+  async function switchProduct(next: ProductType, fabric?: FabricType | null) {
+    if (switchingProduct) return;
+    if (next === state.product) {
+      if (fabric && fabric !== state.fabric) save({ ...state, fabric });
+      return;
+    }
+    const currentLayers = layersPayload;
+    switchingProductRef.current = true;
+    setSwitchingProduct(true);
+
+    // Show the target product straight away, with an empty design, until
+    // the server answers with its real one.
+    setState((current) => ({ ...current, product: next, ...(fabric ? { fabric } : {}) }));
+    setCustomQuoteUsdCents(null);
+    setCustomQuoteNote(null);
+    setOtherLayers([]);
+    setArtworkUrl(null);
+    setUploadName("");
+    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+    setPrintMockupUrl(null);
+    setAiMockupUrl(null);
+    setBackPrintMockupUrl(null);
+    setBackAiMockupUrl(null);
+    setMockupError(null);
+
+    try {
+      const result = await actionSwitchProduct(buildId, { product: next, fabric, currentLayers });
+      const [first, ...rest] = result.layers as EditorLayer[];
+      setState((current) => ({
+        ...current,
+        product: result.product,
+        fabric: result.fabric,
+        customNotes: result.customNotes,
+        primaryAssetId: first?.assetId ?? null,
+      }));
+      setOtherLayers(rest);
+      if (first) {
+        setActivePlacement(first.placement);
+        setArtworkUrl(first.url);
+        setUploadName(first.fileName ?? "");
+        setArtworkTransform({ x: first.x, y: first.y, scale: first.scale, rotation: first.rotation });
+      }
+      setPrintMockupUrl(result.mockups.front.printUrl);
+      setPrintMockupFingerprint(result.mockups.front.printFp);
+      setAiMockupUrl(result.mockups.front.aiUrl);
+      setAiMockupFingerprint(result.mockups.front.aiFp);
+      setBackPrintMockupUrl(result.mockups.back.printUrl);
+      setBackPrintMockupFingerprint(result.mockups.back.printFp);
+      setBackAiMockupUrl(result.mockups.back.aiUrl);
+      setBackAiMockupFingerprint(result.mockups.back.aiFp);
+      // The loaded design is exactly what the server now holds -- don't
+      // re-save it.
+      persistedLayersKeyRef.current = JSON.stringify(
+        (result.layers as EditorLayer[]).map(({ placement, assetId, x, y, scale, rotation }) => ({
+          placement,
+          assetId,
+          x,
+          y,
+          scale,
+          rotation,
+        })),
+      );
+    } catch {
+      alert("Could not switch the product. Please try again.");
+      router.refresh();
+    } finally {
+      switchingProductRef.current = false;
+      setSwitchingProduct(false);
+    }
   }
 
   function selectFittedProduct() {
-    save({
-      ...state,
-      product: "FITTED" as ProductType,
-      // HEAVYWEIGHT_300 is hidden for FITTED above (no configured price) --
-      // fall back rather than leave an unpriced combination in state.
-      fabric: state.fabric === "HEAVYWEIGHT_300" ? ("SIGNATURE_200" as FabricType) : state.fabric,
-    });
+    // HEAVYWEIGHT_300 is hidden for FITTED above (no configured price) --
+    // fall back rather than leave an unpriced combination in state.
+    void switchProduct(
+      "FITTED" as ProductType,
+      state.fabric === "HEAVYWEIGHT_300" ? ("SIGNATURE_200" as FabricType) : null,
+    );
   }
 
   function selectOversizedProduct() {
-    save({
-      ...state,
-      product: "OVERSIZED" as ProductType,
-    });
+    void switchProduct("OVERSIZED" as ProductType);
   }
 
   function selectBlackColor() {
@@ -1210,8 +1462,7 @@ export default function BuilderClient({
   }
 
   function handlePlacementClick(key: PlacementKey) {
-    selectPlacement(key);
-    setActivePlacement(key);
+    switchPlacement(key);
   }
 
   // "Save T-Shirt" just persists/closes -- it must NOT force product to
@@ -1229,56 +1480,53 @@ export default function BuilderClient({
   // generation keeps the popup open with the error, so nothing is lost.
   async function saveBespokeTShirt() {
     if (savePending || mockupPending) return;
+    const layers = allLayers;
 
-    let hasFreshMockup = Boolean(aiMockupUrl) && !isAiMockupStale;
-    if (shouldShowGenerateAiButton) {
-      hasFreshMockup = await generateNanoBananaMockup();
-      if (!hasFreshMockup) return;
-    }
-
-    save({ ...state });
-
-    const placementPayload = {
-      placement: activePlacement,
-      x: artworkTransform.x,
-      y: artworkTransform.y,
-      scale: artworkTransform.scale,
-      rotation: artworkTransform.rotation,
-    };
-
-    // The canvas transform (drag/resize position) must survive a refresh
-    // on its own, independent of whether an AI mockup has been generated --
-    // see the schema comment on BuildDraft.artworkPlacement / the Artwork
-    // model: placement is deliberately decoupled from the saved image.
-    // Previously this was ONLY written as a side effect of the AI-mockup
-    // branch below, so dragging/resizing artwork and saving before ever
-    // clicking "Generate AI Mockup" silently discarded the positioning on
-    // reload even though the modal closed as if the save succeeded.
-    if (state.primaryAssetId || activeArtworkAsset) {
-      setSavePending(true);
+    // 1. AI mockup for every side whose design changed (front and back are
+    //    generated separately). A failure keeps the popup open with the
+    //    error so nothing is lost.
+    if (sidesNeedingGeneration.length) {
+      setMockupPending(true);
+      setMockupError(null);
       try {
-        await actionSaveArtworkPlacement(buildId, placementPayload);
-      } catch (error) {
-        setMockupError(error instanceof Error ? error.message : "Could not save your artwork position.");
+        for (const side of sidesNeedingGeneration) {
+          const ok = await generateSideMockups(side, layers);
+          if (!ok) return;
+        }
       } finally {
-        setSavePending(false);
+        setMockupPending(false);
       }
     }
 
-    // Persist the EXACT generated artwork + the current canvas transform as
-    // a stable, owner-scoped Artwork (src/actions/artwork-actions.ts) so it
-    // survives navigation/refresh and can be referenced by Wishlist /
-    // Bespoke / Admin. Upserts on the source mockup -- a repeat save never
-    // creates a second record. Silently a no-op if nothing is generated yet.
-    if (hasFreshMockup && state.primaryAssetId) {
-      setSavePending(true);
-      try {
-        await actionSaveArtwork(buildId, placementPayload);
-      } catch (error) {
-        setMockupError(error instanceof Error ? error.message : "Could not save your artwork.");
-      } finally {
-        setSavePending(false);
+    // 2. Persist the whole design: every layer, plus the legacy mirrors and
+    //    the priced placements (actionSaveArtworkLayers), and the saved
+    //    artwork image for Wishlist/Bespoke/Admin (actionSaveArtwork, from
+    //    the front AI mockup -- or the back one for back-only designs).
+    setSavePending(true);
+    try {
+      await actionSaveArtworkLayers(
+        buildId,
+        layers.map(({ placement, assetId, x, y, scale, rotation }) => ({ placement, assetId, x, y, scale, rotation })),
+      );
+      // The saved-artwork image is the FRONT AI mockup (saveArtworkForBuild),
+      // so it only exists for designs with front artwork; a back-only design
+      // simply has none (Wishlist/Admin then use the mockups directly).
+      const frontLayers = layersForSide(layers, "front");
+      if (frontLayers.length) {
+        const first = frontLayers[0];
+        await actionSaveArtwork(buildId, {
+          placement: first.placement,
+          x: first.x,
+          y: first.y,
+          scale: first.scale,
+          rotation: first.rotation,
+        });
       }
+    } catch (error) {
+      setMockupError(error instanceof Error ? error.message : "Could not save your design.");
+      return;
+    } finally {
+      setSavePending(false);
     }
 
     setShowBespokeModal(false);
@@ -1387,12 +1635,59 @@ export default function BuilderClient({
   // isPrintMockupStale), so the instant the user drags, zooms or swaps
   // artwork this falls back rather than leaving a stale photo of the
   // previous design on the model.
-  const modelPreviewMockup = useMemo(() => {
-    if (aiMockupUrl && !isAiMockupStale) {
-      return { url: aiMockupUrl, isStale: false };
+  // Per garment side: the fresh AI mockup, else the print mockup (stale
+  // when its fingerprint no longer matches that side's live design).
+  const modelPreviewMockups = useMemo(() => {
+    const pick = (side: "front" | "back") => {
+      const live = liveFingerprints[side];
+      const m = sideMockups[side];
+      if (live && m.aiUrl && m.aiFp === live) return { url: m.aiUrl, isStale: false };
+      return { url: live ? m.printUrl : null, isStale: !live || m.printFp !== live };
+    };
+    return { front: pick("front"), back: pick("back") };
+    // sideMockups is rebuilt every render from the state values listed here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveFingerprints, printMockupUrl, printMockupFingerprint, aiMockupUrl, aiMockupFingerprint, backPrintMockupUrl, backPrintMockupFingerprint, backAiMockupUrl, backAiMockupFingerprint]);
+
+  // The other artworks on the side being edited, drawn on the popup's flat
+  // tee exactly like the active one (editor-space placement box + the
+  // stored template-space offset converted with toEditorOffset), but not
+  // draggable -- clicking one makes it the artwork being edited.
+  const bespokeOtherLayers = useMemo(() => {
+    const side = getPlacementSide(activePlacement);
+    return otherLayers
+      .filter((layer) => getPlacementSide(layer.placement) === side)
+      .map((layer) => {
+        const style = getEditorPlacementStyle(state.product, state.color, layer.placement);
+        const base = typeof style.transform === "string" ? style.transform : "";
+        const offset = toEditorOffset(layer, state.product, state.color, layer.placement);
+        const { x: offsetX, y: offsetY } = artworkOffsetPx(offset, bespokeCanvasWidth);
+        return {
+          placement: layer.placement,
+          url: layer.url,
+          style,
+          transform: `${base} translate(${offsetX}px, ${offsetY}px) scale(${layer.scale}) rotate(${layer.rotation}deg)`.trim(),
+        };
+      });
+  }, [activePlacement, bespokeCanvasWidth, otherLayers, state.color, state.product]);
+
+  // "+ADD" (Selected Artwork): put a new artwork on the next free
+  // placement -- the active one if it's empty, else the first empty card --
+  // then open the file picker.
+  function addAnotherArtwork() {
+    if (!activeLayer) {
+      fileInputRef.current?.click();
+      return;
     }
-    return { url: printMockupUrl, isStale: isPrintMockupStale };
-  }, [aiMockupUrl, isAiMockupStale, printMockupUrl, isPrintMockupStale]);
+    if (allLayers.length >= MAX_ARTWORK_LAYERS) {
+      setMockupError(`You can add up to ${MAX_ARTWORK_LAYERS} artworks. Remove one to add another.`);
+      return;
+    }
+    const free = placementCards.find((card) => !selectedPlacements.includes(card.key));
+    if (!free) return;
+    switchPlacement(free.key);
+    fileInputRef.current?.click();
+  }
 
   const bespokeShirtSrc = useMemo(
     () => getBespokeShirtImage(state.product, state.color, activePlacement),
@@ -1437,136 +1732,63 @@ export default function BuilderClient({
   // Resolves true when a fresh AI mockup was generated. Returned directly
   // (not read back from aiMockupUrl state) because saveBespokeTShirt awaits
   // this and its own closure would still see the pre-generation state.
-  async function generateNanoBananaMockup(): Promise<boolean> {
-    if (!state.primaryAssetId || !activeArtworkAsset) {
-      setMockupError("Select artwork first.");
-      return false;
-    }
-
-    setMockupPending(true);
-    setMockupError(null);
+  // Generates one garment side's mockups for the CURRENT design: the
+  // deterministic Print Mockup (what the model preview shows meanwhile),
+  // then the Gemini AI mockup with every artwork on that side. Resolves
+  // true on success. Returns its result directly rather than via state:
+  // saveBespokeTShirt awaits it and its own closure would still see the
+  // pre-generation state.
+  async function generateSideMockups(side: "front" | "back", layers: EditorLayer[]): Promise<boolean> {
+    const sideLayers = layersForSide(layers, side).map(({ placement, assetId, x, y, scale, rotation }) => ({
+      placement,
+      assetId,
+      x,
+      y,
+      scale,
+      rotation,
+    }));
+    if (!sideLayers.length) return true;
+    const body = JSON.stringify({ buildId, draftId, product: mockupProduct, color: mockupColor, layers: sideLayers });
 
     try {
-      // The Print Mockup remains an internal step (canonical artifact +
-      // what TryOn3DPreview shows), but the AI route no longer reads it:
-      // it resolves geometry itself from the same live transform sent
-      // below, so this call and the one after it are independent, not a
-      // read-after-write dependency.
-      const printResult = await generatePrintMockup();
-      if (!printResult.ok) {
-        throw new Error(printResult.error);
-      }
-
-      const response = await fetch("/api/mockups/nanobanana", {
+      const printRes = await fetch("/api/mockups/print", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          buildId,
-          draftId,
-          assetId: state.primaryAssetId,
-          placement: activePlacement,
-          x: artworkTransform.x,
-          y: artworkTransform.y,
-          scale: artworkTransform.scale,
-          rotation: artworkTransform.rotation,
-          // Resolved -- see resolveMockupProduct/resolveMockupColor and
-          // generatePrintMockup below. Bespoke sends the same template
-          // choice it's already being previewed against, never "CUSTOM"
-          // (which this route's own PRODUCTS/COLORS enums would reject).
-          product: resolveMockupProduct(state.product),
-          color: resolveMockupColor(state.color),
-        }),
+        body,
       });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.error ?? "Could not generate mockup.");
+      const print = await printRes.json().catch(() => null);
+      if (!printRes.ok || !print?.ok || typeof print.imageUrl !== "string") {
+        throw new Error(print?.error ?? "Could not generate print mockup.");
+      }
+      const printFp = typeof print.fingerprint === "string" ? print.fingerprint : null;
+      if (side === "back") {
+        setBackPrintMockupUrl(print.imageUrl);
+        setBackPrintMockupFingerprint(printFp);
+      } else {
+        setPrintMockupUrl(print.imageUrl);
+        setPrintMockupFingerprint(printFp);
       }
 
-      if (typeof data.imageUrl !== "string" || !data.imageUrl) {
-        throw new Error("Gemini did not return a mockup image.");
-      }
-
-      setAiMockupUrl(data.imageUrl);
-      if (typeof data.fingerprint === "string" && data.fingerprint) {
-        setAiMockupFingerprint(data.fingerprint);
+      const aiRes = await fetch("/api/mockups/nanobanana", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+      const ai = await aiRes.json().catch(() => null);
+      if (!aiRes.ok || !ai?.ok) throw new Error(ai?.error ?? "Could not generate mockup.");
+      if (typeof ai.imageUrl !== "string" || !ai.imageUrl) throw new Error("Gemini did not return a mockup image.");
+      const aiFp = typeof ai.fingerprint === "string" && ai.fingerprint ? ai.fingerprint : null;
+      if (side === "back") {
+        setBackAiMockupUrl(ai.imageUrl);
+        setBackAiMockupFingerprint(aiFp);
+      } else {
+        setAiMockupUrl(ai.imageUrl);
+        setAiMockupFingerprint(aiFp);
       }
       return true;
     } catch (error) {
-      discardAiMockup();
-      setMockupError(
-        error instanceof Error ? error.message : "Could not generate mockup.",
-      );
+      setMockupError(error instanceof Error ? error.message : "Could not generate mockup.");
       return false;
-    } finally {
-      setMockupPending(false);
-    }
-  }
-
-  // Deterministic Print Mockup: unlike the Gemini flow below, the server
-  // composites from the raw uploaded artwork bytes it already has, so this
-  // only needs to send transform/placement numbers -- no client-side canvas
-  // export required. Returns a result (not void): generateNanoBananaMockup
-  // awaits this to gate AI generation on a fresh Print Mockup, and needs
-  // the outcome directly -- state setters here don't update this
-  // function's own closure, so the caller can't reliably learn success/
-  // failure by re-reading printMockupUrl/printMockupError afterwards.
-  async function generatePrintMockup(): Promise<
-    { ok: true; url: string; fingerprint: string | null } | { ok: false; error: string }
-  > {
-    if (!state.primaryAssetId || !activeArtworkAsset) {
-      return { ok: false, error: "Select artwork first." };
-    }
-
-    // Bespoke (state.product === "CUSTOM", or a "Request custom colour"
-    // state.color === "CUSTOM") has no template of its own to render onto
-    // -- resolveMockupProduct/resolveMockupColor map it onto the exact same
-    // FITTED/OVERSIZED + BLACK/WHITE template the canvas is already
-    // previewing (getBespokeShirtImage uses the identical fallback), so
-    // this always has a valid, already-seen-on-screen template rather than
-    // rejecting Bespoke outright.
-    const mockupProduct = resolveMockupProduct(state.product);
-    const mockupColor = resolveMockupColor(state.color);
-
-    try {
-      const response = await fetch("/api/mockups/print", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          buildId,
-          draftId,
-          assetId: state.primaryAssetId,
-          placement: activePlacement,
-          x: artworkTransform.x,
-          y: artworkTransform.y,
-          scale: artworkTransform.scale,
-          rotation: artworkTransform.rotation,
-          product: mockupProduct,
-          color: mockupColor,
-        }),
-      });
-
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data?.ok) {
-        throw new Error(data?.error ?? "Could not generate print mockup.");
-      }
-
-      if (typeof data.imageUrl !== "string" || !data.imageUrl) {
-        throw new Error("The print mockup service did not return an image.");
-      }
-
-      setPrintMockupUrl(data.imageUrl);
-      const fingerprint = typeof data.fingerprint === "string" && data.fingerprint ? data.fingerprint : null;
-      if (fingerprint) {
-        setPrintMockupFingerprint(fingerprint);
-      }
-      return { ok: true, url: data.imageUrl, fingerprint };
-    } catch (error) {
-      discardPrintMockup();
-      const message = error instanceof Error ? error.message : "Could not generate print mockup.";
-      return { ok: false, error: message };
     }
   }
 
@@ -1643,13 +1865,26 @@ export default function BuilderClient({
             onArtworkPointerMove={handleArtworkPointerMove}
             onArtworkPointerUp={handleArtworkPointerUp}
             onPlacementClick={handlePlacementClick}
-            onRemoveSelectedArtwork={removeSelectedArtwork}
             onAddArtworkClick={() => fileInputRef.current?.click()}
             onZoomOut={() => changeArtworkScale(artworkTransform.scale - 0.1)}
             onArtworkScaleChange={handleArtworkScaleChange}
             onZoomIn={() => changeArtworkScale(artworkTransform.scale + 0.1)}
             onResetArtworkTransform={resetArtworkTransform}
             onSelectAsset={(asset) => void selectAsset(asset)}
+            otherLayers={bespokeOtherLayers}
+            layers={[...allLayers]
+              // Stable order (the placement cards' order), so cards don't
+              // jump around as the artwork being edited changes.
+              .sort(
+                (a, b) =>
+                  placementCards.findIndex((card) => card.key === a.placement) -
+                  placementCards.findIndex((card) => card.key === b.placement),
+              )
+              .map((layer) => ({ placement: layer.placement, url: layer.url, fileName: layer.fileName }))}
+            onSelectLayer={switchPlacement}
+            onRemoveLayer={removeLayer}
+            onAddAnotherArtwork={addAnotherArtwork}
+            onDropAsset={dropAssetOnShirt}
             onRemoveAsset={(asset) => void removeUserAsset(asset)}
             removingAssetId={removingAssetId}
             onSaveTShirt={() => void saveBespokeTShirt()}
@@ -1743,11 +1978,9 @@ export default function BuilderClient({
             <TryOn3DPreview
               product={state.product}
               color={state.color}
-              artworkUrl={artworkUrl}
+              artworks={allLayers}
               activePlacement={activePlacement}
-              artworkTransform={artworkTransform}
-              generatedMockupUrl={modelPreviewMockup.url}
-              isMockupStale={modelPreviewMockup.isStale}
+              mockups={modelPreviewMockups}
             />
 
             <section className="studio-right-panel" aria-label="Order controls">

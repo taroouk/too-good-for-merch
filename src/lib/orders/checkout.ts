@@ -21,6 +21,7 @@ import { isPaymobEligible } from "src/lib/bespoke/eligibility";
 import { normalizeArtworkPlacement } from "src/lib/artwork/save";
 import { buildDesignSignature, canReuseOrder, type DesignSignature } from "src/lib/orders/reuse";
 import { CheckoutError } from "src/lib/orders/errors";
+import { draftArtworkLayers } from "src/studio/artwork-layers";
 
 export { CheckoutError } from "src/lib/orders/errors";
 
@@ -110,6 +111,16 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     if (!asset) throw new CheckoutError("The selected artwork is invalid.");
   }
 
+  // Every artwork of a multi-artwork design (or the single legacy artwork as
+  // one layer) -- frozen onto the order below so fulfilment prints exactly
+  // what was paid for, even if the draft is edited afterwards.
+  const layers = draftArtworkLayers(build.draft);
+  if (layers.length) {
+    const layerAssetIds = [...new Set(layers.map((layer) => layer.assetId))];
+    const found = await prisma.asset.count({ where: { id: { in: layerAssetIds }, buildId } });
+    if (found !== layerAssetIds.length) throw new CheckoutError("One of the selected artworks is invalid.");
+  }
+
   const size = ["S", "M", "L", "XL"].includes(String(input.size)) ? String(input.size) : "M";
   const transform = normalizeArtworkPlacement(build.draft.artworkPlacement);
   const designSignature: DesignSignature = buildDesignSignature({
@@ -121,6 +132,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     primaryAssetId: primaryAssetId ?? null,
     placements: safePlacements,
     transform,
+    layers,
   });
 
   // Canonical pricing is entirely in USD; the conversion to the payment
@@ -272,6 +284,11 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
               // src/lib/orders/display.ts for how this is consumed.
               printMockupId: build.draft?.printMockupId ?? null,
               aiMockupId: build.draft?.aiMockupId ?? null,
+              // Multi-artwork: every layer, and the back-of-garment mockups
+              // (the two above are the front).
+              layers,
+              backPrintMockupId: build.draft?.backPrintMockupId ?? null,
+              backAiMockupId: build.draft?.backAiMockupId ?? null,
             } as unknown as Prisma.InputJsonValue,
             assetId: primaryAssetId,
           },

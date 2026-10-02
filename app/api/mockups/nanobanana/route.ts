@@ -7,19 +7,25 @@ import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
-import { computeMockupFingerprint, upsertMockupForDraft } from "src/db/mockup";
-import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
+import { upsertMockupForDraft } from "src/db/mockup";
+import { PLACEMENTS, placementLabel, type PlacementKey } from "src/pricing/placements";
+import {
+  normalizeArtworkLayers,
+  sideFingerprint,
+  sidesWithLayers,
+  type ArtworkLayer,
+} from "src/studio/artwork-layers";
 import {
   BASELINE_RENDER_DPI,
   blankGarmentPrompt,
   compositeArtworkOntoBase,
   detectGarmentBBox,
   geminiErrorFromData,
-  getPlacementSide,
   isRetryableGeminiFailure,
   loadTemplateBuffer,
   parseGeminiJson,
   printedArtworkPrompt,
+  printedArtworksPrompt,
   resolvePlacement,
   RendererError,
   trimToVisibleBounds,
@@ -458,107 +464,121 @@ export async function POST(req: Request) {
     // about placement/geometry is read from a previous request.
     const buildId = stringValue(body.buildId);
     const draftId = stringValue(body.draftId);
-    const assetId = stringValue(body.assetId);
     const product = asEnum(body.product, PRODUCTS);
     const color = asEnum(body.color, COLORS);
-    const placement = asEnum(body.placement, PLACEMENTS) as PlacementKey | null;
-    const x = numValue(body.x);
-    const y = numValue(body.y);
-    const scale = numValue(body.scale);
-    const rotation = numValue(body.rotation) ?? 0;
 
-    if (!buildId || !draftId || !assetId) {
-      return apiError("Missing buildId, draftId, or assetId.", 400);
+    if (!buildId || !draftId) {
+      return apiError("Missing buildId or draftId.", 400);
     }
     if (!product) return apiError("Missing or invalid product.", 400);
     if (!color) return apiError("Missing or invalid color.", 400);
-    if (!placement) return apiError("Missing or invalid placement.", 400);
-    if (x === null || y === null || scale === null) {
-      return apiError("Missing artwork transform (x, y, scale).", 400);
-    }
 
-    const asset = await prisma.asset.findFirst({
-      where: { id: assetId, buildId },
+    // Multi-artwork: `layers` (all on one garment side) -- one AI mockup per
+    // side. The original single-artwork shape (assetId + placement +
+    // x/y/scale/rotation) is still accepted as a one-layer design.
+    let layers: ArtworkLayer[];
+    if (Array.isArray(body.layers)) {
+      layers = normalizeArtworkLayers(body.layers);
+    } else {
+      const assetId = stringValue(body.assetId);
+      const placementInput = asEnum(body.placement, PLACEMENTS) as PlacementKey | null;
+      const x = numValue(body.x);
+      const y = numValue(body.y);
+      const scale = numValue(body.scale);
+      if (!assetId) return apiError("Missing assetId.", 400);
+      if (!placementInput) return apiError("Missing or invalid placement.", 400);
+      if (x === null || y === null || scale === null) {
+        return apiError("Missing artwork transform (x, y, scale).", 400);
+      }
+      layers = normalizeArtworkLayers([
+        { assetId, placement: placementInput, x, y, scale, rotation: numValue(body.rotation) ?? 0 },
+      ]);
+    }
+    if (!layers.length) return apiError("No artwork to render.", 400);
+    const sides = sidesWithLayers(layers);
+    if (sides.length !== 1) {
+      return apiError("All artworks in one AI mockup must be on the same side.", 400);
+    }
+    const side = sides[0];
+    // The first layer stands in for "the" placement/asset wherever a single
+    // one is needed (bbox detection hints, blank-garment prompt, the
+    // Mockup row's legacy assetId column).
+    const placement = layers[0].placement;
+    const assetId = layers[0].assetId;
+
+    const assetIds = [...new Set(layers.map((layer) => layer.assetId))];
+    const assets = await prisma.asset.findMany({
+      where: { id: { in: assetIds }, buildId },
       select: { id: true, build: { select: { id: true, userId: true } } },
     });
-    if (!asset) {
+    if (assets.length !== assetIds.length) {
       return apiError("Artwork asset not found.", 404);
     }
 
     const allowed =
-      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, asset.build));
+      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, assets[0].build));
     if (!allowed) {
       return apiError("Forbidden.", 403);
     }
 
-    // Same fingerprint shape/inputs as the print route (including the same
-    // fixed dpi baseline, even though this route has no dpi concept of its
-    // own) so the AI mockup's fingerprint exactly matches the print
-    // mockup's fingerprint for identical state -- isAiMockupStale and
-    // isPrintMockupStale compare against the same client-side value.
-    const fingerprint = computeMockupFingerprint({
-      assetId,
-      placement,
-      x,
-      y,
-      scale,
-      product,
-      color,
-      rotation,
-      dpi: BASELINE_RENDER_DPI,
-    });
+    // Same fingerprint as the print route for identical state (same fixed
+    // dpi baseline) -- the client compares both mockups against one value.
+    const fingerprint = sideFingerprint({ layers, product, color, dpi: BASELINE_RENDER_DPI }) as string;
 
-    // The ORIGINAL artwork bytes -- the only source of artwork content,
-    // now and always. This buffer is used only by the local Sharp
-    // post-compositor below; it is never sent to Gemini.
-    const artwork = await getArtwork(assetId);
-    if (!artwork) {
-      return apiError("Artwork file missing.", 404);
-    }
-
-    const side = getPlacementSide(placement);
     const template = await loadTemplateBuffer(product, color, side);
 
     let templateMeta: sharp.Metadata;
-    let artworkMeta: sharp.Metadata;
     try {
       templateMeta = await sharp(template).metadata();
-      artworkMeta = await sharp(artwork).metadata();
     } catch {
       throw new RendererError("Could not read the garment template or artwork image.", 500);
     }
     if (!templateMeta.width || !templateMeta.height) {
       throw new RendererError("Garment template image is missing dimensions.", 500);
     }
-    if (!artworkMeta.width || !artworkMeta.height) {
-      throw new RendererError("Artwork image is missing dimensions.", 400);
+
+    // Per artwork: the ORIGINAL bytes (only ever used by the local Sharp
+    // post-compositor), the TRIMMED buffer Gemini receives, and the geometry
+    // resolved once via the canonical resolvePlacement -- same steps as the
+    // single-artwork flow always used, just repeated per layer.
+    const prints: Array<{
+      layer: ArtworkLayer;
+      artwork: Buffer;
+      trimmed: Buffer;
+      resolved: ReturnType<typeof resolvePlacement>;
+    }> = [];
+    for (const layer of layers) {
+      const artwork = await getArtwork(layer.assetId);
+      if (!artwork) {
+        return apiError("Artwork file missing.", 404);
+      }
+      let artworkMeta: sharp.Metadata;
+      try {
+        artworkMeta = await sharp(artwork).metadata();
+      } catch {
+        throw new RendererError("Could not read the garment template or artwork image.", 500);
+      }
+      if (!artworkMeta.width || !artworkMeta.height) {
+        throw new RendererError("Artwork image is missing dimensions.", 400);
+      }
+      const trimmed = await trimToVisibleBounds(artwork);
+      const trimmedMeta = await sharp(trimmed).metadata();
+      prints.push({
+        layer,
+        artwork,
+        trimmed,
+        resolved: resolvePlacement({
+          product,
+          color,
+          placement: layer.placement,
+          transform: { x: layer.x, y: layer.y, scale: layer.scale, rotation: layer.rotation },
+          templateWidth: templateMeta.width,
+          templateHeight: templateMeta.height,
+          artworkWidth: trimmedMeta.width ?? artworkMeta.width,
+          artworkHeight: trimmedMeta.height ?? artworkMeta.height,
+        }),
+      });
     }
-
-    // Same asymmetric-transparent-padding fix as SharpMockupRenderer: size
-    // the placement box off the artwork's TRIMMED (visible-content) aspect
-    // ratio, and send Gemini this same trimmed buffer as INPUT 2 -- not the
-    // raw upload, which can carry arbitrary transparent padding around the
-    // actual design that has no business being described as part of "the
-    // artwork" in the prompt below.
-    const trimmedArtworkBuffer = await trimToVisibleBounds(artwork);
-    const trimmedArtworkMeta = await sharp(trimmedArtworkBuffer).metadata();
-    const trimmedWidth = trimmedArtworkMeta.width ?? artworkMeta.width;
-    const trimmedHeight = trimmedArtworkMeta.height ?? artworkMeta.height;
-
-    // Geometry resolved ONCE, via the exact same canonical function and
-    // placement config the Studio preview and the deterministic Print
-    // Mockup both already use. This never talks to Gemini and is not
-    // affected by anything Gemini returns.
-    const resolved = resolvePlacement({
-      product,
-      color,
-      placement,
-      transform: { x, y, scale, rotation },
-      templateWidth: templateMeta.width,
-      templateHeight: templateMeta.height,
-      artworkWidth: trimmedWidth,
-      artworkHeight: trimmedHeight,
-    });
 
     // The template's own subject bbox (model + garment) -- detected once
     // here since it only depends on the template, which is fixed for this
@@ -609,16 +629,27 @@ export async function POST(req: Request) {
       .toBuffer();
 
     // `resolved` is in FULL TEMPLATE pixel coordinates; the prompt below
-    // describes the print position relative to templateCrop (what Gemini
+    // describes each print position relative to templateCrop (what Gemini
     // actually sees as INPUT 1), so convert into crop-relative fractions.
-    const placementBoxPct = {
+    const boxFor = (resolved: ReturnType<typeof resolvePlacement>) => ({
       leftPct: (resolved.left - templateGarmentBBox.left) / templateGarmentBBox.width,
       topPct: (resolved.top - templateGarmentBBox.top) / templateGarmentBBox.height,
       widthPct: resolved.width / templateGarmentBBox.width,
       heightPct: resolved.height / templateGarmentBBox.height,
       rotationDeg: resolved.rotation,
-    };
-    const prompt = printedArtworkPrompt({ product, color, placement, box: placementBoxPct });
+    });
+    const prompt =
+      prints.length === 1
+        ? printedArtworkPrompt({ product, color, placement, box: boxFor(prints[0].resolved) })
+        : printedArtworksPrompt({
+            product,
+            color,
+            side,
+            prints: prints.map((print) => ({
+              placementLabel: placementLabel(print.layer.placement),
+              box: boxFor(print.resolved),
+            })),
+          });
 
     // Gemini now receives TWO images: the clean garment crop (INPUT 1) and
     // the artwork itself, trimmed to its own visible content (INPUT 2) --
@@ -640,11 +671,12 @@ export async function POST(req: Request) {
           mime_type: "image/png",
           data: templateCrop.toString("base64"),
         },
-        {
+        // INPUT 2..N+1: every artwork, trimmed to its visible content.
+        ...prints.map((print) => ({
           type: "image",
           mime_type: "image/png",
-          data: trimmedArtworkBuffer.toString("base64"),
-        },
+          data: print.trimmed.toString("base64"),
+        })),
       ],
       response_format: {
         type: "image",
@@ -848,7 +880,10 @@ export async function POST(req: Request) {
         .png()
         .toBuffer();
 
-      finalImage = await compositeArtworkOntoBase(blankGeminiImage, artwork, resolved);
+      finalImage = blankGeminiImage;
+      for (const print of prints) {
+        finalImage = await compositeArtworkOntoBase(finalImage, print.artwork, print.resolved);
+      }
     } else {
       // Gemini's spliced-back output already has the artwork printed onto
       // the fabric (see the comment above geminiRequestBody) -- no further
@@ -863,7 +898,7 @@ export async function POST(req: Request) {
     // depends on the Print Mockup existing or being read.
     const draftRow = await prisma.buildDraft.findFirst({
       where: { id: draftId, buildId },
-      select: { printMockupId: true },
+      select: { printMockupId: true, backPrintMockupId: true },
     });
 
     const mockup = await upsertMockupForDraft(draftId, {
@@ -873,9 +908,10 @@ export async function POST(req: Request) {
       data: finalImage,
       fingerprint,
       model,
-      placement,
+      placement: layers.map((layer) => layer.placement).join(","),
       prompt,
-      parentId: draftRow?.printMockupId ?? null,
+      parentId: (side === "back" ? draftRow?.backPrintMockupId : draftRow?.printMockupId) ?? null,
+      side,
     });
 
     return apiOk({
@@ -883,6 +919,7 @@ export async function POST(req: Request) {
       mockupId: mockup.id,
       model,
       fingerprint,
+      side,
     });
   } catch (err: unknown) {
     if (err instanceof RendererError) {
