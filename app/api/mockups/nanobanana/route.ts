@@ -26,6 +26,10 @@ import {
   parseGeminiJson,
   printedArtworkPrompt,
   printedArtworksPrompt,
+  restoreTemplateAlpha,
+  squareFrameFor,
+  padCropToSquare,
+  cropOutOfSquare,
   resolvePlacement,
   RendererError,
   trimToVisibleBounds,
@@ -625,17 +629,28 @@ export async function POST(req: Request) {
         width: templateGarmentBBox.width,
         height: templateGarmentBBox.height,
       })
+      // Flatten the photo's transparent background onto white before Gemini
+      // sees it: it answers with an opaque JPEG, and transparent input comes
+      // back black (see restoreTemplateAlpha, which restores it afterwards).
+      .flatten({ background: "#ffffff" })
       .png()
       .toBuffer();
 
+    // Gemini always answers with a SQUARE image, so it is sent the crop
+    // centred on a white square (INPUT 1) and the crop is cut back out of its
+    // square answer -- see squareFrameFor in composite.ts. Nothing is ever
+    // stretched, whatever the garment photo's shape.
+    const frame = squareFrameFor(templateGarmentBBox.width, templateGarmentBBox.height);
+    const geminiGarmentInput = await padCropToSquare(templateCrop, frame);
+
     // `resolved` is in FULL TEMPLATE pixel coordinates; the prompt below
-    // describes each print position relative to templateCrop (what Gemini
-    // actually sees as INPUT 1), so convert into crop-relative fractions.
+    // describes each print position relative to the square image Gemini
+    // actually sees as INPUT 1, so convert into square-relative fractions.
     const boxFor = (resolved: ReturnType<typeof resolvePlacement>) => ({
-      leftPct: (resolved.left - templateGarmentBBox.left) / templateGarmentBBox.width,
-      topPct: (resolved.top - templateGarmentBBox.top) / templateGarmentBBox.height,
-      widthPct: resolved.width / templateGarmentBBox.width,
-      heightPct: resolved.height / templateGarmentBBox.height,
+      leftPct: (resolved.left - templateGarmentBBox.left + frame.padX) / frame.side,
+      topPct: (resolved.top - templateGarmentBBox.top + frame.padY) / frame.side,
+      widthPct: resolved.width / frame.side,
+      heightPct: resolved.height / frame.side,
       rotationDeg: resolved.rotation,
     });
     const prompt =
@@ -669,7 +684,7 @@ export async function POST(req: Request) {
         {
           type: "image",
           mime_type: "image/png",
-          data: templateCrop.toString("base64"),
+          data: geminiGarmentInput.toString("base64"),
         },
         // INPUT 2..N+1: every artwork, trimmed to its visible content.
         ...prints.map((print) => ({
@@ -806,7 +821,7 @@ export async function POST(req: Request) {
         // same class of "unusable generation" as an unreadable image
         // buffer, so it retries a fresh generation instead of silently
         // shipping a distorted mockup.
-        const expectedAspect = templateGarmentBBox.width / templateGarmentBBox.height;
+        const expectedAspect = 1; // Gemini is sent (and answers with) a square
         const candidateAspect = candidateMeta.width / candidateMeta.height;
         const aspectDeviation = Math.abs(candidateAspect - expectedAspect) / expectedAspect;
         if (aspectDeviation > 0.08) {
@@ -816,20 +831,17 @@ export async function POST(req: Request) {
           );
         }
 
-        const resizedCrop = await sharp(candidateImage)
-          .resize({
-            width: templateGarmentBBox.width,
-            height: templateGarmentBBox.height,
-            fit: "fill",
-          })
-          .toBuffer();
+        const resizedCrop = await cropOutOfSquare(candidateImage, frame);
 
-        geminiImage = await sharp(template)
-          .composite([
-            { input: resizedCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top },
-          ])
-          .png()
-          .toBuffer();
+        geminiImage = await restoreTemplateAlpha(
+          await sharp(template)
+            .composite([
+              { input: resizedCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top },
+            ])
+            .png()
+            .toBuffer(),
+          template,
+        );
       } catch (spliceErr) {
         if (!(spliceErr instanceof RendererError)) throw spliceErr;
         if (generationAttempt < MAX_GEMINI_ATTEMPTS) {
@@ -863,7 +875,7 @@ export async function POST(req: Request) {
         model,
         input: [
           { type: "text", text: blankPrompt },
-          { type: "image", mime_type: "image/png", data: templateCrop.toString("base64") },
+          { type: "image", mime_type: "image/png", data: geminiGarmentInput.toString("base64") },
         ],
         response_format: { type: "image", mime_type: "image/jpeg" },
         generation_config: { temperature: 0, top_k: 1 },
@@ -872,13 +884,16 @@ export async function POST(req: Request) {
       const blankCandidate = await callGemini(blankRequestBody);
       if (blankCandidate instanceof Response) return blankCandidate;
 
-      const resizedBlankCrop = await sharp(blankCandidate)
-        .resize({ width: templateGarmentBBox.width, height: templateGarmentBBox.height, fit: "fill" })
-        .toBuffer();
-      const blankGeminiImage = await sharp(template)
-        .composite([{ input: resizedBlankCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top }])
-        .png()
-        .toBuffer();
+      // Same square round-trip as the printed path -- this fallback used to
+      // stretch Gemini's square answer onto the tall crop unchecked.
+      const resizedBlankCrop = await cropOutOfSquare(blankCandidate, frame);
+      const blankGeminiImage = await restoreTemplateAlpha(
+        await sharp(template)
+          .composite([{ input: resizedBlankCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top }])
+          .png()
+          .toBuffer(),
+        template,
+      );
 
       finalImage = blankGeminiImage;
       for (const print of prints) {
