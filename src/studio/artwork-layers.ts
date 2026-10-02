@@ -21,6 +21,26 @@ import type { GarmentSide } from "./render/types";
 
 export const MAX_ARTWORK_LAYERS = 4;
 
+// Bump when the mockup generators change in a way that makes previously
+// generated mockups wrong (it is part of every side fingerprint, so old
+// mockups count as stale and get regenerated on the next Save while the
+// model meanwhile shows the clean photo with the live artwork).
+//   2: AI mockups no longer stretched (square round-trip) and keep the
+//      photo's transparent background (restoreTemplateAlpha).
+export const MOCKUP_PIPELINE_VERSION = 2;
+
+function stampPipelineVersion(core: string): string {
+  return computeMockupFingerprint({
+    assetId: core,
+    placement: `PIPELINE_V${MOCKUP_PIPELINE_VERSION}`,
+    x: 0,
+    y: 0,
+    scale: 1,
+    product: null,
+    color: null,
+  });
+}
+
 export type ArtworkLayer = {
   placement: PlacementKey;
   assetId: string;
@@ -102,10 +122,8 @@ export function sidesWithLayers(layers: Pick<ArtworkLayer, "placement">[]): Garm
 }
 
 // Fingerprint of one side's design (what a print/AI mockup of that side was
-// rendered from). A single layer hashes exactly like the pre-layers
-// single-artwork fingerprint, so mockups generated before this existed stay
-// fresh for unchanged one-artwork designs. Several layers combine their
-// per-layer fingerprints in placement order (order-independent).
+// rendered from): every layer's own fingerprint (order-independent), stamped
+// with MOCKUP_PIPELINE_VERSION.
 export function sideFingerprint(input: {
   layers: ArtworkLayer[];
   product: string | null;
@@ -128,14 +146,5 @@ export function sideFingerprint(input: {
       }),
     )
     .sort();
-  if (perLayer.length === 1) return perLayer[0];
-  return computeMockupFingerprint({
-    assetId: perLayer.join(","),
-    placement: "LAYERS",
-    x: 0,
-    y: 0,
-    scale: 1,
-    product: input.product,
-    color: input.color,
-  });
+  return stampPipelineVersion(perLayer.join(","));
 }

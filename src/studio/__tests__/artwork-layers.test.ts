@@ -70,7 +70,7 @@ export async function runAll() {
       assert.deepEqual(sidesWithLayers([layer("CENTER_BACK")]), ["back"]);
     },
 
-    "a one-artwork side fingerprints exactly like the old single-artwork fingerprint"() {
+    "a fingerprint is stamped with the pipeline version, so older mockups count as stale"() {
       const l = { ...layer("CENTER_FRONT", "a1", 0.05), y: -0.02, scale: 1.1, rotation: 2 };
       const legacy = computeMockupFingerprint({
         assetId: "a1",
@@ -83,7 +83,11 @@ export async function runAll() {
         rotation: 2,
         dpi: 150,
       });
-      assert.equal(sideFingerprint({ layers: [l], product: "FITTED", color: "WHITE", dpi: 150 }), legacy);
+      const now = sideFingerprint({ layers: [l], product: "FITTED", color: "WHITE", dpi: 150 });
+      assert.ok(now);
+      assert.notEqual(now, legacy, "a mockup fingerprinted before the version stamp must be stale");
+      // Deterministic.
+      assert.equal(sideFingerprint({ layers: [l], product: "FITTED", color: "WHITE", dpi: 150 }), now);
     },
 
     "a multi-artwork fingerprint changes with any layer and ignores order"() {
