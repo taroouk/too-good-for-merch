@@ -1,8 +1,6 @@
 import type { ReactNode } from "react";
-import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
-import StudioNavbar from "src/studio/ui/StudioNavbar";
 
 type ProjectLayoutProps = {
   children: ReactNode;
@@ -19,15 +17,11 @@ export default async function ProjectLayout({
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
 
-  const build = await prisma.build.findUnique({
-    where: { id: buildId },
-    select: { name: true },
-  });
-  const projectName = build?.name ?? "My Project";
-
+  // The Studio tabs (Builder / Wishlist / Bespoke) now live in the shared
+  // site header (src/components/site/SiteHeader.tsx), which derives the
+  // project id from the URL -- there is no separate Studio navbar any more.
   return (
     <div>
-      <StudioNavbar projectId={buildId} projectName={projectName} />
       <div className="p-6">{children}</div>
     </div>
   );

@@ -171,3 +171,18 @@ export function formatShippingAddress(order: {
     (line): line is string => Boolean(line),
   );
 }
+
+// What production needs to know about an item that lives in the frozen
+// checkout snapshot (OrderItem.preview), not in columns: the garment size,
+// the customer's notes, and the original saved (AI) artwork file.
+export type OrderItemExtras = { size: string | null; notes: string | null; savedArtworkId: string | null };
+
+export function orderItemExtras(itemPreview: unknown): OrderItemExtras {
+  const preview = itemPreview && typeof itemPreview === "object" ? (itemPreview as Record<string, unknown>) : null;
+  const text = (value: unknown, max: number) => (typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null);
+  return {
+    size: text(preview?.size, 8),
+    notes: text(preview?.notes, 2000),
+    savedArtworkId: text(preview?.savedArtworkId, 128),
+  };
+}

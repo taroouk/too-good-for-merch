@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PaymentStatus, Role } from "@prisma/client";
 import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 
 export default async function SuccessPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -10,7 +11,7 @@ export default async function SuccessPage({ params }: { params: Promise<{ orderI
   if (!session?.user?.id) redirect(`/login?callbackUrl=${encodeURIComponent(`/orders/${orderId}/success`)}`);
 
   const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order || (session.user.role !== Role.ADMIN && order.userId !== session.user.id)) notFound();
+  if (!order || (order.userId !== session.user.id && !(await isAdminSession()))) notFound();
   if (order.paymentStatus !== PaymentStatus.PAID) redirect(`/orders/${order.id}`);
 
   return (

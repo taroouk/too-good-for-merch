@@ -54,6 +54,17 @@ if (storeCurrency && !/^[A-Z]{3}$/i.test(storeCurrency)) {
   warnings.push("STORE_CURRENCY should be a 3-letter ISO currency code.");
 }
 
+// Email is now load-bearing: order confirmations and password-reset links
+// (src/lib/notify/email.ts) are only delivered when Resend is configured.
+if (!process.env.RESEND_API_KEY?.trim()) {
+  warnings.push("RESEND_API_KEY is not set: customers will NOT receive order confirmation or password-reset emails.");
+} else if (!process.env.EMAIL_FROM?.trim() || /onboarding@resend\.dev/i.test(process.env.EMAIL_FROM)) {
+  warnings.push("EMAIL_FROM should be an address on a domain verified in Resend; the default onboarding@resend.dev can only deliver to the Resend account owner.");
+}
+if (!process.env.NEXT_PUBLIC_APP_URL?.trim() && !process.env.NEXTAUTH_URL?.trim()) {
+  warnings.push("Set NEXT_PUBLIC_APP_URL (or NEXTAUTH_URL): it is used to build the links inside emails.");
+}
+
 if (errors.length > 0) {
   console.error("Production environment check failed:");
   for (const error of errors) console.error(`- ${error}`);

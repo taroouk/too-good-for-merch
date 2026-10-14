@@ -1,6 +1,6 @@
 import "./globals.css";
 import localFont from "next/font/local";
-import GlobalAuthAction from "src/components/GlobalAuthAction";
+import SiteHeader from "src/components/site/SiteHeader";
 import Providers from "src/components/Providers";
 import { ReactNode } from "react";
 
@@ -47,7 +47,12 @@ const league = localFont({
 
 export const metadata = {
   title: "Too Good For Merch",
-  description: "Studio",
+  description: "Design and order custom-printed t-shirts with the Too Good For Merch studio.",
+  openGraph: {
+    title: "Too Good For Merch",
+    description: "Design and order custom-printed t-shirts with the Too Good For Merch studio.",
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -63,8 +68,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         `}
       >
         <Providers>
-          <GlobalAuthAction />
-          {children}
+          <SiteHeader />
+          <div className="siteMain">{children}</div>
         </Providers>
       </body>
     </html>

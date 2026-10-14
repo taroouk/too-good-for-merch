@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Role } from "@prisma/client";
 import { auth } from "src/auth";
+import { getAdminUser } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { canAccessBuild } from "src/studio/permissions";
 
@@ -34,7 +34,8 @@ export async function GET(
   const session = await auth();
   const sessionUserId = session?.user?.id ?? null;
   const allowed =
-    session?.user?.role === Role.ADMIN ||
+    // DB-backed admin check, not the JWT role claim (stale after a demotion).
+    (session?.user?.id ? (await getAdminUser()) != null : false) ||
     (artwork.userId != null && artwork.userId === sessionUserId) ||
     (artwork.userId == null &&
       artwork.build != null &&

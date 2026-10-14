@@ -37,6 +37,5 @@ export function getBespokeShirtImage(
   placement: PlacementType,
 ): string {
   void product;
-  void color;
-  return getEditorTemplateSrc(placement);
+  return getEditorTemplateSrc(placement, color);
 }

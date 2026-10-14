@@ -1,11 +1,15 @@
 import {
+  AuditIcon,
   CustomersIcon,
+  ImageIcon,
   DashboardIcon,
   OrdersIcon,
   PaymentsIcon,
   PricingIcon,
   ProductsIcon,
+  PulseIcon,
   SettingsIcon,
+  TeamIcon,
 } from "src/components/admin/ui/icons";
 
 export type NavItem = { href: string; label: string; icon: (props: { className?: string }) => React.ReactElement };
@@ -26,10 +30,21 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/products", label: "Products", icon: ProductsIcon },
       { href: "/admin/pricing", label: "Pricing", icon: PricingIcon },
+      { href: "/admin/projects", label: "Projects", icon: ProductsIcon },
+      { href: "/admin/artworks", label: "Artworks", icon: ImageIcon },
     ],
   },
   { label: "Accounts", items: [{ href: "/admin/users", label: "Customers", icon: CustomersIcon }] },
-  { label: "System", items: [{ href: "/admin/settings", label: "Settings", icon: SettingsIcon }] },
+  {
+    label: "System",
+    items: [
+      { href: "/admin/settings", label: "Settings", icon: SettingsIcon },
+      { href: "/admin/team", label: "Team", icon: TeamIcon },
+      { href: "/admin/legal", label: "Legal pages", icon: AuditIcon },
+      { href: "/admin/audit", label: "Audit log", icon: AuditIcon },
+      { href: "/admin/system", label: "System health", icon: PulseIcon },
+    ],
+  },
 ];
 
 export function isNavItemActive(pathname: string, href: string) {

@@ -12,6 +12,31 @@ export class PaymobError extends Error {
   }
 }
 
+// Paymob rejects a second create_order whose merchant_order_id it has
+// already seen with 422 {"message":"duplicate"}. The first attempt for an
+// order keeps using the plain orderNumber (unchanged behaviour); only a
+// retry for an order Paymob already knows falls back to a suffixed id.
+const RETRY_SUFFIX_PATTERN = /-R[0-9a-z]{6,}$/;
+
+export function isDuplicateMerchantOrderError(error: unknown): boolean {
+  if (!(error instanceof PaymobError)) return false;
+  const details = error.details as { stage?: unknown; status?: unknown; response?: unknown } | undefined;
+  if (!details || details.stage !== "create_order" || details.status !== 422) return false;
+  const response = details.response;
+  const message =
+    response && typeof response === "object" ? (response as Record<string, unknown>).message : undefined;
+  return typeof message === "string" && /duplicate/i.test(message);
+}
+
+export function retryMerchantOrderId(orderNumber: string, nonce: string = Date.now().toString(36)) {
+  return `${orderNumber}-R${nonce}`;
+}
+
+// Maps a (possibly retry-suffixed) merchant_order_id back to Order.orderNumber.
+export function baseOrderNumber(merchantOrderId: string) {
+  return merchantOrderId.replace(RETRY_SUFFIX_PATTERN, "");
+}
+
 function requiredEnv(name: string) {
   const value = process.env[name]?.trim();
   if (!value) throw new PaymobError(`Missing server configuration: ${name}`);
@@ -131,37 +156,46 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
   );
   if (!auth.token) throw new PaymobError("Paymob did not return an authentication token.");
 
-  const remoteOrder = await paymobFetch<{ id?: number | string }>(
-    "create_order",
-    "/api/ecommerce/orders",
-    {
-      auth_token: auth.token,
-      delivery_needed: false,
-      amount_cents: order.totalCents,
-      currency: order.currency,
-      merchant_order_id: order.orderNumber,
-      items: [
-        ...order.items.map((item) => ({
-          name: `${item.product} custom garment`.slice(0, 100),
-          description: `${item.fabric} / ${item.color}`.slice(0, 255),
-          amount_cents: item.unitPriceCents,
-          quantity: item.quantity,
-        })),
-        ...(order.totalCents > order.subtotalCents
-          ? [
-              {
-                name: "Tax and shipping",
-                description: "Order charges",
-                amount_cents: order.totalCents - order.subtotalCents,
-                quantity: 1,
-              },
-            ]
-          : []),
-      ],
-    },
-    reference,
-    deadline,
-  );
+  const createRemoteOrder = (merchantOrderId: string) =>
+    paymobFetch<{ id?: number | string }>(
+      "create_order",
+      "/api/ecommerce/orders",
+      {
+        auth_token: auth.token,
+        delivery_needed: false,
+        amount_cents: order.totalCents,
+        currency: order.currency,
+        merchant_order_id: merchantOrderId,
+        items: [
+          ...order.items.map((item) => ({
+            name: `${item.product} custom garment`.slice(0, 100),
+            description: `${item.fabric} / ${item.color}`.slice(0, 255),
+            amount_cents: item.unitPriceCents,
+            quantity: item.quantity,
+          })),
+          ...(order.totalCents > order.subtotalCents
+            ? [
+                {
+                  name: "Tax and shipping",
+                  description: "Order charges",
+                  amount_cents: order.totalCents - order.subtotalCents,
+                  quantity: 1,
+                },
+              ]
+            : []),
+        ],
+      },
+      reference,
+      deadline,
+    );
+
+  let remoteOrder: { id?: number | string };
+  try {
+    remoteOrder = await createRemoteOrder(order.orderNumber);
+  } catch (error) {
+    if (!isDuplicateMerchantOrderError(error)) throw error;
+    remoteOrder = await createRemoteOrder(retryMerchantOrderId(order.orderNumber));
+  }
   if (!remoteOrder.id) throw new PaymobError("Paymob did not return an order ID.", remoteOrder);
 
   const paymentKey = await paymobFetch<{ token?: string }>(
@@ -201,6 +235,30 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
   const iframeId = encodeURIComponent(requiredEnv("PAYMOB_IFRAME_ID"));
   const paymentUrl = `${PAYMOB_BASE_URL}/api/acceptance/iframes/${iframeId}?payment_token=${encodeURIComponent(paymentKey.token)}`;
   return { paymentUrl, paymobOrderId: String(remoteOrder.id) };
+}
+
+// Full refund of a settled Paymob transaction. Paymob answers with the
+// refund transaction; its processed webhook (handled in
+// app/api/payments/paymob/webhook/route.ts, classifyTransaction -> refunded)
+// is idempotent with the status the caller sets on success.
+export async function refundPaymobTransaction(transactionId: string, amountCents: number) {
+  if (!/^\d{1,20}$/.test(transactionId)) throw new PaymobError("Transaction id is invalid.");
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0) throw new PaymobError("Refund amount is invalid.");
+  const reference = { transactionId, amountCents };
+  const deadline = AbortSignal.timeout(PAYMOB_CALL_BUDGET_MS);
+  const auth = await paymobFetch<{ token?: string }>("auth", "/api/auth/tokens", { api_key: requiredEnv("PAYMOB_API_KEY") }, reference, deadline);
+  if (!auth.token) throw new PaymobError("Paymob did not return an authentication token.");
+  const result = await paymobFetch<Record<string, unknown>>(
+    "refund",
+    "/api/acceptance/void_refund/refund",
+    { auth_token: auth.token, transaction_id: Number(transactionId), amount_cents: amountCents },
+    reference,
+    deadline,
+  );
+  if (result.success === false) {
+    throw new PaymobError("Paymob declined the refund.", { stage: "refund", response: result });
+  }
+  return { refundTransactionId: result.id != null ? String(result.id) : null };
 }
 
 export const TRANSACTION_HMAC_KEYS = [

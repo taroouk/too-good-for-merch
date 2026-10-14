@@ -11,6 +11,8 @@ import {
 } from "src/lib/orders/checkout";
 import { orderFailureUpdateFor } from "src/lib/orders/errors";
 import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
+import { currentTermsVersion } from "src/lib/legal";
+import { recordCheckoutFailure } from "src/lib/orders/checkout-failure";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { resolveCurrentCurrency } from "src/pricing/engine";
@@ -52,7 +54,7 @@ function errorResponse(error: unknown, orderId?: string) {
   if (error instanceof CheckoutError) {
     return NextResponse.json(
       { error: error.message, code: "CHECKOUT_VALIDATION_FAILED", orderId },
-      { status: error.status },
+      { status: error.status, headers: { "x-checkout-code": "CHECKOUT_VALIDATION_FAILED" } },
     );
   }
   if (error instanceof PaymobError) {
@@ -66,13 +68,13 @@ function errorResponse(error: unknown, orderId?: string) {
         code: "PAYMENT_INITIALIZATION_FAILED",
         orderId,
       },
-      { status: 502 },
+      { status: 502, headers: { "x-checkout-code": "PAYMENT_INITIALIZATION_FAILED" } },
     );
   }
   console.error("CHECKOUT_CREATE_ERROR", error instanceof Error ? error.message : error);
   return NextResponse.json(
     { error: "Unable to start payment. Please try again.", code: "INTERNAL_ERROR", orderId },
-    { status: 500 },
+    { status: 500, headers: { "x-checkout-code": "INTERNAL_ERROR" } },
   );
 }
 
@@ -111,6 +113,15 @@ export async function POST(req: Request) {
   const body = await readJsonObject(req);
   if (!body) {
     return apiError("Invalid checkout request.", 400);
+  }
+
+  // Consent is mandatory and enforced here, not just by the checkout
+  // checkbox, so a direct API call can't skip it.
+  if (body.acceptTerms !== true) {
+    return NextResponse.json(
+      { error: "Please accept the Terms & Conditions and Refund Policy to continue.", code: "TERMS_NOT_ACCEPTED" },
+      { status: 400 },
+    );
   }
 
   if (body.method !== PaymentMethod.CARD && body.method !== PaymentMethod.WALLET) {
@@ -172,6 +183,14 @@ export async function POST(req: Request) {
         size: body.size,
       });
     }
+
+    // Record the consent against the order, with the revision of the Terms /
+    // Refund pages that was live -- the evidence that this customer agreed
+    // to exactly this text before paying.
+    await prisma.order.update({
+      where: { id: order.id },
+      data: { termsAcceptedAt: new Date(), termsVersion: await currentTermsVersion() },
+    });
 
     // The check-and-create step below must be serialized per order: without
     // it, two near-simultaneous requests (double click, two tabs) can both
@@ -304,6 +323,15 @@ export async function POST(req: Request) {
         .update({ where: { id: order.id }, data: failureUpdate })
         .catch(() => undefined);
     }
-    return errorResponse(error, order?.id);
+    const failure = errorResponse(error, order?.id);
+    await recordCheckoutFailure({
+      userId: session.user.id,
+      buildId: typeof body.buildId === "string" ? body.buildId : null,
+      orderId: order?.id ?? null,
+      code: failure.headers.get("x-checkout-code") ?? "UNKNOWN",
+      status: failure.status,
+      cause: error,
+    });
+    return failure;
   }
 }

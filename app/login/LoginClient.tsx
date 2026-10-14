@@ -98,6 +98,10 @@ export default function LoginClient() {
                 </Link>
               </div>
 
+              <Link className="link" href="/forgot-password">
+                Forgot password?
+              </Link>
+
               <Link className="link" href="/">
                 Back to home
               </Link>

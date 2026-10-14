@@ -92,6 +92,7 @@ type BespokeModalProps = {
   onDropAsset: (assetId: string, clientX: number, clientY: number) => void;
   removingAssetId: string | null;
   onSaveTShirt: () => void;
+  onSelectColor: (color: "BLACK" | "WHITE") => void;
 };
 
 // Drag payload type for "Your uploads" -> shirt drag & drop.
@@ -181,6 +182,7 @@ export default function BespokeModal({
   onAddAnotherArtwork,
   onDropAsset,
   onSaveTShirt,
+  onSelectColor,
 }: BespokeModalProps) {
   // The upload whose × was pressed: its tile shows an inline "Remove this
   // upload?" prompt instead of a browser confirm() dialog.
@@ -426,6 +428,30 @@ export default function BespokeModal({
             </div>
           ) : null}
 
+          <div className="studio-bespoke-colour">
+            <div className="studio-bespoke-label">T-Shirt Colour</div>
+            <div className="studio-colour-row">
+              <button
+                type="button"
+                aria-label="Select black"
+                aria-pressed={color === "BLACK"}
+                onClick={() => onSelectColor("BLACK")}
+                className={cn("studio-colour-dot", color === "BLACK" ? "studio-colour-dot-active" : "")}
+              >
+                <span className="studio-colour-dot-core studio-colour-dot-core-black" />
+              </button>
+              <button
+                type="button"
+                aria-label="Select white"
+                aria-pressed={color !== "BLACK"}
+                onClick={() => onSelectColor("WHITE")}
+                className={cn("studio-colour-dot studio-colour-dot-white", color !== "BLACK" ? "studio-colour-dot-active" : "")}
+              >
+                <span className="studio-colour-dot-core studio-colour-dot-core-white" />
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={onAddArtworkClick}
@@ -433,6 +459,46 @@ export default function BespokeModal({
           >
             Upload Artwork
           </button>
+
+          {activeArtworkAsset ? (
+            <div className="studio-artwork-tools">
+              <div className="studio-bespoke-label">Size</div>
+              <div className="studio-artwork-transform-controls">
+                <button
+                  type="button"
+                  onClick={onZoomOut}
+                  aria-label="Zoom artwork out"
+                  className="studio-artwork-zoom-button"
+                >
+                  -
+                </button>
+                <input
+                  type="range"
+                  min={scaleBounds.min}
+                  max={scaleBounds.max}
+                  step="0.05"
+                  value={artworkTransform.scale}
+                  onChange={onArtworkScaleChange}
+                  aria-label="Artwork zoom"
+                />
+                <button
+                  type="button"
+                  onClick={onZoomIn}
+                  aria-label="Zoom artwork in"
+                  className="studio-artwork-zoom-button"
+                >
+                  +
+                </button>
+                <button
+                  type="button"
+                  onClick={onResetArtworkTransform}
+                  className="studio-artwork-reset-button"
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          ) : null}
 
           <div className="studio-bespoke-uploads">
             <div className="studio-bespoke-label">Your Uploads</div>
@@ -539,45 +605,6 @@ export default function BespokeModal({
             </div>
           </div>
 
-          {activeArtworkAsset ? (
-            <div className="studio-artwork-tools">
-              <div className="studio-bespoke-label">Size</div>
-              <div className="studio-artwork-transform-controls">
-                <button
-                  type="button"
-                  onClick={onZoomOut}
-                  aria-label="Zoom artwork out"
-                  className="studio-artwork-zoom-button"
-                >
-                  -
-                </button>
-                <input
-                  type="range"
-                  min={scaleBounds.min}
-                  max={scaleBounds.max}
-                  step="0.05"
-                  value={artworkTransform.scale}
-                  onChange={onArtworkScaleChange}
-                  aria-label="Artwork zoom"
-                />
-                <button
-                  type="button"
-                  onClick={onZoomIn}
-                  aria-label="Zoom artwork in"
-                  className="studio-artwork-zoom-button"
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  onClick={onResetArtworkTransform}
-                  className="studio-artwork-reset-button"
-                >
-                  Reset
-                </button>
-              </div>
-            </div>
-          ) : null}
 
           {mockupError ? <div className="studio-bespoke-error">{mockupError}</div> : null}
         </div>

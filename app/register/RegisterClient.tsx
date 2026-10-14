@@ -86,6 +86,12 @@ export default function RegisterClient() {
 
               {error ? <div className="error">{error}</div> : null}
 
+              <p className="p" style={{ fontSize: 12 }}>
+                By creating an account you agree to our{" "}
+                <Link href="/legal/terms" target="_blank">Terms</Link> and{" "}
+                <Link href="/legal/privacy" target="_blank">Privacy Policy</Link>.
+              </p>
+
               <div className="btnRow">
                 <button className="btn" type="submit" disabled={pending}>
                   {pending ? "Creating..." : "Create"}

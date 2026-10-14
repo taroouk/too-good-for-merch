@@ -1,6 +1,7 @@
 import { PaymentStatus, Role } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -22,7 +23,7 @@ async function statusResponse(orderId: string) {
     },
   });
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
-  if (session.user.role !== Role.ADMIN && order.userId !== session.user.id) {
+  if (order.userId !== session.user.id && !(await isAdminSession())) {
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 

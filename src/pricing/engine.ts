@@ -107,7 +107,7 @@ export async function computePrice({
   // currency of its own, so this is enforced by convention, not the schema.
   // Run alongside placementRules below: neither query depends on the
   // other's result, so there's no reason to pay two sequential round trips.
-  const [rule, placementRules] = await Promise.all([
+  const [rule, placementRules, paused, fabricRow] = await Promise.all([
     prisma.pricingRule.findFirst({
       where: { product, fabric, minQty: { lte: qty }, maxQty: { gte: qty } },
       orderBy: { minQty: "desc" },
@@ -119,7 +119,25 @@ export async function computePrice({
         select: { placement: true, unitPrice: true },
       })
       .catch(() => []),
+    // Admin "pause selling" switch (see CatalogPause in schema.prisma). A
+    // failed lookup fails OPEN (not paused) so a transient DB error here
+    // can't silently stop every sale -- the other lookups above already
+    // degrade the same way.
+    prisma.catalogPause
+      .findUnique({ where: { product_fabric: { product, fabric } }, select: { reason: true } })
+      .catch(() => null),
+    // A fabric an admin deactivated in the catalog can't be bought either.
+    // Unknown keys (legacy rows) and lookup failures fail open.
+    prisma.catalogFabric.findUnique({ where: { key: fabric }, select: { active: true } }).catch(() => null),
   ]);
+
+  if (fabricRow && !fabricRow.active) {
+    return { mode: "custom", unit: null, total: null, currency, message: "This fabric is no longer available" };
+  }
+
+  if (paused) {
+    return { mode: "custom", unit: null, total: null, currency, message: paused.reason?.trim() || "This option is temporarily unavailable" };
+  }
 
   const rangeIndex = RANGES.findIndex(([min, max]) => qty >= min && qty <= max);
   const baseUnit = rule?.unitPrice ?? FALLBACK_PRICES[product]?.[fabric]?.[rangeIndex];

@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Role } from "@prisma/client";
 import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
-import { formatExchangeRate, formatMoney, itemDisplayCurrency } from "src/lib/orders/display";
+import { formatExchangeRate, formatMoney, itemDisplayCurrency, orderItemExtras, resolveOrderMockupIds } from "src/lib/orders/display";
 import PaymentStatusClient from "./PaymentStatusClient";
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
@@ -13,7 +13,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
 
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
   if (!order) notFound();
-  if (session.user.role !== Role.ADMIN && order.userId !== session.user.id) notFound();
+  if (order.userId !== session.user.id && !(await isAdminSession())) notFound();
 
   // Paymob's payment_keys call is created with expiration: 3600 (see
   // createPaymobPayment) - the hosted payment link itself expires after an
@@ -49,15 +49,44 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
             retryEnabled={order.paymentStatus !== "PAID"}
             latestAttemptAt={latestAttempt?.createdAt.toISOString() ?? null}
           />
+          {order.shippedAt && order.carrier ? (
+            <div className="mt-7 rounded-2xl bg-[#f3f1ed] p-5 text-sm">
+              <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">
+                {order.status === "COMPLETED" ? "Delivered" : "Shipped"} · {order.shippedAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+              </p>
+              <p className="mt-2">
+                <strong>{order.carrier}</strong>
+                {order.trackingNumber ? <span className="ml-2 font-mono text-black/70">{order.trackingNumber}</span> : null}
+              </p>
+              {order.trackingUrl ? (
+                <a href={order.trackingUrl} target="_blank" rel="noreferrer noopener" className="mt-3 inline-block rounded-full bg-black px-5 py-2.5 text-xs font-semibold text-white">
+                  Track your parcel
+                </a>
+              ) : null}
+            </div>
+          ) : null}
           <div className="mt-7 border-t border-black/10 pt-6">
-            {order.items.map((item) => (
-              <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
-                <span>
-                  {item.quantity}x {item.product.replaceAll("_", " ")} - {item.fabric.replaceAll("_", " ")}
-                </span>
-                <strong>{formatMoney(item.totalCents, itemCurrency)}</strong>
-              </div>
-            ))}
+            {order.items.map((item) => {
+              const extras = orderItemExtras(item.preview);
+              const mockups = resolveOrderMockupIds(item.preview, null);
+              const imageId = mockups.printMockupId ?? mockups.aiMockupId;
+              const image = imageId ? `/api/mockups/${imageId}/file` : extras.savedArtworkId ? `/api/artworks/${extras.savedArtworkId}/file` : null;
+              return (
+                <div key={item.id} className="flex items-center justify-between gap-4 py-2 text-sm">
+                  <span className="flex items-center gap-3">
+                    {image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={image} alt="Your design" className="h-16 w-16 shrink-0 rounded-xl bg-[#efece6] object-contain" />
+                    ) : null}
+                    <span>
+                      {item.quantity}x {item.product.replaceAll("_", " ")} - {item.fabric.replaceAll("_", " ")}
+                      {extras.size ? <span className="ml-1 text-black/50">· Size {extras.size}</span> : null}
+                    </span>
+                  </span>
+                  <strong>{formatMoney(item.totalCents, itemCurrency)}</strong>
+                </div>
+              );
+            })}
             <div className="mt-3 flex items-center justify-between border-t border-black/10 pt-4 text-lg">
               <strong>Total charged</strong>
               <strong>{formatMoney(order.totalCents, order.currency)}</strong>

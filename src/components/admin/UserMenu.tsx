@@ -2,32 +2,49 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import AuthAction from "src/components/AuthAction";
-import { ChevronDownIcon } from "src/components/admin/ui/icons";
+import { signOut } from "next-auth/react";
+import { ChevronDownIcon, LogoutIcon, StoreIcon } from "src/components/admin/ui/icons";
 
-function MenuOptions({ onNavigate }: { onNavigate: () => void }) {
+const ITEM_CLASS =
+  "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-admin-ink/30";
+
+function MenuOptions({ email, onNavigate }: { email: string; onNavigate: () => void }) {
   return (
-    <>
-      <Link href="/" className="block px-4 py-2.5 text-sm font-medium text-admin-ink hover:bg-admin-canvas" onClick={onNavigate}>
-        View store
-      </Link>
-      <div className="my-1 border-t border-admin-border" />
-      {/* `.authActionReset` (globals.css) sets `color: inherit` and
-          `background: transparent` as plain, unlayered CSS -- since
-          Tailwind's utilities live inside a `@layer`, any unlayered rule
-          beats them regardless of specificity or source order, so a plain
-          `text-red-600` here would silently lose to the sidebar's
-          `text-white` ancestor. The `!` modifier forces these two
-          utilities to `!important`, which layers can't override either. */}
-      <AuthAction className="authActionReset block w-full px-4 py-2.5 text-left text-sm font-medium !text-red-600 hover:!bg-red-50" />
-    </>
+    <div role="menu" aria-label="Account">
+      <div className="px-4 pb-3 pt-3.5">
+        <p className="text-[10px] font-bold uppercase tracking-[.14em] text-admin-faint">Signed in as</p>
+        <p className="mt-1 truncate text-sm font-semibold text-admin-ink" title={email}>{email}</p>
+      </div>
+      <div className="border-t border-admin-border p-1.5">
+        <Link href="/" role="menuitem" onClick={onNavigate} className={`${ITEM_CLASS} text-admin-ink hover:bg-admin-canvas`}>
+          <StoreIcon className="h-4 w-4 shrink-0 text-admin-muted" />
+          View store
+        </Link>
+        {/* Deliberately not <AuthAction>: its `.authActionReset` class (globals.css)
+            is unlayered CSS (padding: 0, text-transform: inherit) and so beats
+            every Tailwind utility here, which is what pushed "LOGOUT" against
+            the edge in capitals. A plain button keeps this menu self-contained. */}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => {
+            onNavigate();
+            void signOut({ callbackUrl: "/admin/login" });
+          }}
+          className={`${ITEM_CLASS} text-red-600 hover:bg-red-50 focus-visible:ring-red-300`}
+        >
+          <LogoutIcon className="h-4 w-4 shrink-0" />
+          Sign out
+        </button>
+      </div>
+    </div>
   );
 }
 
 /**
  * `collapsed` renders as a single circular initial avatar (no label/chevron
  * fits in the 76px rail) whose dropdown opens to the *right* of the sidebar
- * instead of above it -- the same View store / Log out options stay one
+ * instead of above it -- the same View store / Sign out options stay one
  * click away without needing to expand the sidebar first.
  */
 export default function UserMenu({
@@ -76,8 +93,8 @@ export default function UserMenu({
         </button>
 
         {open ? (
-          <div className="absolute bottom-0 left-full z-40 ml-2 w-48 overflow-hidden rounded-xl border border-admin-border bg-white py-1 shadow-lg">
-            <MenuOptions onNavigate={() => setOpen(false)} />
+          <div className="absolute bottom-0 left-full z-40 ml-3 w-64 overflow-hidden rounded-2xl border border-admin-border bg-white shadow-[0_12px_40px_rgba(0,0,0,.18)]">
+            <MenuOptions email={label} onNavigate={() => setOpen(false)} />
           </div>
         ) : null}
       </div>
@@ -99,8 +116,8 @@ export default function UserMenu({
       </button>
 
       {open ? (
-        <div className="absolute bottom-full left-0 z-40 mb-2 w-48 overflow-hidden rounded-xl border border-admin-border bg-white py-1 shadow-lg">
-          <MenuOptions onNavigate={() => setOpen(false)} />
+        <div className="absolute bottom-full left-0 z-40 mb-3 w-64 overflow-hidden rounded-2xl border border-admin-border bg-white shadow-[0_12px_40px_rgba(0,0,0,.18)]">
+          <MenuOptions email={label} onNavigate={() => setOpen(false)} />
         </div>
       ) : null}
     </div>

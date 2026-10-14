@@ -107,6 +107,9 @@ function CheckoutContent() {
   const [addressRegion, setAddressRegion] = useState("");
   const [addressPostalCode, setAddressPostalCode] = useState("");
   const [method, setMethod] = useState<PaymentMethod>("CARD");
+  // Must be ticked to pay; create-intent re-checks it server-side and
+  // records when/which version the customer agreed to on the order.
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [orderId, setOrderId] = useState<string | null>(null);
@@ -188,6 +191,7 @@ function CheckoutContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           orderId: orderId ?? undefined,
+          acceptTerms,
           buildId,
           size,
           method,
@@ -502,9 +506,29 @@ function CheckoutContent() {
               {error ? <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
 
               {detailsLocked ? null : (
+                <label className="flex items-start gap-3 text-sm leading-6 text-black/70">
+                  <input
+                    type="checkbox"
+                    checked={acceptTerms}
+                    onChange={(event) => setAcceptTerms(event.target.checked)}
+                    required
+                    className="mt-1 h-4 w-4 shrink-0 accent-black"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <a href="/legal/terms" target="_blank" rel="noreferrer" className="font-semibold underline underline-offset-2">Terms &amp; Conditions</a>
+                    {" "}and{" "}
+                    <a href="/legal/refunds" target="_blank" rel="noreferrer" className="font-semibold underline underline-offset-2">Refund &amp; Returns Policy</a>
+                    , and understand my order is made to order. See also the{" "}
+                    <a href="/legal/privacy" target="_blank" rel="noreferrer" className="font-semibold underline underline-offset-2">Privacy Policy</a>.
+                  </span>
+                </label>
+              )}
+
+              {detailsLocked ? null : (
                 <button
                   type="submit"
-                  disabled={!canPay || submitting || status === "loading"}
+                  disabled={!canPay || !acceptTerms || submitting || status === "loading"}
                   className="h-12 w-full rounded-xl bg-black text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {submitting

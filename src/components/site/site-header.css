@@ -1,0 +1,387 @@
+/* Site-wide header (src/components/site/SiteHeader.tsx). Moved out of
+   app/(marketing)/marketing.css so every page can render the same bar. */
+
+:root{ --siteHeaderH: 72px; }
+
+/* One typeface for everything in the header and the mobile menu: links,
+   buttons, the account chip and its dropdown. (Buttons ignore the page font
+   unless told to inherit, and the header sits on pages with different body
+   fonts, which is what made its text look inconsistent.) */
+.marketingHeader,
+.mobileMenu{
+  font-family: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+.marketingHeader *,
+.mobileMenu *{
+  font-family: inherit;
+}
+
+.marketingHeader,
+.mobileMenu{
+  --headerH: 72px;
+  --gutter: clamp(16px, 3.2vw, 40px);
+  --container: 1320px;
+}
+
+.marketingHeader{
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  height: var(--headerH);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  padding: 10px var(--gutter);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: rgba(255,255,255,.92);
+  border-bottom: 1px solid rgba(0,0,0,.08);
+  transition: background .25s ease, border .25s ease;
+}
+
+.marketingHeader.scrolled{
+  background: rgba(255,255,255,.98);
+  border-bottom: 1px solid rgba(0,0,0,.14);
+}
+
+.marketingNav{
+  display: flex;
+  gap: 26px;
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.marketingNavRight{ justify-content: flex-end; flex-wrap: nowrap; gap: 16px; white-space: nowrap; letter-spacing: .1em; }
+.marketingNavLeft{ white-space: nowrap; }
+
+.marketingLogo{
+  justify-self: center;
+  display: inline-flex;
+  align-items: center;
+}
+.marketingLogo img{ height: 24px; display: block; }
+
+.marketingHeader a,
+.marketingHeader a:visited,
+.marketingHeader button{
+  color: #000 !important;
+  text-decoration: none !important;
+  opacity: .9;
+  transition: opacity .2s ease;
+}
+.marketingHeader a:hover,
+.marketingHeader a:focus-visible,
+.marketingHeader button:hover,
+.marketingHeader button:focus-visible{
+  opacity: .6;
+  outline: none;
+}
+
+.mobileMenuBtn{
+  display: none;
+  justify-self: start;
+  border: 0;
+  background: transparent;
+  padding: 8px 0;
+  color: #000;
+  font: inherit;
+  cursor: pointer;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.mobileMenuWord{
+  position: relative;
+  display: inline-block;
+  height: 26px;
+  min-width: 64px;
+}
+
+.mobileMenuWord .full,
+.mobileMenuWord .split{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  letter-spacing: .18em;
+  transition: opacity .35s cubic-bezier(.4,0,.2,1),
+              transform .35s cubic-bezier(.4,0,.2,1);
+}
+
+.mobileMenuWord .full{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mobileMenuWord .split{
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.mobileMenuWord .split span{
+  display: block;
+  transform: translateY(6px);
+  opacity: 0;
+  transition: transform .4s cubic-bezier(.4,0,.2,1),
+              opacity .4s cubic-bezier(.4,0,.2,1);
+}
+
+.mobileMenuBtn[aria-expanded="true"] .mobileMenuWord .full{
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.mobileMenuBtn[aria-expanded="true"] .mobileMenuWord .split{
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.mobileMenuBtn[aria-expanded="true"] .mobileMenuWord .split span{
+  transform: translateY(0);
+  opacity: 1;
+}
+
+.mobileMenuBtn[aria-expanded="true"] .mobileMenuWord .split .nu{
+  transition-delay: .06s;
+}
+
+.mobileMenu{
+  display: none;
+  position: sticky;
+  top: var(--headerH);
+  z-index: 999;
+  background: rgba(255,255,255,.98);
+  border-bottom: 1px solid rgba(0,0,0,.10);
+}
+
+.mobileMenuInner{
+  max-width: var(--container);
+  margin: 0 auto;
+  padding: 18px var(--gutter) 22px;
+  display: grid;
+  gap: 18px;
+}
+
+.mobileMenuGroup{
+  display: grid;
+  gap: 10px;
+}
+
+.mobileMenuDivider{
+  height: 1px;
+  background: rgba(0,0,0,.12);
+}
+
+.mobileMenu a,
+.mobileMenu button{
+  text-decoration: none !important;
+  color: #000 !important;
+  font-size: 16px;
+  letter-spacing: .20em;
+  text-transform: uppercase;
+  padding: 10px 0;
+  opacity: .92;
+}
+.mobileMenu a:hover,
+.mobileMenu button:hover{ opacity: .6; }
+
+/* Current page marker */
+.marketingHeader a[aria-current="page"]{
+  opacity: 1;
+  text-decoration: underline !important;
+  text-underline-offset: 7px;
+  text-decoration-thickness: 1.5px;
+}
+.mobileMenu a[aria-current="page"]{
+  opacity: 1;
+  text-decoration: underline !important;
+  text-underline-offset: 7px;
+}
+
+/* A page's own full-height wrapper (min-h-screen / .authShell) should fill
+   the space UNDER the header, not push the page 72px past the viewport. */
+body:has(.marketingHeader) .siteMain .min-h-screen{
+  min-height: calc(100dvh - var(--siteHeaderH, 72px));
+}
+
+@media (max-width: 720px){
+  :root{ --siteHeaderH: 64px; }
+
+  .marketingHeader,
+  .mobileMenu{
+    --headerH: 64px;
+    --gutter: 18px;
+  }
+
+}
+
+/* ---- Signed-in account chip + menu ---- */
+.siteAccount{ position: relative; }
+.siteAccountPlaceholder{ display: inline-block; width: 92px; height: 32px; }
+
+.marketingHeader .siteAccountButton{
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 12px 4px 4px;
+  border: 1px solid rgba(0,0,0,.14);
+  border-radius: 999px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 1;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.marketingHeader .siteAccountButton:hover,
+.marketingHeader .siteAccountButton[aria-expanded="true"]{
+  opacity: 1;
+  border-color: rgba(0,0,0,.4);
+  box-shadow: 0 2px 10px rgba(0,0,0,.08);
+}
+.marketingHeader .siteAccountButton:focus-visible{ outline: 2px solid rgba(0,0,0,.35); outline-offset: 2px; }
+
+.siteAvatar{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #000;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.siteAvatarLg{ width: 40px; height: 40px; font-size: 15px; }
+
+.siteAccountName{
+  max-width: 108px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 400;
+  letter-spacing: .1em;
+}
+.siteAccountChevron{ transition: transform .2s ease; opacity: .6; }
+.siteAccountChevron[data-open="true"]{ transform: rotate(180deg); }
+
+.siteAccountPanel{
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 1100;
+  width: 272px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.1);
+  border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0,0,0,.16);
+  text-align: left;
+}
+.siteAccountHead,
+.mobileProfile{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.siteAccountHead{ padding: 16px 18px; }
+.siteAccountHeadText{ display: grid; min-width: 0; gap: 2px; }
+.siteAccountHeadText strong{ font-size: 14px; letter-spacing: .02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.siteAccountHeadText small{ font-size: 12px; opacity: .6; letter-spacing: 0; text-transform: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.siteAccountList{ display: grid; padding: 6px; border-top: 1px solid rgba(0,0,0,.08); }
+.marketingHeader .siteAccountList a,
+.marketingHeader .siteAccountList button{
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: .12em;
+  text-align: left;
+  text-transform: uppercase;
+  cursor: pointer;
+  opacity: 1;
+}
+.marketingHeader .siteAccountList a:hover,
+.marketingHeader .siteAccountList button:hover,
+.marketingHeader .siteAccountList a:focus-visible,
+.marketingHeader .siteAccountList button:focus-visible{
+  opacity: 1;
+  background: rgba(0,0,0,.05);
+  outline: none;
+}
+.marketingHeader .siteAccountList a[aria-current="page"]{ text-decoration: none !important; background: rgba(0,0,0,.07); font-weight: 700; }
+.marketingHeader .siteAccountList .siteAccountSignOut{ color: #c42a2a !important; }
+.marketingHeader .siteAccountList .siteAccountSignOut:hover{ background: rgba(196,42,42,.08); }
+
+.mobileProfile{ padding: 2px 0 4px; }
+.mobileProfile .siteAccountHeadText strong{ font-size: 15px; letter-spacing: .06em; }
+
+.mobileMenuGroup button{ text-align: left; justify-self: start; border: 0; background: transparent; cursor: pointer; }
+
+/* My bag */
+.marketingHeader a.siteBagLink{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.siteBagCount{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #000;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+/* The right-hand group never wraps onto a second line; instead the burger
+   menu takes over earlier when there is more in it (signed-in customers,
+   and admins most of all). */
+
+/* Burger menu: below 900px for everyone (the left group now carries MY BAG),
+   and below 1000px for signed-in customers, whose right side has the account chip. */
+@media (max-width: 900px){
+  .marketingHeader{ grid-template-columns: 1fr auto; }
+  .marketingNav{ display: none; }
+  .mobileMenuBtn{ display: inline-flex; }
+  .marketingLogo{ justify-self: end; }
+  .marketingHeader + .mobileMenu{ display: block; }
+  .marketingHeader + .mobileMenu[data-open="false"]{ display: none; }
+}
+@media (max-width: 1000px){
+  .marketingHeader[data-density="user"]{ grid-template-columns: 1fr auto; }
+  .marketingHeader[data-density="user"] .marketingNav{ display: none; }
+  .marketingHeader[data-density="user"] .mobileMenuBtn{ display: inline-flex; }
+  .marketingHeader[data-density="user"] .marketingLogo{ justify-self: end; }
+  .marketingHeader[data-density="user"] + .mobileMenu{ display: block; }
+  .marketingHeader[data-density="user"] + .mobileMenu[data-open="false"]{ display: none; }
+}
+
+.siteBagCount.isEmpty{ background: rgba(0,0,0,.12); color: #000; }

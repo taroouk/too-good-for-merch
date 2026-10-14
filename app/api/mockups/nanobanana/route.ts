@@ -1,5 +1,5 @@
 import { Role } from "@prisma/client";
-import sharp from "sharp";
+import sharp, { type Metadata } from "sharp";
 import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
@@ -442,7 +442,15 @@ function logGeminiResponse({
     status,
     statusText,
   });
-  console.info("Nano Banana Gemini response body:", body);
+  // A successful response embeds the generated image as base64 (hundreds of
+  // KB) -- keep only the head, which is enough to read status/usage/errors.
+  const MAX_LOGGED_BODY_CHARS = 600;
+  console.info(
+    "Nano Banana Gemini response body:",
+    body.length > MAX_LOGGED_BODY_CHARS
+      ? `${body.slice(0, MAX_LOGGED_BODY_CHARS)}...[truncated, ${body.length} chars total]`
+      : body,
+  );
   console.info("Nano Banana parsed image location:", parsedImageLocation);
 }
 
@@ -531,7 +539,7 @@ export async function POST(req: Request) {
 
     const template = await loadTemplateBuffer(product, color, side);
 
-    let templateMeta: sharp.Metadata;
+    let templateMeta: Metadata;
     try {
       templateMeta = await sharp(template).metadata();
     } catch {
@@ -556,7 +564,7 @@ export async function POST(req: Request) {
       if (!artwork) {
         return apiError("Artwork file missing.", 404);
       }
-      let artworkMeta: sharp.Metadata;
+      let artworkMeta: Metadata;
       try {
         artworkMeta = await sharp(artwork).metadata();
       } catch {
@@ -798,7 +806,7 @@ export async function POST(req: Request) {
       // remapping: the geometry Gemini's response actually has is never
       // trusted, only its pixels are.
       try {
-        let candidateMeta: sharp.Metadata;
+        let candidateMeta: Metadata;
         try {
           candidateMeta = await sharp(candidateImage).metadata();
         } catch {

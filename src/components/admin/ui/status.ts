@@ -12,6 +12,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   NEW: "Pending",
   PAID: "Paid",
   IN_PRODUCTION: "Processing",
+  SHIPPED: "Shipped",
   COMPLETED: "Completed",
   CANCELLED: "Cancelled",
 };
@@ -19,6 +20,7 @@ export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
 export function orderStatusTone(status: OrderStatus): BadgeTone {
   if (status === OrderStatus.PAID) return "success";
   if (status === OrderStatus.IN_PRODUCTION) return "info";
+  if (status === OrderStatus.SHIPPED) return "info";
   if (status === OrderStatus.COMPLETED) return "dark";
   if (status === OrderStatus.CANCELLED) return "danger";
   return "warning";

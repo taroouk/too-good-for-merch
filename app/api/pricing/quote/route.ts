@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { apiError, readJsonObject } from "src/lib/api/responses";
 import { inMemoryRateLimit, rateLimitHeaders } from "src/lib/rate-limit";
 import { computePrice } from "src/pricing/engine";
+import { getKnownFabricKeys } from "src/lib/catalog";
 import { normalizePlacements } from "src/pricing/placements";
 
 const PRODUCTS = new Set(["FITTED", "OVERSIZED", "CUSTOM"]);
-const FABRICS = new Set(["ESSENTIALS_170", "SIGNATURE_200", "HEAVYWEIGHT_300"]);
 
 export async function POST(req: Request) {
   const limit = inMemoryRateLimit(req, "pricing:quote", 120, 5 * 60 * 1000);
@@ -21,7 +21,7 @@ export async function POST(req: Request) {
   if (productRaw != null && (typeof productRaw !== "string" || !PRODUCTS.has(productRaw))) {
     return apiError("Invalid product.", 400);
   }
-  if (fabricRaw != null && (typeof fabricRaw !== "string" || !FABRICS.has(fabricRaw))) {
+  if (fabricRaw != null && (typeof fabricRaw !== "string" || !(await getKnownFabricKeys()).has(fabricRaw))) {
     return apiError("Invalid fabric.", 400);
   }
 

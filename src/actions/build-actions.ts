@@ -9,10 +9,10 @@ import { normalizeArtworkPlacement } from "src/lib/artwork/save";
 import { draftArtworkLayers, normalizeArtworkLayers } from "src/studio/artwork-layers";
 import { upsertPlacementsInNotes } from "src/pricing/placements";
 import { BuildStatus, Prisma } from "@prisma/client";
+import { getKnownFabricKeys } from "src/lib/catalog";
 
 const PRODUCT = ["FITTED", "OVERSIZED", "CUSTOM"] as const;
 const COLOR = ["BLACK", "WHITE", "CUSTOM"] as const;
-const FABRIC = ["ESSENTIALS_170", "SIGNATURE_200", "HEAVYWEIGHT_300"] as const;
 
 function asEnum<T extends readonly string[]>(
   value: unknown,
@@ -22,6 +22,13 @@ function asEnum<T extends readonly string[]>(
   return (allowed as readonly string[]).includes(value)
     ? (value as T[number])
     : null;
+}
+
+// Fabrics are admin-managed (CatalogFabric), so validate against the live
+// catalog rather than a hard-coded list.
+async function asFabric(value: unknown): Promise<string | null> {
+  if (typeof value !== "string" || !value) return null;
+  return (await getKnownFabricKeys()).has(value) ? value : null;
 }
 
 export async function actionCreateBuild(formData: FormData) {
@@ -80,7 +87,7 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
 
   const product = asEnum(formData.get("product"), PRODUCT);
   const color = asEnum(formData.get("color"), COLOR);
-  const fabric = asEnum(formData.get("fabric"), FABRIC);
+  const fabric = await asFabric(formData.get("fabric"));
 
   const quantityRaw = formData.get("quantity");
   const quantityParsed =
@@ -297,7 +304,7 @@ export async function actionSwitchProduct(
 
   const nextProduct = asEnum(input.product, PRODUCT);
   if (!nextProduct) throw new Error("Invalid product.");
-  const nextFabric = asEnum(input.fabric, FABRIC);
+  const nextFabric = await asFabric(input.fabric);
 
   const draft = await prisma.buildDraft.findUnique({
     where: { buildId },

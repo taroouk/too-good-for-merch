@@ -1,7 +1,9 @@
 import type { ProductType } from "@prisma/client";
+import { DEFAULT_PRODUCT_COPY, type ProductCopy } from "src/lib/catalog-shared";
 
 type ProductSelectorProps = {
   product: ProductType | null;
+  copy?: Record<"FITTED" | "OVERSIZED", ProductCopy>;
   onSelectFitted: () => void;
   onSelectOversized: () => void;
   onRequestCustom: () => void;
@@ -13,6 +15,7 @@ function cn(...parts: Array<string | false | null | undefined>) {
 
 export default function ProductSelector({
   product,
+  copy = DEFAULT_PRODUCT_COPY,
   onSelectFitted,
   onSelectOversized,
   onRequestCustom,
@@ -41,8 +44,8 @@ export default function ProductSelector({
               : "studio-product-button-idle",
           )}
         >
-          <span>Fitted T-Shirt</span>
-          <span className="studio-product-meta">Classic</span>
+          <span>{copy.FITTED.name}</span>
+          <span className="studio-product-meta">{copy.FITTED.tagline}</span>
         </button>
 
         <button
@@ -55,8 +58,8 @@ export default function ProductSelector({
               : "studio-product-button-idle",
           )}
         >
-          <span>Oversized T-Shirt</span>
-          <span className="studio-product-meta">Relaxed</span>
+          <span>{copy.OVERSIZED.name}</span>
+          <span className="studio-product-meta">{copy.OVERSIZED.tagline}</span>
         </button>
 
         <button

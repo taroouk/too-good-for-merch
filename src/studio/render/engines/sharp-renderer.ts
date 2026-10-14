@@ -1,5 +1,5 @@
 // file: src/studio/render/engines/sharp-renderer.ts
-import sharp from "sharp";
+import sharp, { type Metadata, type Sharp } from "sharp";
 import { RendererError } from "../errors";
 import { BASELINE_RENDER_DPI, resolvePlacement } from "../transform";
 import { compositeArtworkOntoBase } from "../composite";
@@ -13,8 +13,8 @@ export class SharpMockupRenderer implements MockupRenderer {
   async render(req: RenderRequest): Promise<RenderedMockup> {
     const { artwork, template, product, color, placement, transform, dpi } = req;
 
-    let templateImage: sharp.Sharp;
-    let templateMeta: sharp.Metadata;
+    let templateImage: Sharp;
+    let templateMeta: Metadata;
     try {
       templateImage = sharp(template);
       templateMeta = await templateImage.metadata();
@@ -26,8 +26,8 @@ export class SharpMockupRenderer implements MockupRenderer {
       throw new RendererError("Garment template image is missing dimensions.", 500);
     }
 
-    let artworkImage: sharp.Sharp;
-    let artworkMeta: sharp.Metadata;
+    let artworkImage: Sharp;
+    let artworkMeta: Metadata;
     try {
       artworkImage = sharp(artwork);
       artworkMeta = await artworkImage.metadata();
@@ -144,7 +144,7 @@ export async function renderLayeredMockup(req: {
     });
   }
 
-  let templateMeta: sharp.Metadata;
+  let templateMeta: Metadata;
   try {
     templateMeta = await sharp(req.template).metadata();
   } catch {

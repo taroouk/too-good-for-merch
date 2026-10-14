@@ -68,7 +68,7 @@
 // any per-garment tuning table -- and a genuinely flat region (a standard
 // deviation at or below the floor) still produces almost no modulation,
 // so sensor noise never gets amplified into fake texture.
-import sharp from "sharp";
+import sharp, { type OutputInfo } from "sharp";
 import { RendererError } from "./errors";
 
 export type FabricShadingOptions = {
@@ -202,8 +202,8 @@ export async function applyFabricShading(
   garment: Buffer,
   options: FabricShadingOptions = DEFAULT_FABRIC_SHADING,
 ): Promise<Buffer> {
-  let art: { data: Buffer; info: sharp.OutputInfo };
-  let lum: { data: Buffer; info: sharp.OutputInfo };
+  let art: { data: Buffer; info: OutputInfo };
+  let lum: { data: Buffer; info: OutputInfo };
   try {
     art = await sharp(artwork).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     lum = await sharp(garment)

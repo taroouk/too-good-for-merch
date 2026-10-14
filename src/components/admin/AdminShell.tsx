@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import AdminFlash from "src/components/admin/AdminFlash";
 import SidebarNav from "src/components/admin/SidebarNav";
 import MobileNav from "src/components/admin/MobileNav";
 import { MenuIcon } from "src/components/admin/ui/icons";
@@ -12,6 +13,7 @@ export default function AdminShell({ children, email }: { children: React.ReactN
 
   return (
     <div className="min-h-screen bg-admin-canvas text-admin-ink">
+      <AdminFlash />
       <SidebarNav email={email} collapsed={collapsed} onToggleCollapse={() => setCollapsed((value) => !value)} />
       <MobileNav email={email} open={mobileOpen} onOpenChange={setMobileOpen} />
 

@@ -26,6 +26,8 @@ import { runSuite } from "./test-harness";
 
 const FRONT_TEE = "/images/front -tshirt 1.png";
 const BACK_TEE = "/images/t-shirt back 1.png";
+const FRONT_TEE_BLACK = "/images/front -tshirt 1 black.png";
+const BACK_TEE_BLACK = "/images/t-shirt back 1 black.png";
 
 export async function runAll() {
   return runSuite("bespoke-shirt-image", {
@@ -65,11 +67,13 @@ export async function runAll() {
       }
     },
 
-    "the editor surface is garment-agnostic: product and colour cannot change which image is shown"() {
+    "the editor surface is product-agnostic; only BLACK colour switches to the black tee"() {
       for (const placement of ["CENTER_FRONT", "CENTER_BACK"] as const) {
-        const expected = placement === "CENTER_FRONT" ? FRONT_TEE : BACK_TEE;
         for (const product of ["FITTED", "OVERSIZED", "CUSTOM", null] as const) {
           for (const color of ["WHITE", "BLACK", "CUSTOM", null] as const) {
+            const white = placement === "CENTER_FRONT" ? FRONT_TEE : BACK_TEE;
+            const black = placement === "CENTER_FRONT" ? FRONT_TEE_BLACK : BACK_TEE_BLACK;
+            const expected = color === "BLACK" ? black : white;
             assert.equal(
               getBespokeShirtImage(product, color, placement),
               expected,
@@ -80,7 +84,7 @@ export async function runAll() {
       }
     },
 
-    "exactly 2 distinct image paths exist across every (product, color, side) combination -- one per side"() {
+    "exactly 4 distinct image paths exist across every (product, color, side) combination -- white/black per side"() {
       const seen = new Set<string>();
       for (const product of ["FITTED", "OVERSIZED", "CUSTOM"] as const) {
         for (const color of ["WHITE", "BLACK", "CUSTOM"] as const) {
@@ -91,8 +95,8 @@ export async function runAll() {
       }
       assert.deepEqual(
         [...seen].sort(),
-        [FRONT_TEE, BACK_TEE].sort(),
-        `expected exactly the two flat editor tees, got: ${[...seen].join(", ")}`,
+        [FRONT_TEE, BACK_TEE, FRONT_TEE_BLACK, BACK_TEE_BLACK].sort(),
+        `expected exactly the four flat editor tees, got: ${[...seen].join(", ")}`,
       );
     },
 

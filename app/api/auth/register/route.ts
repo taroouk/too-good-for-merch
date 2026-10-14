@@ -77,8 +77,14 @@ export async function POST(req: Request) {
     const body = await readJsonObject(req);
     if (!body) return apiError("Invalid JSON request.", 400);
 
-    const emailRaw = (body?.email ?? "").toString();
-    const passwordRaw = (body?.password ?? "").toString();
+    // Only real strings are accepted: coercing an array/object with
+    // .toString() used to create accounts whose password was the literal
+    // text "[object Object]".
+    if ((body.email != null && typeof body.email !== "string") || (body.password != null && typeof body.password !== "string")) {
+      return apiError("Invalid request.", 400);
+    }
+    const emailRaw = body.email ?? "";
+    const passwordRaw = body.password ?? "";
 
     const email = emailRaw.toLowerCase().trim();
     const password = passwordRaw;

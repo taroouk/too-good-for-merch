@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { FabricType, GarmentColor, PaymentStatus, Prisma, ProductType } from "@prisma/client";
+import { GarmentColor, PaymentStatus, Prisma, ProductType } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { computePrice, customQuotePriceResult } from "src/pricing/engine";
 import { isValidExchangeRate } from "src/pricing/currency";
@@ -133,6 +133,11 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     placements: safePlacements,
     transform,
     layers,
+    savedArtworkId: build.draft.savedArtworkId ?? null,
+    printMockupId: build.draft.printMockupId ?? null,
+    aiMockupId: build.draft.aiMockupId ?? null,
+    backPrintMockupId: build.draft.backPrintMockupId ?? null,
+    backAiMockupId: build.draft.backAiMockupId ?? null,
   });
 
   // Canonical pricing is entirely in USD; the conversion to the payment
@@ -252,7 +257,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
         items: {
           create: {
             product: product as ProductType,
-            fabric: fabric as FabricType,
+            fabric,
             color: color as GarmentColor,
             quantity,
             // OrderItem stays canonical USD on purpose -- pricing is USD
@@ -282,6 +287,9 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
               // customer keeps generating new mockups on the same Build
               // after paying. See resolveOrderMockupIds in
               // src/lib/orders/display.ts for how this is consumed.
+              // The saved (AI) artwork itself, so production can open the
+              // original file -- the mockups above are only previews.
+              savedArtworkId: build.draft?.savedArtworkId ?? null,
               printMockupId: build.draft?.printMockupId ?? null,
               aiMockupId: build.draft?.aiMockupId ?? null,
               // Multi-artwork: every layer, and the back-of-garment mockups

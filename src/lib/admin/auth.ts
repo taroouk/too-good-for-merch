@@ -38,8 +38,20 @@ export async function getAdminUser() {
   return { ...session.user, id: user.id, email: user.email, role: user.role };
 }
 
+// True only for an ACTIVE admin per the database (not the JWT's frozen role
+// claim, which is stale after a promotion/demotion). Used by routes that let
+// admins view customer files and orders.
+export async function isAdminSession(): Promise<boolean> {
+  return (await getAdminUser()) != null;
+}
+
 export async function requireAdmin() {
   const admin = await getAdminUser();
-  if (!admin) redirect("/login?callbackUrl=/admin");
+  if (!admin) {
+    // Signed in but not (or no longer) an admin -> the login page explains
+    // that and offers to sign out; not signed in -> plain login form.
+    const session = await auth();
+    redirect(session?.user?.id ? "/admin/login?denied=1" : "/admin/login");
+  }
   return admin;
 }

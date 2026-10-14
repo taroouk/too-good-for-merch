@@ -41,6 +41,35 @@ export async function runAll() {
       assert.equal(reusable, false);
     },
 
+    "a new mockup or saved artwork (same price/size) -> stale order not reused"() {
+      const existingSignature = buildDesignSignature({ ...baseInput, printMockupId: "m1", aiMockupId: "m2", savedArtworkId: "art1" });
+      const reuse = (overrides: Record<string, string | null>) =>
+        canReuseOrder({
+          existing: { currency: "EGP", totalCents: 10000, existingSignature },
+          candidate: { currency: "EGP", totalCents: 10000, signature: buildDesignSignature({ ...baseInput, printMockupId: "m1", aiMockupId: "m2", savedArtworkId: "art1", ...overrides }) },
+        });
+      assert.equal(reuse({}), true);
+      assert.equal(reuse({ printMockupId: "m9" }), false);
+      assert.equal(reuse({ aiMockupId: "m9" }), false);
+      assert.equal(reuse({ savedArtworkId: "art2" }), false);
+      assert.equal(reuse({ backPrintMockupId: "b1" }), false);
+      assert.equal(reuse({ backAiMockupId: "b1" }), false);
+    },
+
+    "an older order with no mockup fields only matches a design that also has none"() {
+      const legacy = buildDesignSignature(baseInput); // as stored before these fields existed
+      const stripped = { ...legacy } as Record<string, unknown>;
+      delete stripped.printMockupId; delete stripped.aiMockupId; delete stripped.savedArtworkId;
+      delete stripped.backPrintMockupId; delete stripped.backAiMockupId;
+      const reuse = (signature: ReturnType<typeof buildDesignSignature>) =>
+        canReuseOrder({
+          existing: { currency: "EGP", totalCents: 10000, existingSignature: stripped as ReturnType<typeof buildDesignSignature> },
+          candidate: { currency: "EGP", totalCents: 10000, signature },
+        });
+      assert.equal(reuse(buildDesignSignature(baseInput)), true);
+      assert.equal(reuse(buildDesignSignature({ ...baseInput, printMockupId: "m1" })), false);
+    },
+
     "changed color -> stale order not reused"() {
       const existingSignature = buildDesignSignature(baseInput);
       const candidate = candidateFrom({ color: "WHITE" });

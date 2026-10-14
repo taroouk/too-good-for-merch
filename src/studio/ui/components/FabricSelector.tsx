@@ -1,5 +1,5 @@
 import type { RefObject } from "react";
-import type { FabricType } from "@prisma/client";
+import type { FabricType } from "src/lib/catalog-shared";
 
 type FabricOption = {
   key: FabricType;

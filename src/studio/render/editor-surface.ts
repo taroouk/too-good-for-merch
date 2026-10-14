@@ -59,6 +59,13 @@ const EDITOR_FILES: Record<GarmentSide, string> = {
   back: "t-shirt back 1.png",
 };
 
+// Same flat tees, same pixel size and alpha silhouette (so EDITOR_FRAMES and
+// EDITOR_PIXEL_SIZE stay valid), tinted black.
+const EDITOR_FILES_BLACK: Record<GarmentSide, string> = {
+  front: "front -tshirt 1 black.png",
+  back: "t-shirt back 1 black.png",
+};
+
 // Real pixel dimensions, read off the files themselves with sharp. Used as
 // the FALLBACK canvas aspect ratio before the <img> has loaded (the popup
 // measures the displayed image's own naturalWidth/naturalHeight once it
@@ -122,8 +129,9 @@ function resolveColor(color: string | null | undefined): GarmentColor {
   return color === "BLACK" ? "BLACK" : "WHITE";
 }
 
-export function getEditorTemplateSrc(placement: PlacementType): string {
-  return `/images/${EDITOR_FILES[getPlacementSide(placement)]}`;
+export function getEditorTemplateSrc(placement: PlacementType, color?: string | null): string {
+  const files = color === "BLACK" ? EDITOR_FILES_BLACK : EDITOR_FILES;
+  return `/images/${files[getPlacementSide(placement)]}`;
 }
 
 export function getEditorAspectRatio(side: GarmentSide): number {

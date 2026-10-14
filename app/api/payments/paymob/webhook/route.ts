@@ -1,4 +1,6 @@
-import { PaymentAttemptStatus, PaymentStatus, Prisma } from "@prisma/client";
+import { sendOrderConfirmationEmail } from "src/lib/notify/order";
+import { removePaidBagItem } from "src/lib/bag-server";
+import { OrderStatus, PaymentAttemptStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { apiError } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
@@ -7,6 +9,7 @@ import {
   classifyTransaction,
   paymentFailureReason,
   transactionMatchesOrder,
+  baseOrderNumber,
   verifyPaymobHmac,
   webhookEventKey,
 } from "src/lib/payments/paymob";
@@ -85,7 +88,8 @@ export async function POST(req: Request) {
   const remoteOrder = asObject(object.order);
   const paymobOrderId =
     remoteOrder.id == null ? (typeof object.order === "number" ? String(object.order) : "") : String(remoteOrder.id);
-  const merchantOrderId = remoteOrder.merchant_order_id == null ? "" : String(remoteOrder.merchant_order_id);
+  const merchantOrderId =
+    remoteOrder.merchant_order_id == null ? "" : baseOrderNumber(String(remoteOrder.merchant_order_id));
   const order = await prisma.order.findFirst({
     where: {
       OR: [
@@ -188,6 +192,26 @@ export async function POST(req: Request) {
           where: { id: current.id },
           data: classification.update,
         });
+
+        // Payment behaviour is unchanged (money received is always recorded);
+        // this only makes sure the team notices a payment that arrived for an
+        // order they had already cancelled, so it can be refunded or reinstated.
+        if (current.status === OrderStatus.CANCELLED) {
+          await tx.adminNote.create({
+            data: {
+              orderId: current.id,
+              body: `Payment received after this order was cancelled (Paymob transaction ${transactionId ?? "unknown"}). Review for a refund or reinstate the order.`,
+            },
+          });
+          await tx.adminAuditLog.create({
+            data: {
+              orderId: current.id,
+              action: "PAYMENT_RECEIVED_FOR_CANCELLED_ORDER",
+              newValue: transactionId,
+              metadata: { note: "A successful Paymob payment arrived for a CANCELLED order." } as Prisma.InputJsonValue,
+            },
+          });
+        }
       }
     } else if (failed && current.paymentStatus !== PaymentStatus.PAID && current.paymentStatus !== PaymentStatus.REFUNDED) {
       await tx.order.update({
@@ -230,6 +254,14 @@ export async function POST(req: Request) {
     maxWait: 10_000,
     timeout: 15_000,
   });
+
+  // After the payment state is durably committed: tell the customer. Fully
+  // isolated -- never throws, and is idempotent per order, so a Paymob
+  // redelivery can't email twice or fail the webhook.
+  if (succeeded) {
+    await sendOrderConfirmationEmail(order.id);
+    await removePaidBagItem(order.id);
+  }
 
   return NextResponse.json({ received: true });
 }

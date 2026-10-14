@@ -354,5 +354,22 @@ export async function runAll() {
       const image = await opaqueCanvasWithRect(500, rect);
       await assert.rejects(() => detectGarmentBBox(image), RendererError);
     },
+
+    async "a tightly cropped TEMPLATE (garment fills ~100% of its height) is accepted"() {
+      // Mirrors the real FITTED/BLACK front template: 1118x2353, garment bbox
+      // heightFrac 0.997 -- legitimate for our own asset.
+      const rect = { left: 10, top: 7, width: 1104, height: 2346 };
+      const rectBuf = await sharp({ create: { width: rect.width, height: rect.height, channels: 4, background: { r: 20, g: 20, b: 20, alpha: 1 } } }).png().toBuffer();
+      const image = await sharp({ create: { width: 1118, height: 2353, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+        .composite([{ input: rectBuf, left: rect.left, top: rect.top }])
+        .png()
+        .toBuffer();
+      const bbox = await detectGarmentBBox(image, { role: "template", product: "FITTED", color: "BLACK", placement: "CENTER_FRONT" });
+      assert.equal(bbox.height, rect.height);
+      assert.equal(bbox.method, "alpha-scan");
+      // ...while the same geometry coming back from Gemini is still rejected.
+      await assert.rejects(() => detectGarmentBBox(image, { role: "gemini-output" }), RendererError);
+      await assert.rejects(() => detectGarmentBBox(image), RendererError);
+    },
   });
 }

@@ -2049,6 +2049,7 @@ h6,
 .studio-artwork-tools {
   display: grid;
   gap: 9px;
+  margin-top: 16px;
 }
 
 .studio-artwork-transform-controls {
@@ -7948,4 +7949,30 @@ body {
 @keyframes studioOverlayFadeIn {
   from { background-color: rgba(0, 0, 0, 0); }
   to { background-color: rgba(0, 0, 0, 0.46); }
+}
+
+.studio-bespoke-colour {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+  margin-bottom: 24px;
+}
+
+.studio-bespoke-colour .studio-bespoke-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+}
+
+.studio-bespoke-colour .studio-colour-row {
+  gap: 16px !important;
+  padding: 4px;
+}
+
+.studio-bespoke-colour .studio-colour-dot {
+  width: 36px !important;
+  height: 36px !important;
+  flex: 0 0 36px;
+  padding: 0 !important;
 }

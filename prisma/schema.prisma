@@ -24,6 +24,7 @@ model User {
   auditLogs    AdminAuditLog[]
   artworks            Artwork[]
   wishlistItems       WishlistItem[]
+  bagItems            BagItem[]
   bespokeRequests     BespokeRequest[]
   bespokeRequestNotes BespokeRequestNote[]
 }
@@ -43,6 +44,7 @@ model Build {
   mockups   Mockup[]
   artworks        Artwork[]
   wishlistItems   WishlistItem[]
+  bagItems        BagItem[]
   bespokeRequests BespokeRequest[]
 
   @@index([userId])
@@ -57,7 +59,7 @@ model BuildDraft {
   buildId        String        @unique
   product        ProductType?
   color          GarmentColor?
-  fabric         FabricType?
+  fabric         String?
   quantity       Int           @default(1)
   customNotes    String?
   primaryAssetId String?
@@ -228,6 +230,20 @@ model Order {
   paymobTransactionId  String?
   paymentFailureReason String?
   paidAt               DateTime?
+  // Set once the payment-confirmation email has been delivered to the
+  // provider (src/lib/notify/order.ts); doubles as the idempotency guard so a
+  // redelivered webhook never emails the customer twice.
+  confirmationEmailSentAt DateTime?
+  // Checkout consent: when the customer ticked "I agree to the Terms and
+  // Refund policy", and which revision of those pages was live (the newest
+  // LegalPage.updatedAt, ISO). Null on orders placed before consent existed.
+  termsAcceptedAt         DateTime?
+  termsVersion            String?
+  // Fulfilment (set via the admin "Mark as shipped" form).
+  carrier                 String?
+  trackingNumber          String?
+  trackingUrl             String?
+  shippedAt               DateTime?
   refundedAt           DateTime?
   subtotalCents        Int
   totalCents           Int
@@ -271,7 +287,7 @@ model OrderItem {
   orderId        String
   assetId        String?
   color          GarmentColor
-  fabric         FabricType
+  fabric         String
   placements     Json
   preview        Json?
   product        ProductType
@@ -439,7 +455,7 @@ model WishlistItem {
   artworkId  String?
   product    ProductType?
   color      GarmentColor?
-  fabric     FabricType?
+  fabric     String?
   quantity   Int           @default(1)
   size       String?
   placements Json
@@ -447,6 +463,25 @@ model WishlistItem {
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   build   Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
   artwork Artwork? @relation(fields: [artworkId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, buildId])
+  @@index([userId])
+}
+
+// "My bag": the builds a customer pressed "Add to Bag" on. One row per
+// (user, build); the size picked at that moment is kept here because the
+// Builder never persists it to the draft. Everything else (product, fabric,
+// quantity, price) is read live from the build, since checkout prices the
+// live draft too -- so the bag can't show a stale price.
+model BagItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  userId    String
+  buildId   String
+  size      String   @default("M")
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  build Build @relation(fields: [buildId], references: [id], onDelete: Cascade)
 
   @@unique([userId, buildId])
   @@index([userId])
@@ -468,7 +503,7 @@ model BespokeRequest {
 
   product     ProductType?
   color       GarmentColor?
-  fabric      FabricType?
+  fabric      String?
   quantity    Int           @default(1)
   size        String?
   placements  Json
@@ -551,6 +586,70 @@ model PlacementPricingRule {
   @@index([placement])
 }
 
+// Admin "pause selling" switch for one product + fabric combination. A row
+// means the combination is paused: src/pricing/engine.ts computePrice()
+// returns a non-standard result for it, so checkout (which only accepts
+// mode "standard") refuses to sell it. Absence of a row = on sale. Strings
+// (not enums) to match PricingRule.
+model CatalogPause {
+  id        String   @id @default(cuid())
+  product   String
+  fabric    String
+  reason    String?
+  createdAt DateTime @default(now())
+
+  @@unique([product, fabric])
+}
+
+// Admin-managed fabric catalog (replaces the old FabricType enum, so fabrics
+// can be added/edited without a deploy). `key` is what Build drafts, order
+// items and pricing rules store (e.g. "SIGNATURE_200"). Fabrics don't affect
+// rendering, only pricing + display.
+model CatalogFabric {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  name        String
+  gsm         String
+  description String
+  sortOrder   Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Editable display copy for the two fixed silhouettes (the key set itself is
+// tied to mockup templates + render geometry, so it stays in code).
+model CatalogProduct {
+  product     String   @id
+  name        String
+  tagline     String
+  updatedAt   DateTime @updatedAt
+}
+
+// Admin-editable legal pages (/legal/terms, /legal/privacy, /legal/refunds).
+// A missing row means the built-in draft in src/lib/legal-defaults.ts is
+// shown instead, so the pages always exist even before anyone edits them.
+model LegalPage {
+  slug           String   @id
+  title          String
+  body           String
+  updatedByEmail String?
+  updatedAt      DateTime @updatedAt
+}
+
+// LEGACY, UNUSED. The fabric columns are plain strings now (see CatalogFabric).
+// This type is kept in the database only so that a server still running the
+// pre-CatalogFabric code (an old deployment, or a dev server started before
+// the migration) keeps working: that code casts every fabric value to this
+// enum, and without the type its writes fail with `type "public.FabricType"
+// does not exist` -- e.g. no order could be created. Safe to drop once every
+// deployment runs the current code.
+enum FabricType {
+  ESSENTIALS_170
+  SIGNATURE_200
+  HEAVYWEIGHT_300
+}
+
 enum Role {
   ADMIN
   USER
@@ -571,12 +670,6 @@ enum GarmentColor {
   BLACK
   WHITE
   CUSTOM
-}
-
-enum FabricType {
-  ESSENTIALS_170
-  SIGNATURE_200
-  HEAVYWEIGHT_300
 }
 
 enum AssetStatus {
@@ -605,6 +698,7 @@ enum OrderStatus {
   NEW
   PAID
   IN_PRODUCTION
+  SHIPPED
   COMPLETED
   CANCELLED
 }

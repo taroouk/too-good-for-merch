@@ -1,7 +1,8 @@
 // file: src/actions/bespoke-actions.ts
 "use server";
 
-import type { FabricType, GarmentColor, ProductType } from "@prisma/client";
+import type { GarmentColor, ProductType } from "@prisma/client";
+import type { FabricType } from "src/lib/catalog-shared";
 import { prisma } from "src/lib/prisma";
 import { requireUserId } from "src/studio/authz";
 import { canAccessBuild } from "src/studio/permissions";

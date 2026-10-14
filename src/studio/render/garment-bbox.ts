@@ -76,8 +76,17 @@ function assertPlausibleBBox(
   if (!Number.isFinite(widthFrac) || !Number.isFinite(heightFrac)) failedRules.push("non-finite fraction");
   if (widthFrac < MIN_BBOX_FRACTION) failedRules.push(`widthFrac < MIN_BBOX_FRACTION (${MIN_BBOX_FRACTION})`);
   if (heightFrac < MIN_BBOX_FRACTION) failedRules.push(`heightFrac < MIN_BBOX_FRACTION (${MIN_BBOX_FRACTION})`);
-  if (widthFrac > MAX_BBOX_FRACTION) failedRules.push(`widthFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
-  if (heightFrac > MAX_BBOX_FRACTION) failedRules.push(`heightFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
+  // The upper bound is a backstop against a Gemini generation whose
+  // background detection failed (a "garment" touching both edges). It must
+  // NOT apply to a TEMPLATE: those are our own transparent assets, and a
+  // template cropped tightly to the garment legitimately fills ~100% of its
+  // height (the FITTED/BLACK front template measures heightFrac 0.997).
+  // Rejecting it made every AI mockup for that product fail before Gemini
+  // was even called, so "Save T-Shirt" could never finish and close.
+  if (context?.role !== "template") {
+    if (widthFrac > MAX_BBOX_FRACTION) failedRules.push(`widthFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
+    if (heightFrac > MAX_BBOX_FRACTION) failedRules.push(`heightFrac > MAX_BBOX_FRACTION (${MAX_BBOX_FRACTION})`);
+  }
 
   if (failedRules.length > 0) {
     console.error("detectGarmentBBox: rejected an implausible garment bbox", {

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "src/lib/prisma";
+import sharp from "sharp";
 import { isSvgContentSafe } from "src/lib/svg-safety";
+import { artworkExceedsDimensionLimits } from "src/lib/artwork-limits";
 
 const ALLOWED_MIME_TYPES = new Set([
   "image/png",
@@ -58,6 +60,14 @@ export async function uploadArtwork(file: File) {
   }
   if (!looksLikeAllowedArtwork(buffer, contentType)) {
     throw new Error("Artwork file content does not match its file type.");
+  }
+  if (contentType !== "image/svg+xml") {
+    // Header-only read (cheap). If the dimensions can't be read the file is
+    // left to fail later exactly as before; only known-oversized is refused.
+    const meta = await sharp(buffer).metadata().catch(() => null);
+    if (meta?.width && meta?.height && artworkExceedsDimensionLimits(meta.width, meta.height)) {
+      throw new Error("Artwork image is too large in pixels. Please use an image up to 6000 x 6000 pixels.");
+    }
   }
   if (contentType === "image/svg+xml" && !isSvgContentSafe(buffer)) {
     throw new Error("This SVG file contains unsupported content (scripts, external references, or embedded elements) and cannot be uploaded.");

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { Role } from "@prisma/client";
 import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork } from "src/lib/storage";
@@ -24,7 +24,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
 
   const session = await auth();
   const allowed =
-    session?.user?.role === Role.ADMIN ||
+    (session?.user?.id ? await isAdminSession() : false) ||
     (await canAccessBuild(session?.user?.id ?? null, asset.build));
   if (!allowed) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 

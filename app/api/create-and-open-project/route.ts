@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz";
 import { BuildStatus } from "@prisma/client";
 import { apiError } from "src/lib/api/responses";
 import { rateLimitHeaders } from "src/lib/rate-limit";
@@ -18,11 +18,12 @@ export async function POST(req: Request) {
       );
     }
 
-    const session = await auth();
+    // Validates the user row (see app/studio/start/route.ts).
+    const userId = await getUserId();
 
     const build = await prisma.build.create({
       data: {
-        userId: session?.user?.id ?? null,
+        userId,
         name: "Untitled",
         status: BuildStatus.ACTIVE,
         draft: {
@@ -39,7 +40,7 @@ export async function POST(req: Request) {
       select: { id: true },
     });
 
-    if (!session?.user?.id) {
+    if (!userId) {
       await rememberGuestBuildId(build.id);
     }
 

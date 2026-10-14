@@ -4,6 +4,7 @@ import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
 import { draftArtworkLayers } from "src/studio/artwork-layers";
+import { getActiveFabricOptions, getProductCopy } from "src/lib/catalog";
 
 export default async function BuilderPage({
   params,
@@ -52,6 +53,8 @@ export default async function BuilderPage({
       },
     },
   });
+
+  const [fabricCatalog, productCopy] = await Promise.all([getActiveFabricOptions(), getProductCopy()]);
 
   if (!build || !build.draft) {
     return <div className="text-sm text-gray-600">Not found.</div>;
@@ -157,6 +160,8 @@ export default async function BuilderPage({
 
   return (
     <BuilderClient
+      fabricCatalog={fabricCatalog}
+      productCopy={productCopy}
       buildId={build.id}
       draftId={build.draft.id}
       buildName={build.name ?? "Untitled"}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   ChangeEvent,
   PointerEvent as ReactPointerEvent,
@@ -8,9 +8,10 @@ import type {
 import { createPortal } from "react-dom";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import type { FabricOption, FabricType, ProductCopy } from "src/lib/catalog-shared";
+import { DEFAULT_FABRICS } from "src/lib/catalog-shared";
 import type {
   BuildDraft,
-  FabricType,
   GarmentColor,
   ProductType,
 } from "@prisma/client";
@@ -18,6 +19,7 @@ import type {
 import { actionUpdateDraft, actionSaveArtworkLayers, actionSwitchProduct } from "src/actions/build-actions";
 import { actionSaveArtwork } from "src/actions/artwork-actions";
 import { actionAddToWishlist } from "src/actions/wishlist-actions";
+import { actionAddToBag } from "src/actions/bag-actions";
 import {
   actionAttachExistingAsset,
   actionRemoveAsset,
@@ -118,6 +120,10 @@ type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
 type EditorLayer = ArtworkLayer & { url: string; fileName?: string; hash?: string | null };
 
 type BuilderClientProps = {
+  // Admin-managed catalog (see src/lib/catalog.ts). Optional so the builder
+  // still renders with the built-in defaults if a caller omits them.
+  fabricCatalog?: FabricOption[];
+  productCopy?: Record<"FITTED" | "OVERSIZED", ProductCopy>;
   buildId: string;
   buildName: string;
   draftId: string;
@@ -252,6 +258,8 @@ function resolveMockupColor(color: GarmentColor | null): "BLACK" | "WHITE" {
 }
 
 export default function BuilderClient({
+  fabricCatalog,
+  productCopy,
   buildId,
   draftId,
   draft,
@@ -335,6 +343,8 @@ export default function BuilderClient({
   const [inWishlist, setInWishlist] = useState(initialInWishlist);
   const [wishlistPending, setWishlistPending] = useState(false);
   const [wishlistError, setWishlistError] = useState<string | null>(null);
+  const [bagPending, setBagPending] = useState(false);
+  const [bagNotice, setBagNotice] = useState<{ ok: boolean; text: string } | null>(null);
   // printMockupUrl/printMockupFingerprint hold the deterministic compositor
   // result (POST /api/mockups/print, persisted as Mockup(kind="PRINT")).
   // aiMockupUrl/aiMockupFingerprint hold the Gemini result (POST
@@ -452,26 +462,9 @@ export default function BuilderClient({
     [activePlacement, selectedPlacements],
   );
 
-  const allFabricOptions = [
-    {
-      key: "ESSENTIALS_170" as FabricType,
-      name: "ESSENTIALS",
-      gsm: "170 GSM Cotton",
-      desc: "Lightweight everyday cotton with a clean minimal hand feel.",
-    },
-    {
-      key: "SIGNATURE_200" as FabricType,
-      name: "SIGNATURE",
-      gsm: "200 GSM Cotton",
-      desc: "Our balanced premium weight. Smooth, buttery, structured, and designed to hold its shape.",
-    },
-    {
-      key: "HEAVYWEIGHT_300" as FabricType,
-      name: "HEAVYWEIGHT",
-      gsm: "300 GSM Cotton",
-      desc: "Dense luxury cotton with elevated structure and a substantial drape.",
-    },
-  ];
+  // Active fabrics from the admin catalog; never empty (a builder with no
+  // fabric to pick would crash below), so it falls back to the defaults.
+  const allFabricOptions: FabricOption[] = fabricCatalog && fabricCatalog.length > 0 ? fabricCatalog : DEFAULT_FABRICS;
 
   // FITTED + HEAVYWEIGHT_300 has no configured price anywhere (PricingRule
   // is empty and FALLBACK_PRICES has no FITTED.HEAVYWEIGHT_300 entry -- see
@@ -730,6 +723,27 @@ export default function BuilderClient({
     };
   }, [pricingPlacements, qty, state.fabric, state.product, pricingRetryToken]);
 
+  // "Add to Bag": saves this build + the chosen size into the customer's
+  // bag (see src/actions/bag-actions.ts) instead of jumping straight to
+  // payment. The site header's bag badge listens for the event below.
+  const addToBag = useCallback(async () => {
+    setBagPending(true);
+    setBagNotice(null);
+    try {
+      const result = await actionAddToBag(buildId, selectedSize);
+      if (result.ok) {
+        setBagNotice({ ok: true, text: "Added to your bag." });
+        window.dispatchEvent(new Event("tgfm:bag-changed"));
+      } else {
+        setBagNotice({ ok: false, text: result.error });
+      }
+    } catch {
+      setBagNotice({ ok: false, text: "Could not add to your bag. Please try again." });
+    } finally {
+      setBagPending(false);
+    }
+  }, [buildId, selectedSize]);
+
   useEffect(() => {
     if (status !== "authenticated" || !showAuthModal) return;
 
@@ -741,23 +755,15 @@ export default function BuilderClient({
       // intake; a quoted Bespoke build and every standard product go to the
       // Paymob checkout, unchanged.
       const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
-      router.push(
-        isBespokeRequest
-          ? `/bespoke/new?buildId=${buildId}`
-          // selectedSize must travel with the redirect: this is the ONLY
-          // place the customer's chosen S/M/L/XL is captured (Builder never
-          // persists it to BuildDraft -- see the schema comment on
-          // WishlistItem.size / BespokeRequest.size, which snapshot it at
-          // the point of a real action instead). Previously this was
-          // dropped entirely, so every standard order silently defaulted to
-          // size "M" in src/lib/orders/checkout.ts regardless of what the
-          // customer picked.
-          : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
-      );
+      // The chosen S/M/L/XL travels with the add (the Builder never persists
+      // it to BuildDraft -- see the schema comment on BagItem.size).
+      if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
+      else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+      else void addToBag();
     } else {
       setShowBespokeModal(true);
     }
-  }, [buildId, checkoutAfterAuth, router, showAuthModal, status, state.product, customQuoteUsdCents, selectedSize]);
+  }, [addToBag, buildId, checkoutAfterAuth, router, showAuthModal, status, state.product, customQuoteUsdCents, selectedSize]);
 
   function save(next: DraftDTO) {
     // Mirrors actionUpdateDraft's server-side quote invalidation
@@ -790,6 +796,17 @@ export default function BuilderClient({
     startTransition(() => actionUpdateDraft(buildId, fd));
   }
 
+
+  // A brand-new project has product/color/fabric = NULL in the DB while the
+  // builder shows FITTED / WHITE / ESSENTIALS_170 as defaults. Persist what
+  // is on screen once, so checkout, the wishlist and product switching all
+  // read the same selection the customer sees (previously they saw NULLs).
+  useEffect(() => {
+    if (draft.product && draft.color && draft.fabric) return;
+    save(state);
+    // Mount-only: `state` here is the just-initialised defaults.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Persist the design whenever its artworks change (debounced -- a drag
   // changes the active layer's x/y many times a second). The priced
@@ -1117,11 +1134,14 @@ export default function BuilderClient({
       return;
     }
 
-    router.push(
-      isBespokeRequest
-        ? `/bespoke/new?buildId=${buildId}`
-        : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
-    );
+    if (isBespokeRequest) {
+      router.push(`/bespoke/new?buildId=${buildId}`);
+    } else if (state.product === "CUSTOM") {
+      // An admin-quoted bespoke build pays through the normal checkout.
+      router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+    } else {
+      void addToBag();
+    }
   }
 
   function openCustomRequestPopup() {
@@ -1191,11 +1211,12 @@ export default function BuilderClient({
       if (checkoutAfterAuth) {
         setCheckoutAfterAuth(false);
         const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
-        router.push(
-          isBespokeRequest
-            ? `/bespoke/new?buildId=${buildId}`
-            : `/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`,
-        );
+        if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
+        else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+        else {
+          void addToBag();
+          router.refresh();
+        }
       } else {
         setShowBespokeModal(true);
         router.refresh();
@@ -1888,6 +1909,7 @@ export default function BuilderClient({
             onRemoveAsset={(asset) => void removeUserAsset(asset)}
             removingAssetId={removingAssetId}
             onSaveTShirt={() => void saveBespokeTShirt()}
+            onSelectColor={(c) => (c === "BLACK" ? selectBlackColor() : selectWhiteColor())}
           />,
           document.body,
         )
@@ -1923,6 +1945,7 @@ export default function BuilderClient({
               <div className="studio-left-stack">
                 <ProductSelector
                   product={state.product}
+                  copy={productCopy}
                   onSelectFitted={selectFittedProduct}
                   onSelectOversized={selectOversizedProduct}
                   onRequestCustom={openCustomRequestPopup}
@@ -2041,8 +2064,8 @@ export default function BuilderClient({
                 <div className="studio-action-row">
 <CheckoutButton
   onCheckout={openCheckout}
-  disabled={!canCheckout || savePending}
-  label={isBespokeRequestCta ? "Request a Quote" : "Add to Bag"}
+  disabled={!canCheckout || savePending || bagPending}
+  label={isBespokeRequestCta ? "Request a Quote" : bagPending ? "Adding..." : "Add to Bag"}
 />
 
                   <button
@@ -2060,6 +2083,17 @@ export default function BuilderClient({
                 </div>
                 {wishlistError ? (
                   <p className="mt-2 text-xs text-red-600">{wishlistError}</p>
+                ) : null}
+                {bagNotice ? (
+                  <p role="status" className={`mt-2 text-xs ${bagNotice.ok ? "text-emerald-700" : "text-red-600"}`}>
+                    {bagNotice.text}
+                    {bagNotice.ok ? (
+                      <>
+                        {" "}
+                        <a href="/bag" className="font-semibold underline underline-offset-2">View bag</a>
+                      </>
+                    ) : null}
+                  </p>
                 ) : null}
 
                 <div className="studio-right-divider" />

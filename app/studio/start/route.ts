@@ -1,6 +1,6 @@
 import { BuildStatus } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz";
 import { prisma } from "src/lib/prisma";
 import { GUEST_BUILD_COOKIE } from "src/studio/permissions";
 import { signGuestBuildToken } from "src/studio/guest-token";
@@ -48,8 +48,10 @@ async function createStarterBuild(userId: string | null) {
 }
 
 export async function GET(req: Request) {
-  const session = await auth();
-  const userId = session?.user?.id ?? null;
+  // getUserId() re-checks the user row (deleted/blocked accounts count as
+  // signed out) instead of trusting the JWT's id, which used to hit a
+  // foreign-key error when the account no longer existed.
+  const userId = await getUserId();
 
   const limit = userId
     ? await rateLimitByKey("studio:start:user", userId, STARTER_BUILD_LIMIT, STARTER_BUILD_WINDOW_MS)
