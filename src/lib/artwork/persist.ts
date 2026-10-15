@@ -5,6 +5,7 @@
 // build without a saved artwork is added to the wishlist or submitted as a
 // bespoke request. Not a "use server" module -- it is imported by those.
 import { prisma } from "src/lib/prisma";
+import { compressMockupImage } from "src/lib/image/compress-mockup";
 import {
   resolveArtworkUpsert,
   artworkFileUrl,
@@ -42,13 +43,19 @@ export async function saveArtworkForBuild(
   if (!build?.draft) return null;
   if (!build.draft.aiMockup) return null;
 
+  // The saved copy is stored compressed (older mockups are still big PNGs).
+  const source = build.draft.aiMockup;
+  const compressed = source.data
+    ? await compressMockupImage(Buffer.from(source.data), source.mimeType || "image/png")
+    : null;
+
   const args = resolveArtworkUpsert({
     userId: build.userId ?? opts.ownerUserId ?? null,
     buildId: build.id,
     mockup: {
       id: build.draft.aiMockup.id,
-      mimeType: build.draft.aiMockup.mimeType,
-      data: build.draft.aiMockup.data,
+      mimeType: compressed?.mimeType ?? build.draft.aiMockup.mimeType,
+      data: compressed?.data ?? build.draft.aiMockup.data,
       model: build.draft.aiMockup.model,
       prompt: build.draft.aiMockup.prompt,
     },

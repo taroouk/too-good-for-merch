@@ -1,5 +1,6 @@
 import { prisma } from "src/lib/prisma";
 import { placementsOrDefault, type PlacementKey } from "src/pricing/placements";
+import { FALLBACK_PRICES, RANGES } from "src/pricing/defaults";
 
 export type PriceResult =
   | {
@@ -19,26 +20,6 @@ export type PriceResult =
       currency: string;
       message: string;
     };
-
-const RANGES = [
-  [1, 10], [11, 30], [31, 50], [51, 80], [81, 100],
-  [101, 150], [151, 200], [201, 300], [301, 400], [401, 500],
-] as const;
-
-// USD unit prices (see PRICING_CURRENCY below). Emergency/default fallback
-// only, used exclusively when no PricingRule row matches -- see
-// computePrice()'s resolution order.
-const FALLBACK_PRICES: Record<string, Record<string, number[]>> = {
-  FITTED: {
-    ESSENTIALS_170: [8.02, 7.83, 7.44, 7.25, 6.87, 6.49, 5.92, 5.54, 4.96, 4.58],
-    SIGNATURE_200: [9.54, 9.16, 8.4, 7.83, 7.25, 6.87, 6.3, 5.92, 5.34, 4.96],
-  },
-  OVERSIZED: {
-    ESSENTIALS_170: [8.4, 8.21, 7.83, 7.64, 7.25, 6.87, 6.3, 5.92, 5.34, 4.96],
-    SIGNATURE_200: [9.93, 9.54, 8.78, 8.21, 7.64, 7.25, 6.68, 6.3, 5.73, 5.34],
-    HEAVYWEIGHT_300: [12.41, 11.07, 10.31, 9.73, 9.16, 8.78, 8.21, 7.83, 7.25, 6.87],
-  },
-};
 
 // The one and only pricing currency. Every PricingRule/PlacementPricingRule
 // row and every FALLBACK_PRICES number above is denominated in USD, always

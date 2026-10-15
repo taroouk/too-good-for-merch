@@ -22,7 +22,7 @@ export default async function SystemHealthPage() {
       <div className="mx-auto max-w-5xl">
         <PageHeader eyebrow="System" title="System health" subtitle="Live checks of the database, payments, webhooks, pricing, and configuration. Reload to re-run them." />
 
-        <section className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Failing" value={failing} tone={failing ? "danger" : "default"} />
           <StatCard label="Needs attention" value={warning} tone={warning ? "warning" : "default"} />
           <StatCard label="Database latency" value={dbLatencyMs != null ? `${dbLatencyMs} ms` : "—"} />

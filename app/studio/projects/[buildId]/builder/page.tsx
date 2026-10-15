@@ -1,10 +1,12 @@
 // file: app/studio/projects/[buildId]/builder/page.tsx
+import { parseCropMeta, type CropMeta } from "src/studio/ui/modals/crop-math";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
 import BuilderClient from "src/studio/ui/BuilderClient";
 import { draftArtworkLayers } from "src/studio/artwork-layers";
 import { getActiveFabricOptions, getProductCopy } from "src/lib/catalog";
+import { getStoreDisplay } from "src/lib/store-display";
 
 export default async function BuilderPage({
   params,
@@ -60,12 +62,16 @@ export default async function BuilderPage({
     return <div className="text-sm text-gray-600">Not found.</div>;
   }
 
+  const activeAssetIds = [build.draft.primaryAssetId, ...draftArtworkLayers(build.draft).map((layer) => layer.assetId)].filter((id): id is string => Boolean(id));
   const initialUserAssetsRaw = await prisma.asset.findMany({
     where: {
       url: { not: null },
       // Removed via the × in "Your uploads" (see actionRemoveAsset).
       hiddenAt: null,
       OR: userId ? [{ buildId }, { build: { userId } }] : [{ buildId }],
+      // Cropped copies are hidden from "Your uploads"; only the ones currently
+      // on the shirt are needed (so the cropper can find their original).
+      AND: [{ OR: [{ cropSourceAssetId: null }, { id: { in: activeAssetIds } }] }],
     },
     orderBy: { createdAt: "desc" },
     take: 48,
@@ -75,6 +81,8 @@ export default async function BuilderPage({
       url: true,
       fileName: true,
       artworkSha256: true,
+      cropSourceAssetId: true,
+      cropMeta: true,
     },
   });
 
@@ -83,11 +91,11 @@ export default async function BuilderPage({
   // as several rows -- dedupe by content hash, preferring this project's
   // copy, and put the artwork currently on the shirt first.
   const primaryAssetId = build.draft.primaryAssetId;
-  const byImage = new Map<string, { id: string; buildId: string; url: string; fileName: string; hash: string | null }>();
+  const byImage = new Map<string, { id: string; buildId: string; url: string; fileName: string; hash: string | null; cropSourceId: string | null; crop: CropMeta | null }>();
   for (const asset of initialUserAssetsRaw) {
     if (!asset.url) continue;
     const key = asset.artworkSha256 ?? asset.id;
-    const dto = { id: asset.id, buildId: asset.buildId, url: asset.url, fileName: asset.fileName, hash: asset.artworkSha256 };
+    const dto = { id: asset.id, buildId: asset.buildId, url: asset.url, fileName: asset.fileName, hash: asset.artworkSha256, cropSourceId: asset.cropSourceAssetId, crop: parseCropMeta(asset.cropMeta) };
     const existing = byImage.get(key);
     const better =
       !existing ||
@@ -160,6 +168,7 @@ export default async function BuilderPage({
 
   return (
     <BuilderClient
+      storeDisplay={await getStoreDisplay()}
       fabricCatalog={fabricCatalog}
       productCopy={productCopy}
       buildId={build.id}

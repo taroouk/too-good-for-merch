@@ -5,7 +5,7 @@ import AdminToast from "src/components/admin/AdminToast";
 import ConfirmSubmitButton from "src/components/admin/ui/ConfirmSubmitButton";
 import { buttonClass } from "src/components/admin/ui/Button";
 import { prisma } from "src/lib/prisma";
-import { PLACEMENTS, placementLabel } from "src/pricing/placements";
+import { CUSTOMER_PLACEMENTS, customerPlacementLabel } from "src/pricing/placements";
 import PageHeader from "src/components/admin/ui/PageHeader";
 import StatCard from "src/components/admin/ui/StatCard";
 import Card from "src/components/admin/ui/Card";
@@ -190,11 +190,11 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
               <Table minWidth={520}>
                 <Thead><tr><Th>Placement</Th><Th>Price modifier</Th></tr></Thead>
                 <Tbody>
-                  {PLACEMENTS.map((placement) => {
+                  {CUSTOMER_PLACEMENTS.map((placement) => {
                     const price = placementPriceByKey.get(placement);
                     return (
                       <tr key={placement}>
-                        <Td className="font-semibold text-admin-ink">{placementLabel(placement)}</Td>
+                        <Td className="font-semibold text-admin-ink">{customerPlacementLabel(placement)}</Td>
                         <Td>{price !== undefined ? <span className="font-semibold text-admin-ink">+{price.toFixed(2)}</span> : <Badge tone="neutral">Free</Badge>}</Td>
                       </tr>
                     );
@@ -204,11 +204,11 @@ export default async function AdminProductsPage({ searchParams }: { searchParams
             }
             cards={
               <div className="divide-y divide-admin-border">
-                {PLACEMENTS.map((placement) => {
+                {CUSTOMER_PLACEMENTS.map((placement) => {
                   const price = placementPriceByKey.get(placement);
                   return (
                     <div key={placement} className="flex items-center justify-between px-4 py-3">
-                      <span className="font-semibold text-admin-ink">{placementLabel(placement)}</span>
+                      <span className="font-semibold text-admin-ink">{customerPlacementLabel(placement)}</span>
                       {price !== undefined ? <span className="font-semibold text-admin-ink">+{price.toFixed(2)}</span> : <Badge tone="neutral">Free</Badge>}
                     </div>
                   );

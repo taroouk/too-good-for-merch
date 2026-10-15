@@ -1,7 +1,10 @@
 // file: src/pricing/__tests__/placements.test.ts
 import assert from "node:assert/strict";
 import {
+  CUSTOMER_PLACEMENTS,
   DEFAULT_PLACEMENTS,
+  PLACEMENTS,
+  customerPlacementLabel,
   normalizePlacements,
   placementsFromCustomNotes,
   placementsOrDefault,
@@ -58,6 +61,13 @@ export async function runAll() {
       assert.deepEqual(placementsFromCustomNotes(null), []);
       assert.deepEqual(placementsFromCustomNotes(""), []);
       assert.deepEqual(placementsFromCustomNotes("no placement info here"), []);
+    },
+
+    "customer placements are the five popup positions, all known to the engine"() {
+      assert.deepEqual([...CUSTOMER_PLACEMENTS], ["FULL_FRONT", "CENTER_FRONT", "LEFT_CHEST", "RIGHT_CHEST", "FULL_BACK"]);
+      for (const key of CUSTOMER_PLACEMENTS) assert.equal((PLACEMENTS as readonly string[]).includes(key), true);
+      assert.equal(customerPlacementLabel("FULL_BACK"), "Back");
+      assert.equal(customerPlacementLabel("LEFT_CHEST"), "Left Chest");
     },
   });
 }

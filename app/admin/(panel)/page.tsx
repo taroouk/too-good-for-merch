@@ -10,6 +10,8 @@ import { buttonClass } from "src/components/admin/ui/Button";
 import EmptyState from "src/components/admin/ui/EmptyState";
 import { AlertIcon } from "src/components/admin/ui/icons";
 import { ORDER_STATUS_LABELS, orderStatusTone, paymentStatusTone } from "src/components/admin/ui/status";
+import PricesCurrencyPanel from "src/components/admin/PricesCurrencyPanel";
+import AdminToast from "src/components/admin/AdminToast";
 import { getPricingHealth } from "src/lib/admin/pricing-health";
 import { getPaymobHealth } from "src/lib/admin/paymob-health";
 import { getSystemHealth } from "src/lib/admin/system-health";
@@ -41,7 +43,7 @@ function chartBuckets(range: Range) {
   });
 }
 
-export default async function AdminDashboardPage({ searchParams }: { searchParams: Promise<{ range?: string }> }) {
+export default async function AdminDashboardPage({ searchParams }: { searchParams: Promise<{ range?: string; notice?: string }> }) {
   const query = await searchParams;
   const range: Range = ["daily", "weekly", "monthly"].includes(query.range ?? "") ? query.range as Range : "daily";
   const buckets = chartBuckets(range);
@@ -123,6 +125,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
 
   return (
     <main className="p-4 sm:p-7 xl:p-9">
+      <AdminToast message={query.notice} />
       <div className="mx-auto max-w-7xl">
         <PageHeader
           eyebrow="Commerce overview"
@@ -135,7 +138,7 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
           }
         />
 
-        <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <section className="mt-8 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-5">
           <StatCard
             label="Revenue (USD)"
             value={money(revenueTotals.revenueUsdCents, currency)}
@@ -151,6 +154,8 @@ export default async function AdminDashboardPage({ searchParams }: { searchParam
           <StatCard label="Pending" value={pendingOrders} hint="Awaiting payment" tone="warning" />
           <StatCard label="Failed" value={failedOrders} hint="Needs attention" tone="danger" />
         </section>
+
+        <PricesCurrencyPanel />
 
         <section className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_.8fr]">
           <Card

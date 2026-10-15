@@ -7,7 +7,8 @@ import { AdminActionError, formString, runAdminAction } from "src/lib/admin/acti
 import { safeAdminPath } from "src/lib/admin/action-url";
 import { prisma } from "src/lib/prisma";
 import { createPaymobPayment } from "src/lib/payments/paymob";
-import { InvalidExchangeRateInputError, parseExchangeRateInput } from "src/pricing/currency";
+import { InvalidExchangeRateInputError, isValidExchangeRate, parseExchangeRateInput } from "src/pricing/currency";
+import { DISPLAY_CURRENCIES, parseDisplayCurrency } from "src/pricing/display";
 
 export async function generateRetryPaymentLinkAction(formData: FormData) {
   const admin = await requireAdmin();
@@ -137,7 +138,87 @@ export async function updateStoreSettingsAction(formData: FormData) {
         },
       }),
     ]);
-    revalidatePath("/admin/settings");
+    revalidatePath("/", "layout");
     return "Store settings saved.";
+  });
+}
+
+// Which currency customers SEE prices in (builder, bag, bespoke quotes).
+// Accounting stays USD and payment stays EGP -- this only changes display, so
+// it is applied to existing and future pages alike but never to past orders.
+export async function updateDisplayCurrencyAction(formData: FormData) {
+  const admin = await requireAdmin();
+  return runAdminAction(safeAdminPath(formData.get("returnTo"), "/admin/settings"), async () => {
+    const raw = formString(formData, "displayCurrency", 3).toUpperCase();
+    if (!(DISPLAY_CURRENCIES as readonly string[]).includes(raw)) throw new AdminActionError("Choose a supported currency.");
+    const displayCurrency = parseDisplayCurrency(raw);
+
+    const previous = await prisma.storeSetting.findUnique({ where: { id: "store" } });
+    if (displayCurrency === "EGP" && !isValidExchangeRate(previous?.usdToEgpRate)) {
+      throw new AdminActionError("Set the USD → EGP exchange rate first — EGP prices are calculated from it.");
+    }
+    if ((previous?.displayCurrency ?? "USD") === displayCurrency) return "Customers already see prices in " + displayCurrency + ".";
+
+    await prisma.$transaction([
+      prisma.storeSetting.upsert({
+        where: { id: "store" },
+        update: { displayCurrency },
+        create: { id: "store", displayCurrency },
+      }),
+      prisma.adminAuditLog.create({
+        data: {
+          adminId: admin.id,
+          action: "DISPLAY_CURRENCY_UPDATED",
+          metadata: { previous: previous?.displayCurrency ?? "USD", displayCurrency, rate: previous?.usdToEgpRate ?? null } as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+    revalidatePath("/", "layout");
+    return `Customers now see prices in ${displayCurrency}.`;
+  });
+}
+
+// Changes only the USD -> EGP rate (the dashboard panel has no other store
+// fields to carry). Logged exactly like the full settings form so the rate
+// history on /admin/settings stays complete. Future checkouts only.
+export async function updateExchangeRateAction(formData: FormData) {
+  const admin = await requireAdmin();
+  return runAdminAction(safeAdminPath(formData.get("returnTo"), "/admin/settings"), async () => {
+    let rate: number | null;
+    try {
+      rate = parseExchangeRateInput(String(formData.get("usdToEgpRate") ?? ""));
+    } catch (error) {
+      if (error instanceof InvalidExchangeRateInputError) throw new AdminActionError(error.message);
+      throw new AdminActionError("USD → EGP exchange rate must be a positive number.");
+    }
+    if (rate == null) throw new AdminActionError("Enter the exchange rate.");
+    if (rate > 100000) throw new AdminActionError("That exchange rate looks too large — check the number.");
+
+    const previous = await prisma.storeSetting.findUnique({ where: { id: "store" } });
+    if (previous?.usdToEgpRate === rate) return "Exchange rate unchanged.";
+
+    await prisma.$transaction([
+      prisma.storeSetting.upsert({
+        where: { id: "store" },
+        update: { usdToEgpRate: rate },
+        create: { id: "store", usdToEgpRate: rate },
+      }),
+      prisma.adminAuditLog.create({
+        data: {
+          adminId: admin.id,
+          action: "STORE_SETTINGS_UPDATED",
+          metadata: {
+            storeName: previous?.storeName ?? "Too Good For Merch",
+            currency: previous?.currency ?? "USD",
+            taxRate: (previous?.taxRateBps ?? 0) / 100,
+            shipping: (previous?.shippingCents ?? 0) / 100,
+            previousUsdToEgpRate: previous?.usdToEgpRate ?? null,
+            usdToEgpRate: rate,
+          } as Prisma.InputJsonValue,
+        },
+      }),
+    ]);
+    revalidatePath("/", "layout");
+    return `Exchange rate set: 1 USD = ${rate} EGP.`;
   });
 }

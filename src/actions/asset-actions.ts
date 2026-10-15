@@ -2,6 +2,7 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import type { Prisma } from "@prisma/client";
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
@@ -10,6 +11,7 @@ import { assertBuildAccess } from "src/studio/permissions";
 import { hashArtworkData, uploadArtwork } from "src/lib/storage";
 import { clientIpFromHeaders } from "src/lib/rate-limit";
 import { rateLimitByKey } from "src/lib/rate-limit-db";
+import { parseCropMeta } from "src/studio/ui/modals/crop-math";
 
 // P2-8: uploads (artwork bytes -> storage + DB row) were previously
 // completely unbounded per user/IP -- a compromised or scripted client
@@ -30,7 +32,7 @@ async function enforceUploadRateLimit(userId: string | null) {
   }
 }
 
-async function createAssetRecord(buildId: string, formData: FormData) {
+async function createAssetRecord(buildId: string, formData: FormData, userId: string | null) {
   const file = formData.get("file");
   const uploadedFile = file instanceof File && file.size > 0 ? file : null;
   const fileName = (uploadedFile?.name ?? String(formData.get("fileName") ?? "")).trim().slice(0, 180);
@@ -39,6 +41,30 @@ async function createAssetRecord(buildId: string, formData: FormData) {
   const sizeBytes = uploadedFile?.size ?? (sizeBytesRaw ? Math.max(0, Math.floor(Number(sizeBytesRaw))) : null);
 
   if (!fileName) return;
+
+  // A cropped copy of an earlier upload (Canva-style crop, ArtworkCropper):
+  // remember which original it came from and the window that produced it, so
+  // the crop can be reopened later on the FULL original. Always links to the
+  // root original, never to another crop.
+  let cropSourceAssetId: string | null = null;
+  let cropMeta: Prisma.InputJsonValue | undefined;
+  const cropSourceRaw = String(formData.get("cropSourceAssetId") ?? "").trim().slice(0, 128);
+  if (cropSourceRaw) {
+    let meta = null;
+    try {
+      meta = parseCropMeta(JSON.parse(String(formData.get("cropMeta") ?? "")));
+    } catch {
+      meta = null;
+    }
+    if (!meta) throw new Error("Invalid crop data.");
+    const source = await prisma.asset.findFirst({
+      where: { id: cropSourceRaw, OR: userId ? [{ buildId }, { build: { userId } }] : [{ buildId }] },
+      select: { id: true, cropSourceAssetId: true },
+    });
+    if (!source) throw new Error("The original artwork for this crop was not found.");
+    cropSourceAssetId = source.cropSourceAssetId ?? source.id;
+    cropMeta = meta as unknown as Prisma.InputJsonValue;
+  }
 
   const stored = uploadedFile ? await uploadArtwork(uploadedFile) : null;
 
@@ -55,8 +81,9 @@ async function createAssetRecord(buildId: string, formData: FormData) {
       storageKey: null,
       url: stored?.url ?? null,
       status: stored ? "READY" : "PENDING_UPLOAD",
+      ...(cropSourceAssetId ? { cropSourceAssetId, cropMeta } : {}),
     },
-    select: { id: true, buildId: true, fileName: true, url: true, artworkSha256: true },
+    select: { id: true, buildId: true, fileName: true, url: true, artworkSha256: true, cropSourceAssetId: true, cropMeta: true },
   });
 }
 
@@ -65,7 +92,7 @@ export async function actionCreateAsset(buildId: string, formData: FormData) {
   await assertBuildAccess(userId, buildId);
   await enforceUploadRateLimit(userId);
 
-  await createAssetRecord(buildId, formData);
+  await createAssetRecord(buildId, formData, userId);
 
   revalidatePath(`/studio/projects/${buildId}/assets`);
   revalidatePath(`/studio/projects/${buildId}/designs`);
@@ -79,7 +106,7 @@ export async function actionCreateAssetForBuilder(
   await assertBuildAccess(userId, buildId);
   await enforceUploadRateLimit(userId);
 
-  const asset = await createAssetRecord(buildId, formData);
+  const asset = await createAssetRecord(buildId, formData, userId);
 
   revalidatePath(`/studio/projects/${buildId}/assets`);
   revalidatePath(`/studio/projects/${buildId}/designs`);
@@ -193,6 +220,17 @@ export async function actionRemoveAsset(buildId: string, assetId: string) {
       _count: { select: { orderItems: true, placements: true } },
     },
   });
+  // Cropped copies of any of those images go with them.
+  const derived = await prisma.asset.findMany({
+    where: {
+      hiddenAt: null,
+      OR: ownedBuildsWhere,
+      cropSourceAssetId: { in: copies.map((copy) => copy.id) },
+      id: { notIn: copies.map((copy) => copy.id) },
+    },
+    select: { id: true, _count: { select: { orderItems: true, placements: true } } },
+  });
+  copies.push(...derived);
   const ids = copies.map((copy) => copy.id);
   const keep = copies.filter((c) => c._count.orderItems > 0 || c._count.placements > 0).map((c) => c.id);
   const drop = ids.filter((id) => !keep.includes(id));

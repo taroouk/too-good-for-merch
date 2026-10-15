@@ -191,10 +191,10 @@ export async function runAll() {
       assert.equal(builder.left[1].href, "/studio/projects/p1/builder");
       assert.equal(builder.left[1].active, true);
       // inside the Studio "Enter studio" would be redundant, and Wishlist /
-      // My projects live in the dropdown only (no duplicates in the bar)
+      // The account links live in the dropdown only (no duplicates in the bar)
       assert.equal(builder.studio, null);
       assert.equal(builder.bagLink.href, "/bag");
-      assert.deepEqual(builder.accountItems.map((i) => i.label), ["My orders", "Wishlist", "My projects", "Bespoke"]);
+      assert.deepEqual(builder.accountItems.map((i) => i.label), ["My orders", "Wishlist", "Bespoke"]);
       assert.equal(builder.accountItems.find((i) => i.label === "Bespoke")?.href, "/bespoke");
       assert.equal(buildNavModel("/bespoke", true).accountItems.find((i) => i.label === "Bespoke")?.active, true);
       assert.equal(builder.showLogin, false);

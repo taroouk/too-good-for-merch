@@ -1,3 +1,5 @@
+import { getStoreDisplay } from "src/lib/store-display";
+import { formatDisplayPrice } from "src/pricing/display";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "src/auth";
@@ -59,6 +61,7 @@ export default async function BagPage() {
       })
     : [];
 
+  const display = await getStoreDisplay();
   const rows = await Promise.all(
     items.map(async (item) => {
       const draft = item.build.draft;
@@ -72,7 +75,7 @@ export default async function BagPage() {
           placements: placementsOrDefault(placementsFromCustomNotes(draft.customNotes)),
         }).catch(() => null);
         if (price?.mode === "standard") {
-          priceText = `${price.currency} ${price.total.toFixed(2)}`;
+          priceText = formatDisplayPrice(price.total, display);
           sellable = true;
         } else if (price) {
           priceText = price.message;

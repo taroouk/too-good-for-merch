@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type {
   CSSProperties,
   ChangeEventHandler,
@@ -14,12 +14,14 @@ import type { PlacementKey } from "src/pricing/placements";
 // compositor also uses -- no local coordinate/aspect-ratio table here.
 import { getEffectiveScaleBounds } from "src/studio/render/transform";
 import { getPlacementSide } from "src/studio/render/placement-config";
-import { getEditorAspectRatio } from "src/studio/render/editor-surface";
+import { getEditorAspectRatio, getEditorPlacementBox } from "src/studio/render/editor-surface";
 import { previewArtworkBlend } from "src/studio/render/preview-blend";
 import { shouldMountArtworkOverlay } from "src/studio/artwork-overlay-visibility";
 import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
 import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
 import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
+import ArtworkCropper, { type CropResult } from "src/studio/ui/modals/ArtworkCropper";
+import type { CropMeta } from "src/studio/ui/modals/crop-math";
 import { useImageAspectRatio } from "src/studio/ui/useImageAspectRatio";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 
@@ -35,6 +37,10 @@ type UserAssetDTO = {
   buildId?: string | null;
   url: string;
   fileName: string;
+  // Set on a cropped copy: the id of the untouched upload it was cut from,
+  // and the window/rotation used (so Crop can reopen where it was left).
+  cropSourceId?: string | null;
+  crop?: CropMeta | null;
 };
 
 type PlacementCard = {
@@ -79,6 +85,11 @@ type BespokeModalProps = {
   onZoomIn: () => void;
   onResetArtworkTransform: () => void;
   onSelectAsset: (asset: UserAssetDTO) => void;
+  // Pick-then-place: the chosen/uploaded image floats over the tee until it is
+  // dragged into the placement frame (or "Place it" is pressed).
+  stagedAsset: { id: string; url: string; fileName: string } | null;
+  onPlaceStaged: () => void;
+  onCancelStaged: () => void;
   onRemoveAsset: (asset: UserAssetDTO) => void;
   // Multi-artwork (src/studio/artwork-layers.ts): the OTHER artworks on the
   // side being edited (drawn on the tee, click to edit), every artwork in
@@ -92,6 +103,9 @@ type BespokeModalProps = {
   onDropAsset: (assetId: string, clientX: number, clientY: number) => void;
   removingAssetId: string | null;
   onSaveTShirt: () => void;
+  // Crop mode result: a cropped PNG + its crop data (the Builder uploads it as
+  // a copy of the original), or null to go back to the untouched original.
+  onCropArtwork: (result: CropResult, original: UserAssetDTO | null) => Promise<void> | void;
   onSelectColor: (color: "BLACK" | "WHITE") => void;
 };
 
@@ -173,6 +187,9 @@ export default function BespokeModal({
   onZoomIn,
   onResetArtworkTransform,
   onSelectAsset,
+  stagedAsset,
+  onPlaceStaged,
+  onCancelStaged,
   onRemoveAsset,
   removingAssetId,
   otherLayers,
@@ -182,6 +199,7 @@ export default function BespokeModal({
   onAddAnotherArtwork,
   onDropAsset,
   onSaveTShirt,
+  onCropArtwork,
   onSelectColor,
 }: BespokeModalProps) {
   // The upload whose × was pressed: its tile shows an inline "Remove this
@@ -191,7 +209,14 @@ export default function BespokeModal({
   const [dropActive, setDropActive] = useState(false);
 
   // Escape first dismisses an open remove prompt, then closes the popup.
+  // While crop mode is open it only leaves crop mode.
+  const [cropping, setCropping] = useState(false);
+
   useEscapeToClose(() => {
+    if (cropping) {
+      setCropping(false);
+      return;
+    }
     if (confirmingRemoveId) setConfirmingRemoveId(null);
     else onClose();
   });
@@ -217,6 +242,46 @@ export default function BespokeModal({
   const scaleBounds = getEffectiveScaleBounds(product ?? "FITTED", color ?? "WHITE", activePlacement);
 
   const panelRef = useModalDialog<HTMLDivElement>(true);
+
+  // --- Floating (staged) image: dragged over the tee into the placement frame.
+  const canvasNodeRef = useRef<HTMLDivElement | null>(null);
+  const setCanvasNode = useCallback(
+    (node: HTMLDivElement | null) => {
+      canvasNodeRef.current = node;
+      previewRef(node);
+    },
+    [previewRef],
+  );
+  // Top-left of the floating image as fractions of the canvas; null = resting spot.
+  const [stagePos, setStagePos] = useState<{ x: number; y: number } | null>(null);
+  const [stageOverFrame, setStageOverFrame] = useState(false);
+  const [stageDragging, setStageDragging] = useState(false);
+  const stageDragRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
+
+  // The placement frame on the tee, in canvas fractions.
+  const frame = (() => {
+    const box = getEditorPlacementBox(product, color, activePlacement);
+    const heightFrac = box.heightPct ?? box.widthPct * previewAspectRatio;
+    return { x: box.xPct, y: box.yPct, w: box.widthPct, h: heightFrac };
+  })();
+
+  function stageCenterInFrame(el: HTMLElement) {
+    const canvas = canvasNodeRef.current?.getBoundingClientRect();
+    if (!canvas || !canvas.width || !canvas.height) return false;
+    const r = el.getBoundingClientRect();
+    const fx = (r.left + r.width / 2 - canvas.left) / canvas.width;
+    const fy = (r.top + r.height / 2 - canvas.top) / canvas.height;
+    const padX = frame.w * 0.15;
+    const padY = frame.h * 0.15;
+    return fx >= frame.x - padX && fx <= frame.x + frame.w + padX && fy >= frame.y - padY && fy <= frame.y + frame.h + padY;
+  }
+
+  // A cropped copy is the same upload as far as the customer is concerned:
+  // it isn't listed on its own, and its original's tile shows as selected.
+  const cropOriginal = activeArtworkAsset?.cropSourceId
+    ? userAssets.find((asset) => asset.id === activeArtworkAsset.cropSourceId) ?? null
+    : null;
+  const visibleAssets = userAssets.filter((asset) => !asset.cropSourceId);
 
   return (
     <div
@@ -245,7 +310,7 @@ export default function BespokeModal({
         <div className="studio-bespoke-scroll">
         <div className="studio-bespoke-preview">
           <div
-            ref={previewRef}
+            ref={setCanvasNode}
             className={cn("studio-bespoke-canvas", dropActive ? "studio-bespoke-canvas-drop" : "")}
             style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", aspectRatio: previewAspectRatio }}
             onDragOver={(event) => {
@@ -336,6 +401,98 @@ export default function BespokeModal({
                 onPointerUp={onArtworkPointerUp}
                 onPointerCancel={onArtworkPointerUp}
               />
+            ) : null}
+
+            {/* Pick-then-place: the chosen image floats over the tee. Drag it
+                into the dashed frame to put it on this placement. */}
+            {stagedAsset ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="studio-stage-frame"
+                  style={{
+                    position: "absolute",
+                    zIndex: 50,
+                    left: `${frame.x * 100}%`,
+                    top: `${frame.y * 100}%`,
+                    width: `${frame.w * 100}%`,
+                    height: `${frame.h * 100}%`,
+                    pointerEvents: "none",
+                    border: "2px dashed #fff",
+                    outline: `2px solid ${stageOverFrame ? "#16a34a" : "rgba(0,0,0,.55)"}`,
+                    background: stageOverFrame ? "rgba(34,197,94,.22)" : "rgba(255,255,255,.08)",
+                    borderRadius: 6,
+                    transition: "background 120ms",
+                  }}
+                />
+                <img
+                  src={stagedAsset.url}
+                  alt={`${stagedAsset.fileName} — drag into the frame`}
+                  draggable={false}
+                  className="studio-stage-image"
+                  style={{
+                    position: "absolute",
+                    zIndex: 60,
+                    left: `${(stagePos?.x ?? 0.04) * 100}%`,
+                    top: `${(stagePos?.y ?? 0.05) * 100}%`,
+                    width: "26%",
+                    maxHeight: "30%",
+                    objectFit: "contain",
+                    cursor: stageDragging ? "grabbing" : "grab",
+                    touchAction: "none",
+                    filter: "drop-shadow(0 8px 18px rgba(0,0,0,.45))",
+                    background: "rgba(255,255,255,.9)",
+                    borderRadius: 8,
+                    padding: 4,
+                    transition: stageDragging ? "none" : "left 160ms, top 160ms",
+                  }}
+                  onPointerDown={(event) => {
+                    const canvas = canvasNodeRef.current?.getBoundingClientRect();
+                    if (!canvas) return;
+                    event.preventDefault();
+                    const rect = event.currentTarget.getBoundingClientRect();
+                    stageDragRef.current = { pointerId: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                    setStageDragging(true);
+                    setStagePos({ x: (rect.left - canvas.left) / canvas.width, y: (rect.top - canvas.top) / canvas.height });
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = stageDragRef.current;
+                    const canvas = canvasNodeRef.current?.getBoundingClientRect();
+                    if (!drag || drag.pointerId !== event.pointerId || !canvas) return;
+                    const x = Math.min(Math.max((event.clientX - drag.dx - canvas.left) / canvas.width, -0.1), 0.95);
+                    const y = Math.min(Math.max((event.clientY - drag.dy - canvas.top) / canvas.height, -0.1), 0.95);
+                    setStagePos({ x, y });
+                    setStageOverFrame(stageCenterInFrame(event.currentTarget));
+                  }}
+                  onPointerUp={(event) => {
+                    const drag = stageDragRef.current;
+                    if (!drag || drag.pointerId !== event.pointerId) return;
+                    stageDragRef.current = null;
+                    setStageDragging(false);
+                    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                    const inside = stageCenterInFrame(event.currentTarget);
+                    setStageOverFrame(false);
+                    setStagePos(null);
+                    if (inside) onPlaceStaged();
+                  }}
+                  onPointerCancel={() => {
+                    stageDragRef.current = null;
+                    setStageDragging(false);
+                    setStageOverFrame(false);
+                    setStagePos(null);
+                  }}
+                />
+                <div
+                  style={{ position: "absolute", zIndex: 70, left: "50%", bottom: 8, transform: "translateX(-50%)", maxWidth: "94%" }}
+                  className="flex items-center gap-2 rounded-full bg-black px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg"
+                >
+                  <span className="hidden sm:inline">Drag the image into the frame</span>
+                  <span className="sm:hidden">Drag into the frame</span>
+                  <button type="button" onClick={onPlaceStaged} className="rounded-full bg-white px-2.5 py-1 text-black">Place it</button>
+                  <button type="button" onClick={onCancelStaged} aria-label="Cancel" className="px-1 text-white/70 hover:text-white">×</button>
+                </div>
+              </>
             ) : null}
           </div>
 
@@ -496,6 +653,15 @@ export default function BespokeModal({
                 >
                   Reset
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCropping(true)}
+                  disabled={!artworkUrl}
+                  className="studio-artwork-reset-button"
+                  aria-label="Crop artwork"
+                >
+                  Crop
+                </button>
               </div>
             </div>
           ) : null}
@@ -504,9 +670,13 @@ export default function BespokeModal({
             <div className="studio-bespoke-label">Your Uploads</div>
 
             <div className="studio-upload-grid">
-              {userAssets.length ? (
-                userAssets.map((asset) => {
-                  const isCurrentActive = selectedPrimaryAssetId === asset.id || artworkUrl === asset.url;
+              {visibleAssets.length ? (
+                visibleAssets.map((asset) => {
+                  const isCurrentActive =
+                    selectedPrimaryAssetId === asset.id ||
+                    artworkUrl === asset.url ||
+                    stagedAsset?.id === asset.id ||
+                    cropOriginal?.id === asset.id;
                   const isRemoving = removingAssetId === asset.id;
                   const isConfirming = confirmingRemoveId === asset.id;
                   // Select and remove are sibling buttons (a button can't
@@ -591,7 +761,7 @@ export default function BespokeModal({
               ) : null}
               {/* Empty upload slots (dashed, upload icon) fill the grid up to
                   four, as in the frame; each one opens the file picker. */}
-              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - userAssets.length) }, (_, index) => (
+              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - visibleAssets.length) }, (_, index) => (
                 <button
                   key={`empty-${index}`}
                   type="button"
@@ -624,6 +794,19 @@ export default function BespokeModal({
         </div>
         </div>
         </div>
+        {/* Crop mode takes over the popup's canvas and controls in place. */}
+        {cropping && artworkUrl ? (
+          <ArtworkCropper
+            originalUrl={cropOriginal?.url ?? artworkUrl}
+            fileName={(cropOriginal ?? activeArtworkAsset)?.fileName ?? "artwork.png"}
+            initial={cropOriginal ? activeArtworkAsset?.crop ?? null : null}
+            onCancel={() => setCropping(false)}
+            onApply={async (result) => {
+              await onCropArtwork(result, cropOriginal ?? activeArtworkAsset);
+              setCropping(false);
+            }}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -7976,3 +7976,41 @@ body {
   flex: 0 0 36px;
   padding: 0 !important;
 }
+
+
+/* ============================================================
+   Touch targets on phones: bigger HIT areas for small controls,
+   without changing how they look.
+   ============================================================ */
+.studio-preview-side-dot {
+  position: relative;
+}
+.studio-preview-side-dot::after {
+  content: "";
+  position: absolute;
+  inset: -14px;
+}
+@media (max-width: 767px) {
+  .studio-size-guide-link {
+    min-height: 40px;
+    padding-inline: 6px;
+  }
+  .marketingShell footer a {
+    display: inline-block;
+    padding: 10px 4px;
+  }
+  /* small text links in admin cards ("View all", "Review", "Full pricing tools") */
+  main a[class*="text-xs"]:not([class*="rounded"]):not([class*="block"]),
+  main a[class*="hover:underline"]:not([class*="rounded"]),
+  main button[class*="underline"] {
+    display: inline-block;
+    padding-block: 10px;
+  }
+}
+
+/* T-shirt colour picker: same side padding as the other stacked popup sections */
+@media (max-width: 1024px), (max-width: 932px) and (max-height: 560px) {
+  .studio-bespoke-modal .studio-bespoke-colour {
+    padding-inline: 20px;
+  }
+}

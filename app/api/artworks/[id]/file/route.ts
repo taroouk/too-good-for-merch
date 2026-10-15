@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "src/auth";
 import { getAdminUser } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
+import { extensionForMime } from "src/lib/image/compress-mockup";
 import { canAccessBuild } from "src/studio/permissions";
 
 export const runtime = "nodejs";
@@ -11,7 +12,7 @@ export const runtime = "nodejs";
 // Authorised for: an admin, the owning user, or (for a guest-build
 // artwork with no owner yet) whoever holds the guest-build cookie.
 export async function GET(
-  _: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
@@ -47,12 +48,13 @@ export async function GET(
     return NextResponse.json({ error: "Artwork file missing." }, { status: 404 });
   }
 
+  const download = new URL(req.url).searchParams.get("download") === "1";
   const file = Buffer.from(artwork.data);
   return new NextResponse(new Uint8Array(file), {
     headers: {
       "Content-Type": artwork.mimeType ?? "application/octet-stream",
       "Content-Length": String(file.byteLength),
-      "Content-Disposition": `inline; filename="artwork-${artwork.id}.png"`,
+      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="artwork-${artwork.id}.${extensionForMime(artwork.mimeType)}"`,
       "Cache-Control": "private, max-age=300",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "sandbox; script-src 'none'; object-src 'none'; base-uri 'none'",

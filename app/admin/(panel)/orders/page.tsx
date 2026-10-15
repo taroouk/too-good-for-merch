@@ -103,7 +103,7 @@ export default async function AdminOrdersPage({
           }
         />
 
-        <section className="mt-7 grid gap-4 sm:grid-cols-3 xl:grid-cols-7">
+        <section className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3 xl:grid-cols-7">
           <StatCard label="Total" value={totalOrderCount} tone="dark" />
           <StatCard label="Pending" value={countByStatus.get(OrderStatus.NEW) ?? 0} tone="warning" />
           <StatCard label="Paid" value={countByStatus.get(OrderStatus.PAID) ?? 0} tone="success" />

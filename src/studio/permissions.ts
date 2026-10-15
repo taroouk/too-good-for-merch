@@ -58,7 +58,7 @@ export async function assertBuildAccess(
 ): Promise<void> {
   const build = await getBuildAccessRecord(buildId);
 
-  if (!build) redirect("/studio/projects");
+  if (!build) redirect("/studio");
 
   if (await canAccessBuild(userId, build)) return;
 

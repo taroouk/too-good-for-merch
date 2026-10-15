@@ -1,3 +1,5 @@
+import { getStoreDisplay } from "src/lib/store-display";
+import { formatDisplayPrice, type StoreDisplay } from "src/pricing/display";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "src/auth";
@@ -14,14 +16,15 @@ const STATUS_LABEL: Record<string, string> = {
   CLOSED: "Closed",
 };
 
-function money(cents: number | null): string {
+function money(cents: number | null, display: StoreDisplay): string {
   if (cents == null) return "—";
-  return new Intl.NumberFormat("en", { style: "currency", currency: "USD" }).format(cents / 100);
+  return formatDisplayPrice(cents / 100, display);
 }
 
 export default async function BespokeListPage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/bespoke");
+  const display = await getStoreDisplay();
 
   const requests = await prisma.bespokeRequest.findMany({
     where: { userId: session.user.id },
@@ -69,7 +72,7 @@ export default async function BespokeListPage() {
                 <strong>{r.requestNumber}</strong>
                 <p className="mt-1 text-sm text-black/45">
                   {r.createdAt.toLocaleDateString("en-GB")}
-                  {r.quoteUsdCents != null ? ` · Quote ${money(r.quoteUsdCents)}` : ""}
+                  {r.quoteUsdCents != null ? ` · Quote ${money(r.quoteUsdCents, display)}` : ""}
                 </p>
                 {r.quoteNote ? <p className="mt-1 text-sm text-black/55">{r.quoteNote}</p> : null}
               </div>

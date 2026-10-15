@@ -7,7 +7,7 @@ import { getArtwork } from "src/lib/storage";
 
 export const runtime = "nodejs";
 
-export async function GET(_: Request, { params }: { params: Promise<{ assetId: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ assetId: string }> }) {
   const { assetId } = await params;
   const asset = await prisma.asset.findUnique({
     where: { id: assetId },
@@ -28,6 +28,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
     (await canAccessBuild(session?.user?.id ?? null, asset.build));
   if (!allowed) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
+  const download = new URL(req.url).searchParams.get("download") === "1";
   const file = await getArtwork(assetId);
   if (!file) {
     return NextResponse.json({ error: "Asset file missing." }, { status: 404 });
@@ -37,7 +38,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ assetId: s
     headers: {
       "Content-Type": asset.mimeType ?? "application/octet-stream",
       "Content-Length": String(file.byteLength),
-      "Content-Disposition": `inline; filename="${asset.fileName.replaceAll('"', "")}"`,
+      "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${asset.fileName.replace(/["\r\n\\]/g, "")}"`,
       "Cache-Control": "private, max-age=300",
       "X-Content-Type-Options": "nosniff",
       "Content-Security-Policy": "sandbox; script-src 'none'; object-src 'none'; base-uri 'none'",

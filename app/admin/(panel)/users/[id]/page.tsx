@@ -71,7 +71,7 @@ export default async function CustomerDetails({
           ) : null}
         </div>
 
-        <section className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-6 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Lifetime spend (USD)" value={`USD ${spendUsd.toFixed(2)}`} hint={legacyPaid ? `+${legacyPaid} legacy paid order(s) with no USD total` : undefined} tone="dark" />
           <StatCard label="Orders" value={user._count.orders} />
           <StatCard label="Studio projects" value={user._count.builds} hint={`${user._count.artworks} artworks · ${user._count.wishlistItems} wishlist`} />

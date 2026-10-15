@@ -173,6 +173,13 @@ model Asset {
   // bytes must survive for fulfilment). Unreferenced uploads are deleted
   // outright instead -- see actionRemoveAsset in src/actions/asset-actions.ts.
   hiddenAt        DateTime?
+  // Non-destructive crop (see ArtworkCropper): when set, this row is a CROPPED
+  // COPY of the original upload `cropSourceAssetId`, and `cropMeta` is the
+  // rotation + crop window that produced it, so the cropper can reopen on the
+  // full original with the frame exactly where the customer left it. The copy
+  // is what gets rendered and ordered; it is hidden from "Your uploads".
+  cropSourceAssetId String?
+  cropMeta          Json?
   build           Build             @relation(fields: [buildId], references: [id], onDelete: Cascade)
   usedAsPrimaryIn BuildDraft[]      @relation("DraftPrimaryAsset")
   placements      DesignPlacement[]
@@ -557,6 +564,11 @@ model StoreSetting {
   // created after it's set; existing orders keep their own frozen
   // Order.exchangeRateUsed regardless of later changes here.
   usdToEgpRate  Float?
+  // Currency customers SEE prices in (builder, bag). Canonical pricing and
+  // order accounting stay USD; "EGP" shows USD x usdToEgpRate (the same
+  // conversion checkout charges), so the page and the payment agree. Falls
+  // back to USD while no valid rate is set -- see src/pricing/display.ts.
+  displayCurrency String @default("USD")
   updatedAt     DateTime @updatedAt
 }
 

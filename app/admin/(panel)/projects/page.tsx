@@ -81,7 +81,7 @@ export default async function AdminProjectsPage({
       <div className="mx-auto max-w-7xl">
         <PageHeader eyebrow="Catalog" title="Projects" subtitle="Customer Studio projects. Archive anything that needs hiding — projects with orders are never deleted." />
 
-        <section className="mt-7 grid gap-4 sm:grid-cols-3">
+        <section className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-3">
           <StatCard label="All projects" value={(countByStatus.get(BuildStatus.ACTIVE) ?? 0) + (countByStatus.get(BuildStatus.ARCHIVED) ?? 0)} tone="dark" />
           <StatCard label="Active" value={countByStatus.get(BuildStatus.ACTIVE) ?? 0} tone="success" />
           <StatCard label="Archived" value={countByStatus.get(BuildStatus.ARCHIVED) ?? 0} />

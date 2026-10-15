@@ -11,6 +11,17 @@ export const PLACEMENTS = [
 
 export type PlacementKey = (typeof PLACEMENTS)[number];
 
+// The positions the customer can actually pick in the Studio popup, in popup
+// order. PLACEMENTS above is the full list the engine and renderer understand
+// (older designs may still use e.g. Center Back or the sleeves); the admin
+// price screens list only these so they match what customers see.
+export const CUSTOMER_PLACEMENTS = ["FULL_FRONT", "CENTER_FRONT", "LEFT_CHEST", "RIGHT_CHEST", "FULL_BACK"] as const satisfies readonly PlacementKey[];
+
+// Name shown to customers ("Back" in the popup) and in the admin.
+export function customerPlacementLabel(placement: PlacementKey) {
+  return placement === "FULL_BACK" ? "Back" : placementLabel(placement);
+}
+
 export const DEFAULT_PLACEMENTS: PlacementKey[] = ["CENTER_FRONT"];
 
 const PLACEMENT_SET = new Set<string>(PLACEMENTS);

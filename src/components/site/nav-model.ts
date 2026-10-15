@@ -69,7 +69,7 @@ export function buildNavModel(pathname: string, authenticated: boolean, role?: s
       ];
 
   const inStudio = isUnder(pathname, "/studio");
-  // Wishlist / My projects / Bespoke / My orders live in the account dropdown only --
+  // Wishlist / Bespoke / My orders live in the account dropdown only --
   // listing them in the bar too was pure duplication.
   const studio: NavLink | null = inStudio ? null : { label: "Enter studio", href: "/studio", active: false };
   const bagLink: NavLink = { label: "My bag", href: "/bag", active: isUnder(pathname, "/bag") };
@@ -90,7 +90,6 @@ export function buildNavModel(pathname: string, authenticated: boolean, role?: s
         ...(role === "ADMIN" ? [{ label: "Admin dashboard", href: "/admin", active: false }] : []),
         { label: "My orders", href: "/orders", active: isUnder(pathname, "/orders") },
         { label: "Wishlist", href: "/wishlist", active: isUnder(pathname, "/wishlist") },
-        { label: "My projects", href: "/studio/projects", active: pathname === "/studio/projects" },
         { label: "Bespoke", href: "/bespoke", active: isUnder(pathname, "/bespoke") },
       ]
     : [];

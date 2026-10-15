@@ -67,9 +67,12 @@ import FabricSelector from "src/studio/ui/components/FabricSelector";
 import PriceCard from "src/studio/ui/components/PriceCard";
 import ProductSelector from "src/studio/ui/components/ProductSelector";
 import QuantitySelector from "src/studio/ui/components/QuantitySelector";
+import { USD_DISPLAY, formatDisplayPrice, type StoreDisplay } from "src/pricing/display";
 import ArtworkModal from "src/studio/ui/modals/ArtworkModal";
 import AuthModal from "src/studio/ui/modals/AuthModal";
 import BespokeModal from "src/studio/ui/modals/BespokeModal";
+import type { CropResult } from "src/studio/ui/modals/ArtworkCropper";
+import { parseCropMeta, type CropMeta } from "src/studio/ui/modals/crop-math";
 import SizeGuideModal from "src/studio/ui/modals/SizeGuideModal";
 import TryOn3DPreview from "src/studio/ui/TryOn3DPreview";
 
@@ -97,6 +100,9 @@ type UserAssetDTO = {
   // rows (picking an upload from another project copies it), so "Your
   // uploads" dedupes on this rather than on id.
   hash?: string | null;
+  // Cropped copy: the untouched upload it came from + the crop used.
+  cropSourceId?: string | null;
+  crop?: CropMeta | null;
 };
 
 // Moves `asset` to the front of "Your uploads" and drops every other entry
@@ -120,6 +126,8 @@ type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
 type EditorLayer = ArtworkLayer & { url: string; fileName?: string; hash?: string | null };
 
 type BuilderClientProps = {
+  // Currency customers see prices in (admin setting); USD when unset.
+  storeDisplay?: StoreDisplay;
   // Admin-managed catalog (see src/lib/catalog.ts). Optional so the builder
   // still renders with the built-in defaults if a caller omits them.
   fabricCatalog?: FabricOption[];
@@ -264,6 +272,7 @@ export default function BuilderClient({
   draftId,
   draft,
   placementsCount,
+  storeDisplay = USD_DISPLAY,
   initialUserAssets = [],
   initialMockupUrl = null,
   initialMockupFingerprint = null,
@@ -855,8 +864,17 @@ export default function BuilderClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [buildId, layersKey, layersPayload]);
 
-  async function handleUpload(file: File) {
-    if (!canAddArtworkToActivePlacement()) return;
+  // `keepTransform`: a cropped copy replaces the artwork in place, so it keeps
+  // the position/size the customer already set instead of resetting them.
+  // `crop`: the file is a crop of that original upload (stored as a derived
+  // copy, hidden from "Your uploads").
+  async function handleUpload(
+    file: File,
+    options: { keepTransform?: boolean; crop?: { sourceId: string; meta: CropMeta }; stage?: boolean } = {},
+  ) {
+    // `stage`: the upload is NOT put on the shirt yet -- it floats over the tee
+    // until the customer drags it into the placement frame (see placeStaged).
+    if (!options.stage && !canAddArtworkToActivePlacement()) return;
     if (!ALLOWED_ARTWORK_MIME_TYPES.has(file.type)) {
       setMockupError("Artwork must be PNG, JPG, WEBP, or SVG.");
       return;
@@ -868,10 +886,12 @@ export default function BuilderClient({
 
     const previousArtworkUrl = artworkUrl;
     const localUrl = URL.createObjectURL(file);
-    setUploadName(file.name);
-    setArtworkUrl(localUrl);
-    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    discardMockups();
+    if (!options.stage) {
+      setUploadName(file.name);
+      setArtworkUrl(localUrl);
+      if (!options.keepTransform) setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+      discardMockups();
+    }
 
     tempUploadCounterRef.current += 1;
     const tempId = `temp-upload-${tempUploadCounterRef.current}`;
@@ -880,14 +900,21 @@ export default function BuilderClient({
       buildId,
       url: localUrl,
       fileName: file.name,
+      cropSourceId: options.crop?.sourceId ?? null,
+      crop: options.crop?.meta ?? null,
     };
     setUserAssets((prev) => [newLocalAsset, ...prev]);
+    if (options.stage) setStaged(newLocalAsset);
 
     const fd = new FormData();
     fd.set("file", file);
     fd.set("fileName", file.name);
     fd.set("mimeType", file.type || "application/octet-stream");
     fd.set("sizeBytes", String(file.size || 0));
+    if (options.crop) {
+      fd.set("cropSourceAssetId", options.crop.sourceId);
+      fd.set("cropMeta", JSON.stringify(options.crop.meta));
+    }
 
     startTransition(() => {
       actionCreateAssetForBuilder(buildId, fd).then((res: CreatedAssetDTO) => {
@@ -901,8 +928,19 @@ export default function BuilderClient({
             url: persistedUrl || localUrl,
             fileName: res.fileName ?? file.name,
             hash: res.artworkSha256 ?? null,
+            cropSourceId: res.cropSourceAssetId ?? null,
+            crop: parseCropMeta(res.cropMeta),
           };
           setUserAssets((prev) => withAssetFirst(prev, persisted, tempId));
+          const placedEarly = placeWhenReadyRef.current === tempId;
+          if (placedEarly) placeWhenReadyRef.current = null;
+          // Still floating over the tee (not dropped in the frame yet): just
+          // swap in the saved copy -- nothing is put on the shirt or saved.
+          if (options.stage && !placedEarly) {
+            setStaged((current) => (current?.id === tempId ? persisted : current));
+            URL.revokeObjectURL(localUrl);
+            return;
+          }
           // Promote the preview from the temporary blob: URL to the durable
           // server URL now that the upload is confirmed persisted -- only if
           // nothing else (replace/remove) has changed the preview in the
@@ -918,6 +956,8 @@ export default function BuilderClient({
           });
         }
       }).catch((error) => {
+        if (placeWhenReadyRef.current === tempId) placeWhenReadyRef.current = null;
+        setStaged((current) => (current?.id === tempId ? null : current));
         setUserAssets((prev) => prev.filter((asset) => asset.id !== tempId));
         // Revert to whatever was showing before this attempt (not null) so a
         // failed replacement doesn't wipe out an already-selected artwork.
@@ -928,6 +968,57 @@ export default function BuilderClient({
       });
     });
   }
+
+  // Crop mode "Done": a new crop of `original`, or (null) back to the
+  // untouched original. The position/size on the shirt stay as they were.
+  async function applyCrop(result: CropResult, original: UserAssetDTO | null) {
+    if (!original) return;
+    if (!result) {
+      if (original.buildId && original.buildId !== buildId) {
+        await selectAsset(original);
+        return;
+      }
+      setArtworkUrl(original.url);
+      setUploadName(original.fileName);
+      discardMockups();
+      save({ ...state, primaryAssetId: original.id });
+      return;
+    }
+    await handleUpload(result.file, { keepTransform: true, crop: { sourceId: original.id, meta: result.meta } });
+  }
+
+  // Pick-then-place: choosing (or uploading) an image puts it OVER the tee, and
+  // the customer drags it into the placement frame. Nothing is committed to the
+  // shirt until it is dropped there (or "Place it" is pressed).
+  const [staged, setStaged] = useState<UserAssetDTO | null>(null);
+  const placeWhenReadyRef = useRef<string | null>(null);
+
+  function stageAsset(asset: UserAssetDTO) {
+    setMockupError(null);
+    setStaged(asset);
+  }
+
+  function placeStaged() {
+    const asset = staged;
+    if (!asset) return;
+    if (!canAddArtworkToActivePlacement()) return;
+    setStaged(null);
+    if (asset.id.startsWith("temp-upload-")) {
+      // Still uploading: show it now, and let the upload's completion save it.
+      placeWhenReadyRef.current = asset.id;
+      setUploadName(asset.fileName);
+      setArtworkUrl(asset.url);
+      setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+      discardMockups();
+      return;
+    }
+    void selectAsset(asset);
+  }
+
+  // The floating image never outlives the popup.
+  useEffect(() => {
+    if (!showBespokeModal) setStaged(null);
+  }, [showBespokeModal]);
 
   async function selectAsset(asset: UserAssetDTO) {
     if (!canAddArtworkToActivePlacement()) return;
@@ -978,11 +1069,19 @@ export default function BuilderClient({
     // "Remove this upload?" prompt), so by here the customer has confirmed.
     if (removingAssetId) return;
 
-    const isOnShirt = state.primaryAssetId === asset.id || artworkUrl === asset.url;
+    const isOnShirt =
+      state.primaryAssetId === asset.id ||
+      artworkUrl === asset.url ||
+      activeArtworkAsset?.cropSourceId === asset.id;
     const previous = userAssets;
     setRemovingAssetId(asset.id);
     setUserAssets((prev) =>
-      prev.filter((item) => item.id !== asset.id && !(asset.hash && item.hash === asset.hash)),
+      prev.filter(
+        (item) =>
+          item.id !== asset.id &&
+          item.cropSourceId !== asset.id &&
+          !(asset.hash && item.hash === asset.hash),
+      ),
     );
     if (isOnShirt) removeSelectedArtwork();
 
@@ -1510,10 +1609,9 @@ export default function BuilderClient({
       setMockupPending(true);
       setMockupError(null);
       try {
-        for (const side of sidesNeedingGeneration) {
-          const ok = await generateSideMockups(side, layers);
-          if (!ok) return;
-        }
+        // Front and back are independent, so they generate at the same time.
+        const results = await Promise.all(sidesNeedingGeneration.map((side) => generateSideMockups(side, layers)));
+        if (results.some((ok) => !ok)) return;
       } finally {
         setMockupPending(false);
       }
@@ -1578,10 +1676,10 @@ export default function BuilderClient({
     ? "Calculating..."
     : state.product === "CUSTOM"
       ? customQuoteUsdCents != null
-        ? `USD ${(customQuoteUsdCents / 100).toFixed(2)}`
+        ? formatDisplayPrice(customQuoteUsdCents / 100, storeDisplay)
         : "Custom garments require a tailored quote."
       : price?.mode === "standard"
-        ? `${price.currency} ${price.total.toFixed(2)}`
+        ? formatDisplayPrice(price.total, storeDisplay)
         : (priceError ?? price?.message ?? "Pricing unavailable");
 
   // Shown in PriceCard's secondary-line slot only once quoted -- surfaces
@@ -1891,7 +1989,10 @@ export default function BuilderClient({
             onArtworkScaleChange={handleArtworkScaleChange}
             onZoomIn={() => changeArtworkScale(artworkTransform.scale + 0.1)}
             onResetArtworkTransform={resetArtworkTransform}
-            onSelectAsset={(asset) => void selectAsset(asset)}
+            onSelectAsset={stageAsset}
+            stagedAsset={staged ? { id: staged.id, url: staged.url, fileName: staged.fileName } : null}
+            onPlaceStaged={placeStaged}
+            onCancelStaged={() => setStaged(null)}
             otherLayers={bespokeOtherLayers}
             layers={[...allLayers]
               // Stable order (the placement cards' order), so cards don't
@@ -1909,6 +2010,7 @@ export default function BuilderClient({
             onRemoveAsset={(asset) => void removeUserAsset(asset)}
             removingAssetId={removingAssetId}
             onSaveTShirt={() => void saveBespokeTShirt()}
+            onCropArtwork={applyCrop}
             onSelectColor={(c) => (c === "BLACK" ? selectBlackColor() : selectWhiteColor())}
           />,
           document.body,
@@ -1929,7 +2031,7 @@ export default function BuilderClient({
         onChange={(event) => {
           const file = event.target.files?.[0];
           if (!file) return;
-          void handleUpload(file);
+          void handleUpload(file, { stage: showBespokeModal });
           event.currentTarget.value = "";
         }}
       />

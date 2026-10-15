@@ -1,14 +1,15 @@
 import { prisma } from "src/lib/prisma";
 import AdminToast from "src/components/admin/AdminToast";
 import ExchangeRateForm from "src/components/admin/ExchangeRateForm";
-import { updateStoreSettingsAction } from "src/actions/admin-system-actions";
+import { updateDisplayCurrencyAction, updateStoreSettingsAction } from "src/actions/admin-system-actions";
+import { DISPLAY_CURRENCIES, effectiveDisplay, formatDisplayPrice } from "src/pricing/display";
 import { PRICING_CURRENCY } from "src/pricing/engine";
 import { requireAdmin } from "src/lib/admin/auth";
 import { getPaymobHealth } from "src/lib/admin/paymob-health";
 import PageHeader from "src/components/admin/ui/PageHeader";
 import Card from "src/components/admin/ui/Card";
 import Badge from "src/components/admin/ui/Badge";
-import { FieldLabel } from "src/components/admin/ui/Input";
+import { FieldLabel, Select } from "src/components/admin/ui/Input";
 import { buttonClass } from "src/components/admin/ui/Button";
 
 // Paymob's current merchant integration is EGP-only (see
@@ -53,6 +54,24 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         include: { admin: { select: { email: true } } },
       })
     : [];
+  const rateHistory = (
+    await prisma.adminAuditLog.findMany({
+      where: { action: "STORE_SETTINGS_UPDATED" },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+      include: { admin: { select: { email: true } } },
+    })
+  )
+    .map((log) => {
+      const m = log.metadata as { previousUsdToEgpRate?: number | null; usdToEgpRate?: number | null } | null;
+      return { log, from: m?.previousUsdToEgpRate ?? null, to: m?.usdToEgpRate ?? null };
+    })
+    .filter((entry) => entry.from !== entry.to)
+    .slice(0, 8);
+  const selectedDisplay = DISPLAY_CURRENCIES.includes((settings?.displayCurrency ?? "USD") as (typeof DISPLAY_CURRENCIES)[number])
+    ? (settings?.displayCurrency ?? "USD")
+    : "USD";
+  const activeDisplay = effectiveDisplay(settings?.displayCurrency, settings?.usdToEgpRate);
   const rateLastSetBy = recentSettingsAudits.find((log) => {
     const metadata = log.metadata as { usdToEgpRate?: number } | null;
     return metadata?.usdToEgpRate === settings?.usdToEgpRate;
@@ -100,6 +119,42 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               shipping={shipping}
             />
           </div>
+        </Card>
+
+        <Card className="mt-6" title="Currency customers see" subtitle="What prices look like in the builder, bag and bespoke quotes. Orders are still recorded in USD and paid in EGP.">
+          <form action={updateDisplayCurrencyAction} className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
+            <FieldLabel label="Display currency">
+              <Select name="displayCurrency" defaultValue={selectedDisplay}>
+                {DISPLAY_CURRENCIES.map((code) => (
+                  <option key={code} value={code}>{code === "USD" ? "USD — US dollar" : "EGP — Egyptian pound"}</option>
+                ))}
+              </Select>
+            </FieldLabel>
+            <button className={buttonClass()}>Apply</button>
+          </form>
+          <div className="mt-4 rounded-xl bg-admin-canvas p-4 text-xs leading-5 text-admin-muted">
+            <p>
+              Right now customers see: <strong className="text-admin-ink">{activeDisplay.currency}</strong>
+              {selectedDisplay === "EGP" && activeDisplay.currency === "USD" ? " (EGP is selected but no exchange rate is set, so USD is shown)" : ""}.
+            </p>
+            <p className="mt-1">Example — a {formatDisplayPrice(9.54, { currency: "USD", rate: 1 })} T-shirt appears as <strong className="text-admin-ink">{formatDisplayPrice(9.54, activeDisplay)}</strong>.</p>
+            <p className="mt-1">EGP prices are USD price × the exchange rate above, so they match what Paymob charges.</p>
+          </div>
+        </Card>
+
+        <Card className="mt-6" title="Exchange rate history" subtitle="Most recent changes. Existing orders always keep the rate they were placed with.">
+          {rateHistory.length ? (
+            <ul className="divide-y divide-admin-border text-sm">
+              {rateHistory.map(({ log, from, to }) => (
+                <li key={log.id} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
+                  <span className="font-semibold text-admin-ink">{from != null ? `${from}` : "not set"} → {to != null ? `${to}` : "not set"} <span className="font-normal text-admin-faint">EGP per USD</span></span>
+                  <span className="text-xs text-admin-faint">{formatDateTime(log.createdAt)} · {log.admin?.email ?? "an admin"}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-admin-faint">No rate changes recorded yet.</p>
+          )}
         </Card>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-2">

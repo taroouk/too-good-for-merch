@@ -1,3 +1,4 @@
+import { compressMockupImage } from "src/lib/image/compress-mockup";
 import { Role } from "@prisma/client";
 import sharp, { type Metadata } from "sharp";
 import { auth } from "src/auth";
@@ -115,6 +116,8 @@ const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 // the tradeoff isn't silently invisible the next time these numbers change.
 const MAX_GEMINI_ATTEMPTS = 2;
 const GEMINI_RETRY_DELAY_MS = 1500;
+// Longest side of each image sent to Gemini (see toGeminiSize).
+const GEMINI_INPUT_MAX_SIDE = 1280;
 
 function stringValue(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
@@ -682,6 +685,20 @@ export async function POST(req: Request) {
     // visibly follows the garment's fabric folds/lighting. The request
     // body is built once and reused verbatim across retry attempts --
     // retrying never changes what's sent.
+    // Gemini answers at ~1K regardless of what it is sent, and the answer is
+    // scaled back to the template's size (cropOutOfSquare), so sending the
+    // full-resolution crop and artworks (often several MB of PNG) only slows
+    // the upload and the model. Downscale them; the fractions in the prompt
+    // are unaffected since every image keeps its shape.
+    const toGeminiSize = (png: Buffer) =>
+      sharp(png)
+        .resize({ width: GEMINI_INPUT_MAX_SIDE, height: GEMINI_INPUT_MAX_SIDE, fit: "inside", withoutEnlargement: true })
+        .png({ compressionLevel: 3 })
+        .toBuffer();
+    const [geminiGarmentSmall, ...geminiPrintsSmall] = await Promise.all([
+      toGeminiSize(geminiGarmentInput),
+      ...prints.map((print) => toGeminiSize(print.trimmed)),
+    ]);
     const geminiRequestBody = JSON.stringify({
       model,
       input: [
@@ -692,13 +709,13 @@ export async function POST(req: Request) {
         {
           type: "image",
           mime_type: "image/png",
-          data: geminiGarmentInput.toString("base64"),
+          data: geminiGarmentSmall.toString("base64"),
         },
         // INPUT 2..N+1: every artwork, trimmed to its visible content.
-        ...prints.map((print) => ({
+        ...geminiPrintsSmall.map((data) => ({
           type: "image",
           mime_type: "image/png",
-          data: print.trimmed.toString("base64"),
+          data: data.toString("base64"),
         })),
       ],
       response_format: {
@@ -914,7 +931,11 @@ export async function POST(req: Request) {
       finalImage = geminiImage as Buffer;
     }
 
-    const storedMimeType = validateMockupData(finalImage, "image/png");
+    // Stored compressed (WebP, <=1600px): the PNG straight out of the
+    // compositor is several MB per mockup.
+    const compressedMockup = await compressMockupImage(finalImage, "image/png");
+    finalImage = compressedMockup.data;
+    const storedMimeType = validateMockupData(finalImage, compressedMockup.mimeType);
 
     // Best-effort lineage link to the draft's current Print Mockup (for
     // display/debugging only) -- this route's own correctness never
