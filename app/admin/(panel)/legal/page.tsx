@@ -21,7 +21,7 @@ export default async function AdminLegalPage({ searchParams }: { searchParams: P
       <div className="mx-auto max-w-5xl">
         <PageHeader
           eyebrow="System"
-          title="Legal pages"
+          title="Legal Pages"
           subtitle="The Terms, Privacy and Refund pages customers see in the site footer and agree to at checkout. Edits go live immediately."
         />
 

@@ -54,7 +54,7 @@ export default function ArtworkModal({
             onClick={onContinueCustomRequest}
             className="studio-modal-primary-button"
           >
-            Continue With Custom Request
+            Continue with custom request
           </button>
 
           <button

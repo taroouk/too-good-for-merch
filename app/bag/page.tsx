@@ -1,3 +1,5 @@
+import AccountNav from "src/components/site/AccountNav";
+import { designTitle } from "src/lib/design-title";
 import { getStoreDisplay } from "src/lib/store-display";
 import { formatDisplayPrice } from "src/pricing/display";
 import Link from "next/link";
@@ -100,22 +102,24 @@ export default async function BagPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
-            <h1 className="mt-2 text-4xl font-semibold">Your bag</h1>
-            {rows.length ? <p className="mt-2 text-sm text-black/50">{rows.length} item{rows.length === 1 ? "" : "s"} · each item is checked out separately</p> : null}
+            <h1 className="mt-2 text-4xl font-semibold">Your Bag</h1>
+            {rows.length ? <p className="mt-2 text-sm text-black/50">{rows.length} item{rows.length === 1 ? "" : "s"} · Each item is checked out separately</p> : null}
           </div>
           <Link href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
-            Open studio
+            Open Studio
           </Link>
         </div>
 
+        <AccountNav />
+
         {rows.length === 0 ? (
           <div className="mt-10 rounded-2xl bg-white p-12 text-center shadow-sm">
-            <p className="text-lg font-semibold">Your bag is empty</p>
+            <p className="text-lg font-semibold">Your Bag is empty</p>
             <p className="mx-auto mt-2 max-w-sm text-sm text-black/50">
-              Press “Add to Bag” on a design in the studio and it will show up here, ready to check out.
+              Press “Add to Bag” on a design in the Studio and it will show up here, ready to check out.
             </p>
             <Link href="/studio" className="mt-6 inline-flex rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
-              Start a build
+              Start your design
             </Link>
           </div>
         ) : (
@@ -133,7 +137,7 @@ export default async function BagPage() {
 
                 <div className="flex flex-1 flex-col p-5">
                   <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-lg font-semibold">{item.build.name ?? "Studio build"}</h2>
+                    <h2 className="text-lg font-semibold">{designTitle({ name: item.build.name, product: draft?.product, color: draft?.color })}</h2>
                     <strong className="shrink-0 text-lg">{priceText}</strong>
                   </div>
                   <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/60">
@@ -156,7 +160,7 @@ export default async function BagPage() {
                     ) : (
                       <span className="flex-1 rounded-xl bg-black/10 px-4 py-2.5 text-center text-sm font-semibold text-black/45">Unavailable</span>
                     )}
-                    <Link href={`/studio/projects/${item.buildId}/builder`} className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 transition hover:border-black hover:text-black">
+                    <Link href={`/studio/projects/${item.buildId}/builder?edit=1&size=${encodeURIComponent(item.size)}`} className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 transition hover:border-black hover:text-black">
                       Edit
                     </Link>
                     <form action={actionRemoveFromBagForm}>

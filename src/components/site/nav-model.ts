@@ -88,7 +88,7 @@ export function buildNavModel(pathname: string, authenticated: boolean, role?: s
     ? [
         // Admins get the dashboard as the first entry of the account menu.
         ...(role === "ADMIN" ? [{ label: "Admin dashboard", href: "/admin", active: false }] : []),
-        { label: "My orders", href: "/orders", active: isUnder(pathname, "/orders") },
+        { label: "My Orders", href: "/orders", active: isUnder(pathname, "/orders") },
         { label: "Wishlist", href: "/wishlist", active: isUnder(pathname, "/wishlist") },
         { label: "Bespoke", href: "/bespoke", active: isUnder(pathname, "/bespoke") },
       ]

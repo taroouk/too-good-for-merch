@@ -54,7 +54,7 @@ export default function LoginClient() {
             <div className="kicker">Too Good For Merch</div>
             <h1 className="h1">ENTER STUDIO</h1>
             <p className="p">
-              Login to access your studio. Your session is protected and the /studio route is guarded by middleware.
+              Log in to design your T-shirt in the Studio.
             </p>
           </div>
 
@@ -90,7 +90,7 @@ export default function LoginClient() {
 
               <div className="btnRow">
                 <button className="btn" type="submit" disabled={loading}>
-                  {loading ? "Logging in..." : "Login"}
+                  {loading ? "Logging in..." : "Log in"}
                 </button>
 
                 <Link className="link" href={`/register?callbackUrl=${encodeURIComponent(callbackUrl)}`}>

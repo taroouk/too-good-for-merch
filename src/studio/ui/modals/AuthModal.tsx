@@ -69,7 +69,7 @@ export default function AuthModal({
 
         <div className="studio-modal-scroll">
           <div className="studio-modal-kicker">TGFM Account</div>
-          <h2 id="auth-modal-title" className="studio-auth-title">Login Or Sign Up</h2>
+          <h2 id="auth-modal-title" className="studio-auth-title">Log in or sign up</h2>
           <p className="studio-auth-copy">
             Continue to save your artwork and build your T-shirt.
           </p>
@@ -84,7 +84,7 @@ export default function AuthModal({
               )}
               aria-pressed={authMode === "login"}
             >
-              Login
+              Log in
             </button>
 
             <button
@@ -123,7 +123,7 @@ export default function AuthModal({
                 onChange={onPasswordChange}
                 autoComplete={authMode === "signup" ? "new-password" : "current-password"}
                 minLength={authMode === "signup" ? 8 : undefined}
-                placeholder={authMode === "signup" ? "min 8 chars" : "password"}
+                placeholder={authMode === "signup" ? "At least 8 characters" : "Password"}
                 required
               />
             </label>
@@ -146,8 +146,8 @@ export default function AuthModal({
                   ? "Creating..."
                   : "Logging in..."
                 : authMode === "signup"
-                  ? "Create Account"
-                  : "Login"}
+                  ? "Create account"
+                  : "Log in"}
             </button>
           </form>
 
@@ -158,7 +158,7 @@ export default function AuthModal({
               onClick={onToggleMode}
               className="studio-auth-inline-button"
             >
-              {authMode === "login" ? "Create account" : "Login"}
+              {authMode === "login" ? "Create account" : "Log in"}
             </button>
           </div>
         </div>

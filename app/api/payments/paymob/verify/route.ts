@@ -55,7 +55,7 @@ function topLevelRedirect(destination: string) {
 export async function POST(req: Request) {
   const body = await req.json().catch(() => null);
   if (typeof body?.orderId !== "string") {
-    return NextResponse.json({ error: "orderId is required." }, { status: 400 });
+    return NextResponse.json({ error: "Order ID is required." }, { status: 400 });
   }
   return statusResponse(body.orderId);
 }

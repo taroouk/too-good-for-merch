@@ -40,9 +40,9 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/settings", label: "Settings", icon: SettingsIcon },
       { href: "/admin/team", label: "Team", icon: TeamIcon },
-      { href: "/admin/legal", label: "Legal pages", icon: AuditIcon },
-      { href: "/admin/audit", label: "Audit log", icon: AuditIcon },
-      { href: "/admin/system", label: "System health", icon: PulseIcon },
+      { href: "/admin/legal", label: "Legal Pages", icon: AuditIcon },
+      { href: "/admin/audit", label: "Audit Log", icon: AuditIcon },
+      { href: "/admin/system", label: "System Health", icon: PulseIcon },
     ],
   },
 ];

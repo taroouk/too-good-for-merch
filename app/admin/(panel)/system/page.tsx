@@ -20,7 +20,7 @@ export default async function SystemHealthPage() {
   return (
     <main className="p-4 sm:p-7 xl:p-9">
       <div className="mx-auto max-w-5xl">
-        <PageHeader eyebrow="System" title="System health" subtitle="Live checks of the database, payments, webhooks, pricing, and configuration. Reload to re-run them." />
+        <PageHeader eyebrow="System" title="System Health" subtitle="Live checks of the database, payments, webhooks, pricing, and configuration. Reload to re-run them." />
 
         <section className="mt-7 grid grid-cols-2 gap-3 sm:gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <StatCard label="Failing" value={failing} tone={failing ? "danger" : "default"} />

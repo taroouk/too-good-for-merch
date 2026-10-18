@@ -15,6 +15,7 @@ import {
 } from "src/lib/orders/display";
 import { customerOrderStatus, itemAmountsInChargedCurrency, orderTimeline, paymentMethodLabel, type StatusTone } from "src/lib/orders/customer-view";
 import { placementLabel, type PlacementKey } from "src/pricing/placements";
+import AccountNav from "src/components/site/AccountNav";
 import PaymentStatusClient from "./PaymentStatusClient";
 import PrintButton from "./PrintButton";
 
@@ -72,8 +73,9 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
       <div className="mx-auto max-w-5xl">
-        <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link href="/orders" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-black/55 hover:text-black">← My orders</Link>
+        <div className="-mt-2 mb-2 print:hidden"><AccountNav /></div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 print:hidden">
+          <Link href="/orders" className="inline-flex min-h-[44px] items-center text-sm font-semibold text-black/55 hover:text-black">← My Orders</Link>
           <PrintButton />
         </div>
 

@@ -47,7 +47,7 @@ export default function RegisterClient() {
             <div className="kicker">Too Good For Merch</div>
             <h1 className="h1">CREATE ACCOUNT</h1>
             <p className="p">
-              Create your account then we’ll sign you in automatically and send you to the studio.
+              Create your account and we’ll sign you in automatically and take you to the Studio.
             </p>
 
             <div className="smallNote">
@@ -80,7 +80,7 @@ export default function RegisterClient() {
                   minLength={8}
                   required
                   autoComplete="new-password"
-                  placeholder="min 8 chars"
+                  placeholder="At least 8 characters"
                 />
               </label>
 

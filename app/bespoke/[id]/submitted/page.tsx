@@ -84,7 +84,7 @@ export default async function BespokeSubmittedPage({
             View my requests
           </Link>
           <a href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
-            Back to studio
+            Back to Studio
           </a>
         </div>
       </div>

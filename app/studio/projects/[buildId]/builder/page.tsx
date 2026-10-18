@@ -7,15 +7,30 @@ import BuilderClient from "src/studio/ui/BuilderClient";
 import { draftArtworkLayers } from "src/studio/artwork-layers";
 import { getActiveFabricOptions, getProductCopy } from "src/lib/catalog";
 import { getStoreDisplay } from "src/lib/store-display";
+import { normalizeBagSize } from "src/lib/bag";
+import { recoverDraftArtworkIfLost } from "src/lib/artwork/recover";
 
 export default async function BuilderPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ buildId: string }>;
+  searchParams: Promise<{ size?: string; edit?: string }>;
 }) {
   const { buildId } = await params;
+  // "Edit" from the bag brings the item's size back and opens the design editor.
+  const query = await searchParams;
+  const wantsEdit = query.edit === "1";
+  let initialSize = query.size ? normalizeBagSize(query.size) : undefined;
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
+  // A design whose artwork reference was lost (but whose mockups survive) gets it back.
+  await recoverDraftArtworkIfLost(buildId).catch(() => false);
+
+  // Only a build that is really in this customer's bag is "being edited".
+  const bagItem = wantsEdit && userId ? await prisma.bagItem.findUnique({ where: { userId_buildId: { userId, buildId } }, select: { size: true } }) : null;
+  const editingBagItem = Boolean(bagItem);
+  if (bagItem) initialSize = normalizeBagSize(bagItem.size);
 
   const build = await prisma.build.findUnique({
     where: { id: buildId },
@@ -169,6 +184,9 @@ export default async function BuilderPage({
   return (
     <BuilderClient
       storeDisplay={await getStoreDisplay()}
+      initialSize={initialSize}
+      openDesignerOnLoad={editingBagItem}
+      editingBagItem={editingBagItem}
       fabricCatalog={fabricCatalog}
       productCopy={productCopy}
       buildId={build.id}

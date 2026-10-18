@@ -20,7 +20,7 @@ export default async function SuccessPage({ params }: { params: Promise<{ orderI
         <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-2xl text-emerald-700">
           ✓
         </div>
-        <p className="mt-6 text-xs font-semibold uppercase tracking-[.18em] text-black/40">Webhook confirmed</p>
+        <p className="mt-6 text-xs font-semibold uppercase tracking-[.18em] text-black/40">Payment confirmed</p>
         <h1 className="mt-2 text-3xl font-semibold">Payment successful</h1>
         <p className="mt-3 text-sm leading-6 text-black/55">
           Your payment for {order.orderNumber} has been securely confirmed. We will begin preparing your order.
@@ -30,7 +30,7 @@ export default async function SuccessPage({ params }: { params: Promise<{ orderI
             View order
           </Link>
           <a href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
-            Back to studio
+            Back to Studio
           </a>
         </div>
       </div>

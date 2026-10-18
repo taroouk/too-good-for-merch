@@ -126,6 +126,13 @@ type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
 type EditorLayer = ArtworkLayer & { url: string; fileName?: string; hash?: string | null };
 
 type BuilderClientProps = {
+  // Coming back from the bag: the size chosen there, and whether to open the
+  // design popup straight away.
+  initialSize?: SizeOption;
+  openDesignerOnLoad?: boolean;
+  // Opened from the bag's Edit: everything is editable, and the main button
+  // updates that bag item and returns to the bag.
+  editingBagItem?: boolean;
   // Currency customers see prices in (admin setting); USD when unset.
   storeDisplay?: StoreDisplay;
   // Admin-managed catalog (see src/lib/catalog.ts). Optional so the builder
@@ -273,6 +280,9 @@ export default function BuilderClient({
   draft,
   placementsCount,
   storeDisplay = USD_DISPLAY,
+  initialSize,
+  openDesignerOnLoad = false,
+  editingBagItem = false,
   initialUserAssets = [],
   initialMockupUrl = null,
   initialMockupFingerprint = null,
@@ -394,10 +404,10 @@ export default function BuilderClient({
   const [authError, setAuthError] = useState<string | null>(null);
   const [authPending, setAuthPending] = useState(false);
   const [showCustomPopup, setShowCustomPopup] = useState(false);
-  const [showBespokeModal, setShowBespokeModal] = useState(false);
+  const [showBespokeModal, setShowBespokeModal] = useState(openDesignerOnLoad && draft.product !== "CUSTOM");
   const [showSizeGuide, setShowSizeGuide] = useState(false);
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
-  const [selectedSize, setSelectedSize] = useState<SizeOption>("M");
+  const [selectedSize, setSelectedSize] = useState<SizeOption>(initialSize ?? "M");
   const [fabricOpen, setFabricOpen] = useState(false);
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -741,8 +751,12 @@ export default function BuilderClient({
     try {
       const result = await actionAddToBag(buildId, selectedSize);
       if (result.ok) {
-        setBagNotice({ ok: true, text: "Added to your bag." });
         window.dispatchEvent(new Event("tgfm:bag-changed"));
+        if (editingBagItem) {
+          router.push("/bag");
+          return;
+        }
+        setBagNotice({ ok: true, text: "Added to your bag." });
       } else {
         setBagNotice({ ok: false, text: result.error });
       }
@@ -751,7 +765,7 @@ export default function BuilderClient({
     } finally {
       setBagPending(false);
     }
-  }, [buildId, selectedSize]);
+  }, [buildId, editingBagItem, router, selectedSize]);
 
   useEffect(() => {
     if (status !== "authenticated" || !showAuthModal) return;
@@ -2158,6 +2172,16 @@ export default function BuilderClient({
                   </div>
                 </div>
 
+                {editingBagItem ? (
+                  <div role="status" className="mb-3 flex items-start justify-between gap-3 rounded-xl border border-black/15 bg-black/[.04] px-4 py-3 text-xs leading-5">
+                    <span>
+                      <strong className="block text-[13px]">Editing your bag item</strong>
+                      Change the product, colour, fabric, size, quantity or design, then press Update Bag.
+                    </span>
+                    <a href="/bag" className="shrink-0 font-semibold underline">Cancel</a>
+                  </div>
+                ) : null}
+
                 <div className="studio-summary-card studio-summary-card-sticky">
                   <div className="studio-summary-label">Selection Summary</div>
                   <div className="studio-summary-value">{selectionSummary}</div>
@@ -2167,7 +2191,7 @@ export default function BuilderClient({
 <CheckoutButton
   onCheckout={openCheckout}
   disabled={!canCheckout || savePending || bagPending}
-  label={isBespokeRequestCta ? "Request a Quote" : bagPending ? "Adding..." : "Add to Bag"}
+  label={isBespokeRequestCta ? "Request a Quote" : bagPending ? (editingBagItem ? "Updating..." : "Adding...") : editingBagItem ? "Update Bag" : "Add to Bag"}
 />
 
                   <button

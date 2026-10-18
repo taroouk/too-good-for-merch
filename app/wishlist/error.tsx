@@ -23,7 +23,7 @@ export default function WishlistError({
             Try again
           </button>
           <Link href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
-            Back to studio
+            Back to Studio
           </Link>
         </div>
       </div>

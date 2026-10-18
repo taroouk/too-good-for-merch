@@ -347,7 +347,10 @@ export async function actionSwitchProduct(
           })
         : [];
       const ownedIds = new Set(owned.map((a) => a.id));
-      currentLayers = requested.filter((l) => ownedIds.has(l.assetId));
+      const live = requested.filter((l) => ownedIds.has(l.assetId));
+      // An empty list from the client while the draft still has artwork is a
+      // stale/unsynced view, not a decision to throw the design away.
+      if (live.length || !currentLayers.length) currentLayers = live;
     }
     designs[draft.product] = {
       layers: currentLayers,

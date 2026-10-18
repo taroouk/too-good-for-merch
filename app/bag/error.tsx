@@ -13,7 +13,7 @@ export default function BagError({ reset }: { error: Error & { digest?: string }
             Try again
           </button>
           <Link href="/studio" className="rounded-xl border border-black px-5 py-3 text-sm font-semibold">
-            Back to studio
+            Back to Studio
           </Link>
         </div>
       </div>

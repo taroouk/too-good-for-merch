@@ -156,7 +156,7 @@ export async function POST(req: Request) {
       const currentCurrency = await resolveCurrentCurrency();
       if (order.currency !== currentCurrency) {
         throw new CheckoutError(
-          "This order's payment configuration is outdated. Please return to the studio and start a new checkout.",
+          "This order's payment configuration is outdated. Please return to the Studio and start a new checkout.",
           409,
         );
       }

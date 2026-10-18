@@ -194,7 +194,7 @@ export async function runAll() {
       // The account links live in the dropdown only (no duplicates in the bar)
       assert.equal(builder.studio, null);
       assert.equal(builder.bagLink.href, "/bag");
-      assert.deepEqual(builder.accountItems.map((i) => i.label), ["My orders", "Wishlist", "Bespoke"]);
+      assert.deepEqual(builder.accountItems.map((i) => i.label), ["My Orders", "Wishlist", "Bespoke"]);
       assert.equal(builder.accountItems.find((i) => i.label === "Bespoke")?.href, "/bespoke");
       assert.equal(buildNavModel("/bespoke", true).accountItems.find((i) => i.label === "Bespoke")?.active, true);
       assert.equal(builder.showLogin, false);

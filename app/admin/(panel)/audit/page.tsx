@@ -96,7 +96,7 @@ export default async function AuditLogPage({
   return (
     <main className="p-4 sm:p-7 xl:p-9">
       <div className="mx-auto max-w-7xl">
-        <PageHeader eyebrow="System" title="Audit log" subtitle="Every admin action that changes orders, payments, pricing, settings, quotes, or access — who did what, and when." />
+        <PageHeader eyebrow="System" title="Audit Log" subtitle="Every admin action that changes orders, payments, pricing, settings, quotes, or access — who did what, and when." />
 
         <Card className="mt-7" padded={false}>
           <form className="flex flex-wrap items-end gap-3 p-4 sm:p-5">

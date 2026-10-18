@@ -1,4 +1,5 @@
 import { getStoreDisplay } from "src/lib/store-display";
+import AccountNav from "src/components/site/AccountNav";
 import { formatDisplayPrice, type StoreDisplay } from "src/pricing/display";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -47,14 +48,16 @@ export default async function BespokeListPage() {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
-            <h1 className="mt-2 text-4xl font-semibold">Bespoke requests</h1>
+            <h1 className="mt-2 text-4xl font-semibold">Bespoke Requests</h1>
           </div>
           <Link href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
-            Open studio
+            Open Studio
           </Link>
         </div>
 
-        <div className="mt-8 space-y-3">
+        <AccountNav />
+
+        <div className="mt-6 space-y-3">
           {requests.map((r) => (
             <div
               key={r.id}
@@ -83,7 +86,7 @@ export default async function BespokeListPage() {
           ))}
           {!requests.length ? (
             <div className="rounded-2xl bg-white p-10 text-center text-black/50">
-              No bespoke requests yet. Build a custom piece in the studio and submit it for a quote.
+              No bespoke requests yet. Build a custom piece in the Studio and submit it for a quote.
             </div>
           ) : null}
         </div>

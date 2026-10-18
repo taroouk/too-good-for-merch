@@ -131,7 +131,7 @@ function BespokeNewContent() {
           <h1 className="text-2xl font-semibold">Request unavailable</h1>
           <p className="mt-2 text-sm text-black/55">{error ?? "No build was selected."}</p>
           <a href="/studio" className="mt-6 inline-flex rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
-            Back to studio
+            Back to Studio
           </a>
         </section>
       </main>

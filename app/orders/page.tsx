@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
+import AccountNav from "src/components/site/AccountNav";
 import { formatMoney, orderItemExtras, resolveOrderMockupIds } from "src/lib/orders/display";
 import { ORDER_FILTERS, customerOrderStatus, matchesOrderFilter, parseOrderFilter, type StatusTone } from "src/lib/orders/customer-view";
 
@@ -35,7 +36,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
-            <h1 className="mt-2 text-4xl font-semibold">My orders</h1>
+            <h1 className="mt-2 text-4xl font-semibold">My Orders</h1>
             <p className="mt-2 text-sm text-black/50">
               {orders.length ? `${orders.length} order${orders.length === 1 ? "" : "s"} · track status, see what you ordered and where it's going.` : "Everything you order will show up here."}
             </p>
@@ -45,8 +46,10 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           </Link>
         </div>
 
+        <AccountNav />
+
         {orders.length ? (
-          <nav className="mt-8 flex gap-2 overflow-x-auto pb-1" aria-label="Filter orders">
+          <nav className="mt-4 flex gap-2 overflow-x-auto pb-1" aria-label="Filter orders">
             {ORDER_FILTERS.map((f) => {
               const active = f.key === filter;
               const count = counts.get(f.key) ?? 0;
@@ -146,7 +149,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
             <div className="rounded-3xl bg-white p-12 text-center">
               <p className="text-lg font-semibold">No orders yet</p>
               <p className="mt-2 text-sm text-black/50">Design your first T-shirt and it will appear here.</p>
-              <Link href="/studio" className="mt-6 inline-block rounded-xl bg-black px-6 py-3 text-sm font-semibold text-white">Open the studio</Link>
+              <Link href="/studio" className="mt-6 inline-block rounded-xl bg-black px-6 py-3 text-sm font-semibold text-white">Open the Studio</Link>
             </div>
           ) : !visible.length ? (
             <div className="rounded-3xl bg-white p-10 text-center text-sm text-black/50">
