@@ -1,6 +1,7 @@
 import { PaymentStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { sendEmail, type SendResult } from "src/lib/notify/email";
+import { recordEmailFailure } from "src/lib/notify/email-failure";
 import { buildOrderConfirmationEmail, buildOrderShippedEmail } from "src/lib/notify/order-content";
 import { CONTACT_EMAIL, WHATSAPP_PHONE } from "src/lib/contact";
 import { siteUrl } from "src/lib/site-url";
@@ -64,6 +65,7 @@ export async function sendOrderConfirmationEmail(orderId: string, options: { for
     });
 
     const result = await sendEmail({ to, subject: email.subject, html: email.html, text: email.text, replyTo: CONTACT_EMAIL });
+    if (!result.sent) await recordEmailFailure({ kind: "order-confirmation", to, orderId, reason: result.skipped ? result.reason : result.error });
     if (result.sent) {
       if (options.force) await prisma.order.update({ where: { id: orderId }, data: { confirmationEmailSentAt: new Date() } });
     } else if (!options.force) {
@@ -101,7 +103,9 @@ export async function sendOrderShippedEmail(orderId: string): Promise<Confirmati
       orderUrl: base ? `${base}/orders/${order.id}` : null,
       supportEmail: CONTACT_EMAIL,
     });
-    return await sendEmail({ to, subject: email.subject, html: email.html, text: email.text, replyTo: CONTACT_EMAIL });
+    const shipped = await sendEmail({ to, subject: email.subject, html: email.html, text: email.text, replyTo: CONTACT_EMAIL });
+    if (!shipped.sent) await recordEmailFailure({ kind: "order-shipped", to, orderId, reason: shipped.skipped ? shipped.reason : shipped.error });
+    return shipped;
   } catch (error) {
     console.error("[notify/order] shipped email failed", error);
     return { sent: false, error: error instanceof Error ? error.message : "Unknown error" };

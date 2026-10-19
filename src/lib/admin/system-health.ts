@@ -1,6 +1,8 @@
 import { PaymentStatus } from "@prisma/client";
 import { prisma } from "src/lib/prisma";
 import { getPaymobHealth, isEnvConfigured } from "src/lib/admin/paymob-health";
+import { emailSetup } from "src/lib/notify/email-health";
+import { EMAIL_FAILED_ACTION } from "src/lib/notify/email-failure";
 import { getPricingHealth } from "src/lib/admin/pricing-health";
 import { compareMigrations, EXPECTED_LATEST_MIGRATION } from "src/lib/admin/expected-migration";
 
@@ -72,6 +74,26 @@ export async function getSystemHealth(): Promise<{ checks: HealthCheck[]; dbLate
     level: paymob.allConfigured ? "ok" : "fail",
     detail: paymob.allConfigured ? "All required credentials are set." : `Missing: ${paymob.missingRequired.map((item) => item.envVar).join(", ")}`,
     href: "/admin/settings",
+  });
+
+  const email = emailSetup({ apiKey: process.env.RESEND_API_KEY, from: process.env.EMAIL_FROM });
+  let emailFailures = 0;
+  try {
+    emailFailures = await prisma.adminAuditLog.count({ where: { action: EMAIL_FAILED_ACTION, createdAt: { gte: new Date(now - 24 * HOUR) } } });
+  } catch {
+    // health stays usable if this one query fails
+  }
+  checks.push({
+    id: "email",
+    label: "Email delivery",
+    level: email.level !== "ok" ? email.level : emailFailures > 0 ? "warn" : "ok",
+    detail:
+      email.level !== "ok"
+        ? email.detail
+        : emailFailures > 0
+          ? `${emailFailures} email(s) failed to send in the last 24h — open the audit log (Email failed) to see why.`
+          : email.detail,
+    href: emailFailures > 0 ? `/admin/audit?action=${EMAIL_FAILED_ACTION}` : "/admin/system",
   });
 
   try {

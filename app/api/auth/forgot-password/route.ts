@@ -3,7 +3,8 @@ import { prisma } from "src/lib/prisma";
 import { apiError, readJsonObject } from "src/lib/api/responses";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit, rateLimitByKey } from "src/lib/rate-limit-db";
-import { sendEmail } from "src/lib/notify/email";
+import { emailConfigured, sendEmail } from "src/lib/notify/email";
+import { recordEmailFailure } from "src/lib/notify/email-failure";
 import { siteUrl } from "src/lib/site-url";
 import { RESET_TOKEN_TTL_MS, buildResetEmail, generateResetToken, normalizeEmail, resetIdentifier } from "src/lib/auth/password-reset";
 
@@ -20,6 +21,14 @@ export async function POST(req: Request) {
   if (!body) return apiError("Invalid JSON request.", 400);
   const email = normalizeEmail(body.email);
   if (!email) return apiError("Enter a valid email address.", 400);
+
+  // Email isn't set up on this server at all: say so, rather than promising a
+  // message that will never come. (Same answer for every address, so it
+  // reveals nothing about who has an account.)
+  if (!emailConfigured() && process.env.NODE_ENV === "production") {
+    await recordEmailFailure({ kind: "password-reset", to: email, reason: "RESEND_API_KEY is not configured" });
+    return apiError("We can't send emails right now. Please contact us and we'll reset your password for you.", 503);
+  }
 
   const emailLimit = await rateLimitByKey("auth:forgot-email", email, 3, 60 * 60 * 1000);
   const generic = NextResponse.json({ ok: true });
@@ -47,7 +56,10 @@ export async function POST(req: Request) {
       // printed to the server console instead. Never in production.
       console.info("[forgot-password] dev reset link (email not sent):", link);
     }
-    if (!result.sent && !result.skipped) console.error("[forgot-password] email failed", result.error);
+    if (!result.sent && !result.skipped) {
+      console.error("[forgot-password] email failed", result.error);
+      await recordEmailFailure({ kind: "password-reset", to: email, reason: result.error });
+    }
   } catch (error) {
     console.error("[forgot-password] error", error);
   }
