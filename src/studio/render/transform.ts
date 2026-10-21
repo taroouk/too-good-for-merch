@@ -1,7 +1,7 @@
 // file: src/studio/render/transform.ts
 import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import { RendererError } from "./errors";
-import { getGarmentSafeArea, getPlacementBox, getPlacementSide, getTemplateAspectRatio } from "./placement-config";
+import { getPlacementBox, getPlacementFrameAspect, getPlacementSide, getTemplateAspectRatio } from "./placement-config";
 import type { ArtworkTransform, GarmentBBox, PlacementBox, ResolvedPlacement } from "./types";
 
 // x AND y are both fractions of the canvas WIDTH (the template's width
@@ -26,7 +26,7 @@ export const TRANSFORM_BOUNDS = {
 // the entire canvas at legitimate, in-UI-bounds scale values -- see
 // getEffectiveScaleBounds. Small placements are unaffected (their
 // unrestricted ceiling stays far above TRANSFORM_BOUNDS.scale.max).
-export const MAX_PLACEMENT_WIDTH_FRACTION = 0.45;
+export const MAX_PLACEMENT_WIDTH_FRACTION = 0.6;
 
 // Independent defensive backstop, not the fix itself: even with a correct
 // per-placement scale ceiling, an artwork with an extreme aspect ratio
@@ -115,24 +115,31 @@ export function getDragBounds(
   const box = getPlacementBox(product, color, placement);
   const side = getPlacementSide(placement);
   const canvasAspect = getTemplateAspectRatio(side); // templateWidth / templateHeight
-  const safeArea = getGarmentSafeArea(side);
+  // Each placement is dragged inside ITS OWN frame (the placement box): as
+  // wide as the box, with the height its placeholder has (square, except the
+  // wide Center Front crop).
+  const frameBottom = box.yPct + box.widthPct * canvasAspect * getPlacementFrameAspect(placement);
+  const safeXMin = box.xPct;
+  const safeXMax = box.xPct + box.widthPct;
+  const safeYMin = box.yPct / canvasAspect;
+  const safeYMax = frameBottom / canvasAspect;
 
-  // safeArea is in template-relative fractions (x as a fraction of
-  // templateWidth, y as a fraction of templateHeight) -- convert its y
-  // extent into the same "fraction of canvas WIDTH" units used everywhere
-  // else here (artworkOffsetPx, centerY below), i.e. divide by canvasAspect.
-  const safeXMin = safeArea.xPct;
-  const safeXMax = safeArea.xPct + safeArea.widthPct;
-  const safeYMin = safeArea.yPct / canvasAspect;
-  const safeYMax = (safeArea.yPct + safeArea.heightPct) / canvasAspect;
-
+  // Artwork is approximated as having its frame's shape (the client has no
+  // reliable natural aspect ratio at drag time); half-extents in canvas-WIDTH
+  // units, the artwork scaling around the frame's own centre.
+  const frameAspect = getPlacementFrameAspect(placement);
   const half = (box.widthPct * scale) / 2;
+  const halfY = half * frameAspect;
   const centerX = box.xPct + box.widthPct / 2;
-  const centerY = box.yPct / canvasAspect + half;
+  const centerY = box.yPct / canvasAspect + (box.widthPct * frameAspect) / 2;
 
+  // An artwork as big as (or bigger than) its frame has no room to move:
+  // pin it to the frame's centre instead of returning an inverted range.
+  const range = (min: number, max: number) =>
+    min <= max ? { min, max } : { min: (min + max) / 2, max: (min + max) / 2 };
   return {
-    x: { min: safeXMin + half - centerX, max: safeXMax - centerX - half },
-    y: { min: safeYMin + half - centerY, max: safeYMax - centerY - half },
+    x: range(safeXMin + half - centerX, safeXMax - centerX - half),
+    y: range(safeYMin + halfY - centerY, safeYMax - centerY - halfY),
   };
 }
 

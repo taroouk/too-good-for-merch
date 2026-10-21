@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmSubmit } from "src/components/ui/dialog";
 import { useMemo, useState } from "react";
 import { buttonClass } from "src/components/admin/ui/Button";
 import { adjustPrice, validateBulkAdjustment, type BulkMode } from "src/lib/admin/bulk-pricing";
@@ -54,9 +55,11 @@ export default function BulkPriceAdjust({
     }
     const sign = amount > 0 ? "+" : "−";
     const label = mode === "percent" ? `${sign}${Math.abs(amount)}%` : `${sign}${Math.abs(amount)} USD`;
-    if (!window.confirm(`Change ${changed} price${changed === 1 ? "" : "s"} by ${label}?\n\nThis applies to new quotes and orders straight away. Existing orders are not affected.`)) {
-      event.preventDefault();
-    }
+    confirmSubmit(event, {
+      title: `Change ${changed} price${changed === 1 ? "" : "s"} by ${label}?`,
+      message: "This applies to new quotes and orders straight away. Existing orders are not affected.",
+      confirmLabel: "Apply change",
+    });
   }
 
   return (

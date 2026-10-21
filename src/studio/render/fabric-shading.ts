@@ -105,6 +105,11 @@ export type FabricShadingOptions = {
   // meant to be felt, not seen.
   inkOpacity: number;
   edgeSoftenSigma: number;
+  // Weave transfer: the garment's own fine-grain luminance (photo minus its
+  // blur) laid over the ink, in luminance levels per level of weave, so the
+  // cloth's texture reads THROUGH the print the way it does in real DTG.
+  // 0 disables it.
+  textureGain: number;
 };
 
 // Tuned by rendering the real garment photos in public/images at several
@@ -131,6 +136,7 @@ export const DEFAULT_FABRIC_SHADING: FabricShadingOptions = {
   highlightLift: 0.06,
   inkOpacity: 0.96,
   edgeSoftenSigma: 0.45,
+  textureGain: 0.6,
 };
 
 // Shading transfer needs the garment pixels the print will cover. If the
@@ -230,11 +236,27 @@ export async function applyFabricShading(
   const pixels = art.info.width * art.info.height;
   if (pixels === 0) return artwork;
 
+  // Folds are a LOW-frequency signal; the weave is high-frequency. Split the
+  // garment luminance so folds shade the print smoothly (no blotching from
+  // fabric grain) and the grain is applied separately as texture.
+  const width = art.info.width;
+  const height = art.info.height;
+  const lumRaw = Buffer.alloc(pixels);
+  for (let i = 0; i < pixels; i++) lumRaw[i] = lum.data[i * lum.info.channels];
+  let smooth: Buffer;
+  let mid: Buffer;
+  try {
+    const foldSigma = Math.max(1.5, Math.min(width, height) / 28);
+    smooth = await sharp(lumRaw, { raw: { width, height, channels: 1 } }).blur(foldSigma).extractChannel(0).raw().toBuffer();
+    mid = await sharp(lumRaw, { raw: { width, height, channels: 1 } }).blur(1.2).extractChannel(0).raw().toBuffer();
+  } catch {
+    throw new RendererError("Could not read the garment surface under the artwork.", 500);
+  }
+
   const artChannels = art.info.channels;
-  const lumChannels = lum.info.channels;
 
   let total = 0;
-  for (let i = 0; i < pixels; i++) total += lum.data[i * lumChannels];
+  for (let i = 0; i < pixels; i++) total += smooth[i];
   const mean = total / pixels;
 
   // A region with no usable luminance signal at all (a pure-black crop)
@@ -244,7 +266,7 @@ export async function applyFabricShading(
 
   let variance = 0;
   for (let i = 0; i < pixels; i++) {
-    const delta = lum.data[i * lumChannels] - mean;
+    const delta = smooth[i] - mean;
     variance += delta * delta;
   }
   const stdDev = Math.sqrt(variance / pixels);
@@ -262,13 +284,17 @@ export async function applyFabricShading(
 
   const shaded = Buffer.alloc(pixels * 4);
   for (let i = 0; i < pixels; i++) {
-    const luminance = lum.data[i * lumChannels];
+    const luminance = smooth[i];
     const multiplier = curve[luminance];
     const sheen = lift[luminance];
+    const weave = (lumRaw[i] - mid[i]) * options.textureGain;
     const src = i * artChannels;
     const dst = i * 4;
     for (let c = 0; c < 3; c++) {
-      const value = Math.round(art.data[src + c] * multiplier + sheen);
+      const base = art.data[src + c];
+      // Scaled by the ink's own value: pure black stays black, light ink shows
+      // the cloth's grain most.
+      const value = Math.round(base * multiplier + sheen + weave * (base / 255));
       shaded[dst + c] = value < 0 ? 0 : value > 255 ? 255 : value;
     }
     // Alpha carries the print's shape, never its shading -- modulating it

@@ -13,7 +13,7 @@ import type { PlacementKey } from "src/pricing/placements";
 // does. This is the canonical placement/template geometry the server
 // compositor also uses -- no local coordinate/aspect-ratio table here.
 import { getEffectiveScaleBounds } from "src/studio/render/transform";
-import { getPlacementSide } from "src/studio/render/placement-config";
+import { getPlacementFrameAspect, getPlacementSide } from "src/studio/render/placement-config";
 import { getEditorAspectRatio, getEditorPlacementBox } from "src/studio/render/editor-surface";
 import { previewArtworkBlend } from "src/studio/render/preview-blend";
 import { shouldMountArtworkOverlay } from "src/studio/artwork-overlay-visibility";
@@ -261,7 +261,7 @@ export default function BespokeModal({
   // The placement frame on the tee, in canvas fractions.
   const frame = (() => {
     const box = getEditorPlacementBox(product, color, activePlacement);
-    const heightFrac = box.heightPct ?? box.widthPct * previewAspectRatio;
+    const heightFrac = box.heightPct ?? box.widthPct * previewAspectRatio * getPlacementFrameAspect(activePlacement);
     return { x: box.xPct, y: box.yPct, w: box.widthPct, h: heightFrac };
   })();
 
@@ -356,7 +356,11 @@ export default function BespokeModal({
                 decorative -- not draggable, ignored by screen readers. */}
             {!artworkUrl ? (
               <img
-                src="/images/artwork-placeholder.png"
+                src={
+                  activePlacement === "CENTER_FRONT"
+                    ? "/images/artwork-placeholder-2.png"
+                    : "/images/artwork-placeholder.png"
+                }
                 alt=""
                 aria-hidden="true"
                 className="studio-bespoke-artwork-placeholder"
@@ -484,13 +488,29 @@ export default function BespokeModal({
                   }}
                 />
                 <div
-                  style={{ position: "absolute", zIndex: 70, left: "50%", bottom: 8, transform: "translateX(-50%)", maxWidth: "94%" }}
-                  className="flex items-center gap-2 rounded-full bg-black px-3 py-1.5 text-[11px] font-semibold text-white shadow-lg"
+                  role="group"
+                  aria-label="Place the image"
+                  style={{ position: "absolute", zIndex: 70, left: "50%", bottom: 12, transform: "translateX(-50%)", width: "calc(100% - 24px)", maxWidth: 380 }}
+                  className="flex items-center gap-3 rounded-2xl border border-black/10 bg-white/95 p-2.5 pl-4 shadow-[0_12px_36px_rgba(0,0,0,0.22)] backdrop-blur"
                 >
-                  <span className="hidden sm:inline">Drag the image into the frame</span>
-                  <span className="sm:hidden">Drag into the frame</span>
-                  <button type="button" onClick={onPlaceStaged} className="rounded-full bg-white px-2.5 py-1 text-black">Place it</button>
-                  <button type="button" onClick={onCancelStaged} aria-label="Cancel" className="px-1 text-white/70 hover:text-white">×</button>
+                  <div className="min-w-0 flex-1 leading-tight">
+                    <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black">Position your image</div>
+                    <div className="mt-0.5 truncate text-[11px] text-black/55">Drag it into the frame, or place it directly.</div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onCancelStaged}
+                    className="h-9 shrink-0 whitespace-nowrap rounded-xl px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-black/60 transition hover:bg-black/5 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-black"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onPlaceStaged}
+                    className="h-9 shrink-0 whitespace-nowrap rounded-xl border border-black bg-black px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                  >
+                    Place it
+                  </button>
                 </div>
               </>
             ) : null}

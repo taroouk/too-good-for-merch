@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmSubmit } from "src/components/ui/dialog";
 import { useRef } from "react";
 import { buttonClass } from "src/components/admin/ui/Button";
 
@@ -30,13 +31,14 @@ export default function ExchangeRateForm({
     if (!changed) return;
 
     const label = (rate: number | null) => (rate ? `1 USD = ${rate} EGP` : "not configured");
-    const confirmed = window.confirm(
-      `Change the USD → EGP exchange rate?\n\n` +
+    confirmSubmit(event, {
+      title: "Change exchange rate?",
+      message:
         `Current rate: ${label(currentRate)}\n` +
         `New rate: ${label(nextRate)}\n\n` +
         `This affects the payment amount of future orders only. Existing orders keep their original exchange rate.`,
-    );
-    if (!confirmed) event.preventDefault();
+      confirmLabel: "Change rate",
+    });
   }
 
   return (

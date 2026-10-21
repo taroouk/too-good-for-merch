@@ -1,5 +1,6 @@
 "use client";
 
+import { alertDialog } from "src/components/ui/dialog";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   ChangeEvent,
@@ -1068,7 +1069,7 @@ export default function BuilderClient({
       setUploadName(nextAsset.fileName);
       save({ ...state, primaryAssetId: nextAsset.id });
     } catch {
-      alert("Could not load this artwork.");
+      void alertDialog({ title: "Couldn't load artwork", message: "Could not load this artwork. Please try again." });
     } finally {
       setAttachingAssetId(null);
     }
@@ -1104,7 +1105,7 @@ export default function BuilderClient({
       if (!result.ok) throw new Error(result.error);
     } catch {
       setUserAssets(previous);
-      alert("Could not remove this upload. Please try again.");
+      void alertDialog({ title: "Couldn't remove upload", message: "Could not remove this upload. Please try again." });
     } finally {
       setRemovingAssetId(null);
     }
@@ -1218,7 +1219,7 @@ export default function BuilderClient({
 
   function openCheckout() {
     if (!state.product || !state.color || !state.fabric) {
-      alert("Please complete selection");
+      void alertDialog({ title: "Complete your selection", message: "Choose a product, colour and fabric before continuing." });
       return;
     }
 
@@ -1234,7 +1235,7 @@ export default function BuilderClient({
         ? customQuoteUsdCents != null
         : price?.mode === "standard";
     if (!hasReadyPrice) {
-      alert("Pricing not ready");
+      void alertDialog({ title: "Pricing not ready", message: "We're still calculating your price. Please try again in a moment." });
       return;
     }
 
@@ -1520,7 +1521,7 @@ export default function BuilderClient({
         })),
       );
     } catch {
-      alert("Could not switch the product. Please try again.");
+      void alertDialog({ title: "Couldn't switch product", message: "Could not switch the product. Please try again." });
       router.refresh();
     } finally {
       switchingProductRef.current = false;

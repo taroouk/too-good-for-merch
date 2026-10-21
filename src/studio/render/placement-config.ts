@@ -84,15 +84,23 @@ export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<Ga
 // photo here -- the earlier per-photo boxes covered ~94% of the torso for
 // Full Front/Back, i.e. seam to seam, out over the model's arms.
 const TORSO_PLACEMENTS: Partial<Record<PlacementType, PlacementBox>> = {
-  // Full Front matches the Figma popup frame: the placeholder spans ~77%
-  // of the torso, starting just under the chest line.
-  FULL_FRONT: { xPct: 0.115, yPct: 0.305, widthPct: 0.775 },
-  CENTER_FRONT: { xPct: 0.29, yPct: 0.24, widthPct: 0.42 },
-  LEFT_CHEST: { xPct: 0.17, yPct: 0.2, widthPct: 0.2 },
-  RIGHT_CHEST: { xPct: 0.63, yPct: 0.2, widthPct: 0.2 },
-  FULL_BACK: { xPct: 0.2, yPct: 0.17, widthPct: 0.6 },
-  CENTER_BACK: { xPct: 0.29, yPct: 0.2, widthPct: 0.42 },
+  // Measured off the placement thumbnails (public/images/Frame 1-6.png): the
+  // placeholder in each thumbnail IS the placement frame, mapped onto the
+  // flat tee's torso. Centred placements are kept symmetric about the torso.
+  FULL_FRONT: { xPct: 0.14, yPct: 0.265, widthPct: 0.72 },
+  CENTER_FRONT: { xPct: 0.14, yPct: 0.265, widthPct: 0.72 },
+  LEFT_CHEST: { xPct: 0.14, yPct: 0.26, widthPct: 0.27 },
+  RIGHT_CHEST: { xPct: 0.59, yPct: 0.26, widthPct: 0.27 },
+  FULL_BACK: { xPct: 0.105, yPct: 0.388, widthPct: 0.79 },
+  CENTER_BACK: { xPct: 0.145, yPct: 0.18, widthPct: 0.71 },
 };
+
+// Height / width of each placement's frame (the placeholder in its thumbnail,
+// public/images/Frame 1-6.png). Only Center Front is a wide crop
+// (artwork-placeholder-2.png, 31x13); every other frame is square.
+export function getPlacementFrameAspect(placement: PlacementType): number {
+  return placement === "CENTER_FRONT" ? 13 / 31 : 1;
+}
 
 export function getTemplateTorsoFrame(
   product: ProductType,

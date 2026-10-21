@@ -9,7 +9,7 @@ import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
 import { upsertMockupForDraft } from "src/db/mockup";
-import { PLACEMENTS, placementLabel, type PlacementKey } from "src/pricing/placements";
+import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
 import {
   normalizeArtworkLayers,
   sideFingerprint,
@@ -25,8 +25,6 @@ import {
   isRetryableGeminiFailure,
   loadTemplateBuffer,
   parseGeminiJson,
-  printedArtworkPrompt,
-  printedArtworksPrompt,
   restoreTemplateAlpha,
   squareFrameFor,
   padCropToSquare,
@@ -351,22 +349,6 @@ function generatedImageFromResponse(value: unknown) {
   );
 }
 
-// Gemini receives BOTH the clean garment crop AND the (trimmed) artwork,
-// and is asked to render the artwork PRINTED onto the garment itself --
-// following fabric folds, lighting, and texture -- rather than having it
-// pasted on afterward as a flat, deterministic Sharp overlay. This trades
-// away the old design's pixel-exact placement guarantee (Gemini is given
-// the intended box as strong prose guidance, not a hard constraint it is
-// mechanically bound to) in exchange for artwork that actually looks
-// printed rather than stuck on top -- an explicit product choice, since the
-// old flat-overlay approach could guarantee exact placement but never
-// looked like a real print.
-//
-// printedArtworkPrompt() lives in src/studio/render/gemini-prompt.ts (zero
-// server-only imports, unit-testable by the same harness as the rest of
-// that module -- see its own docs for why the COMPOSITION LOCK section
-// exists, carried over unchanged from the old blankGarmentPrompt()).
-
 function textFromResponsePart(value: unknown) {
   const part = asRecord(value);
   if (!part) return null;
@@ -654,78 +636,25 @@ export async function POST(req: Request) {
     const frame = squareFrameFor(templateGarmentBBox.width, templateGarmentBBox.height);
     const geminiGarmentInput = await padCropToSquare(templateCrop, frame);
 
-    // `resolved` is in FULL TEMPLATE pixel coordinates; the prompt below
-    // describes each print position relative to the square image Gemini
-    // actually sees as INPUT 1, so convert into square-relative fractions.
-    const boxFor = (resolved: ReturnType<typeof resolvePlacement>) => ({
-      leftPct: (resolved.left - templateGarmentBBox.left + frame.padX) / frame.side,
-      topPct: (resolved.top - templateGarmentBBox.top + frame.padY) / frame.side,
-      widthPct: resolved.width / frame.side,
-      heightPct: resolved.height / frame.side,
-      rotationDeg: resolved.rotation,
-    });
-    const prompt =
-      prints.length === 1
-        ? printedArtworkPrompt({ product, color, placement, box: boxFor(prints[0].resolved) })
-        : printedArtworksPrompt({
-            product,
-            color,
-            side,
-            prints: prints.map((print) => ({
-              placementLabel: placementLabel(print.layer.placement),
-              box: boxFor(print.resolved),
-            })),
-          });
+    const prompt = blankGarmentPrompt({ product, color, placement });
 
-    // Gemini now receives TWO images: the clean garment crop (INPUT 1) and
-    // the artwork itself, trimmed to its own visible content (INPUT 2) --
-    // per the user's explicit choice of "let Gemini actually print the
-    // artwork" over the old flat-Sharp-overlay approach, trading the
-    // Sharp compositor's pixel-exact placement guarantee for artwork that
-    // visibly follows the garment's fabric folds/lighting. The request
-    // body is built once and reused verbatim across retry attempts --
-    // retrying never changes what's sent.
+    // Gemini receives only the clean garment crop. The request body is built
+    // once and reused verbatim across retry attempts.
     // Gemini answers at ~1K regardless of what it is sent, and the answer is
-    // scaled back to the template's size (cropOutOfSquare), so sending the
-    // full-resolution crop and artworks (often several MB of PNG) only slows
-    // the upload and the model. Downscale them; the fractions in the prompt
-    // are unaffected since every image keeps its shape.
-    const toGeminiSize = (png: Buffer) =>
-      sharp(png)
-        .resize({ width: GEMINI_INPUT_MAX_SIDE, height: GEMINI_INPUT_MAX_SIDE, fit: "inside", withoutEnlargement: true })
-        .png({ compressionLevel: 3 })
-        .toBuffer();
-    const [geminiGarmentSmall, ...geminiPrintsSmall] = await Promise.all([
-      toGeminiSize(geminiGarmentInput),
-      ...prints.map((print) => toGeminiSize(print.trimmed)),
-    ]);
-    const geminiRequestBody = JSON.stringify({
+    // scaled back to the template's size (cropOutOfSquare), so the
+    // full-resolution crop is downscaled to keep the upload fast.
+    const geminiGarmentSmall = await sharp(geminiGarmentInput)
+      .resize({ width: GEMINI_INPUT_MAX_SIDE, height: GEMINI_INPUT_MAX_SIDE, fit: "inside", withoutEnlargement: true })
+      .png({ compressionLevel: 3 })
+      .toBuffer();
+    const blankRequestBody = JSON.stringify({
       model,
       input: [
-        {
-          type: "text",
-          text: prompt,
-        },
-        {
-          type: "image",
-          mime_type: "image/png",
-          data: geminiGarmentSmall.toString("base64"),
-        },
-        // INPUT 2..N+1: every artwork, trimmed to its visible content.
-        ...geminiPrintsSmall.map((data) => ({
-          type: "image",
-          mime_type: "image/png",
-          data: data.toString("base64"),
-        })),
+        { type: "text", text: prompt },
+        { type: "image", mime_type: "image/png", data: geminiGarmentSmall.toString("base64") },
       ],
-      response_format: {
-        type: "image",
-        mime_type: "image/jpeg",
-      },
-      generation_config: {
-        temperature: 0,
-        top_k: 1,
-      },
+      response_format: { type: "image", mime_type: "image/jpeg" },
+      generation_config: { temperature: 0, top_k: 1 },
     });
 
     // One HTTP call to Gemini, with the bounded inner retry for transient
@@ -791,144 +720,29 @@ export async function POST(req: Request) {
       return apiError(geminiNoImageMessage(data), 500);
     }
 
-    let geminiImage: Buffer | null = null;
-    // Set only if the "let Gemini print it" path exhausts its attempts on a
-    // recoverable (RendererError) failure -- e.g. Gemini repeatedly
-    // returning a mismatched aspect ratio for this particular crop/artwork
-    // combination. Falls back to the old, reliable flat-Sharp-overlay
-    // pipeline (blank photorealistic garment + deterministic composite)
-    // rather than surfacing an error to the user -- realism is a nice-to-
-    // have the user asked for, but a correctly-placed, undistorted mockup
-    // must always be the floor this feature can fall to.
-    let printedArtworkFailure: RendererError | null = null;
+    // The print itself is NEVER drawn by Gemini. Gemini only makes the BLANK
+    // garment photorealistic (a single simple image: no artwork to compose,
+    // nothing to misplace); the real artwork is then pasted at the exact
+    // resolved geometry with the garment's own shading (compositeArtworkOntoBase).
+    // That is what guarantees the artwork is pixel-identical to what the
+    // customer uploaded and sits exactly where Studio placed it, on every
+    // placement, every time -- a generative print can drift, resize, warp or
+    // re-draw the design, so it is not used.
+    const blankCandidate = await callGemini(blankRequestBody);
+    if (blankCandidate instanceof Response) return blankCandidate;
 
-    // Outer loop: a Gemini generation can come back HTTP-ok but still land
-    // on an unreadable/corrupt image, or one with the wrong aspect ratio
-    // (see the aspect check below). That's a different failure from the
-    // request itself being wrong, so a fresh generation attempt (not just
-    // re-parsing the same response) is what actually has a chance of
-    // succeeding. Bounded the same way as the HTTP-level retry above, and
-    // deliberately independent of it.
-    printedArtworkAttempts: for (let generationAttempt = 1; ; generationAttempt++) {
-      const candidateImage = await callGemini(geminiRequestBody);
-      if (candidateImage instanceof Response) return candidateImage;
-
-      // Splice Gemini's crop back into the ORIGINAL, untouched template at
-      // the exact rectangle it was cut from -- resized to that rectangle's
-      // own pixel dimensions first (fit:"fill"), so the pasted-back canvas
-      // is guaranteed byte-identical to the original template everywhere
-      // outside templateGarmentBBox, and exactly that bbox's size/position
-      // inside it. This is what makes `resolved` (computed earlier against
-      // the template's own coordinates) directly usable below with zero
-      // remapping: the geometry Gemini's response actually has is never
-      // trusted, only its pixels are.
-      try {
-        let candidateMeta: Metadata;
-        try {
-          candidateMeta = await sharp(candidateImage).metadata();
-        } catch {
-          throw new RendererError("Gemini's garment image could not be read.", 500);
-        }
-        if (!candidateMeta.width || !candidateMeta.height) {
-          throw new RendererError("Gemini's garment image is missing dimensions.", 500);
-        }
-
-        // The splice-back step below force-stretches Gemini's returned
-        // image onto templateGarmentBBox's exact pixel dimensions
-        // (fit:"fill", no letterboxing) -- if Gemini's own output aspect
-        // ratio doesn't closely match the crop it was given (the
-        // COMPOSITION LOCK section of the prompt asks it not to reframe,
-        // but asking Gemini to also compose in a second image, INPUT 2,
-        // is a substantially harder task than the old blank-garment-only
-        // prompt and it can still drift), that stretch visibly warps the
-        // person/garment -- observed in practice as a grotesquely
-        // elongated figure. Treat a large aspect-ratio mismatch as the
-        // same class of "unusable generation" as an unreadable image
-        // buffer, so it retries a fresh generation instead of silently
-        // shipping a distorted mockup.
-        const expectedAspect = 1; // Gemini is sent (and answers with) a square
-        const candidateAspect = candidateMeta.width / candidateMeta.height;
-        const aspectDeviation = Math.abs(candidateAspect - expectedAspect) / expectedAspect;
-        if (aspectDeviation > 0.08) {
-          throw new RendererError(
-            `Gemini's garment image has a different aspect ratio than requested (expected ~${expectedAspect.toFixed(3)}, got ~${candidateAspect.toFixed(3)}) -- stretching it to fit would visibly distort the garment/model.`,
-            502,
-          );
-        }
-
-        const resizedCrop = await cropOutOfSquare(candidateImage, frame);
-
-        geminiImage = await restoreTemplateAlpha(
-          await sharp(template)
-            .composite([
-              { input: resizedCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top },
-            ])
-            .png()
-            .toBuffer(),
-          template,
-        );
-      } catch (spliceErr) {
-        if (!(spliceErr instanceof RendererError)) throw spliceErr;
-        if (generationAttempt < MAX_GEMINI_ATTEMPTS) {
-          console.warn("Nano Banana generation produced an unusable image, retrying:", {
-            generationAttempt,
-            message: spliceErr.message,
-          });
-          continue printedArtworkAttempts;
-        }
-        console.warn("Nano Banana 'print via Gemini' path exhausted its attempts, falling back to flat overlay:", {
-          message: spliceErr.message,
-        });
-        printedArtworkFailure = spliceErr;
-        break printedArtworkAttempts;
-      }
-
-      break printedArtworkAttempts;
-    }
-
-    let finalImage: Buffer;
-    if (printedArtworkFailure) {
-      // Fallback: the same reliable pipeline this route used before --
-      // Gemini only makes a BLANK garment photorealistic (a single, much
-      // simpler image, not asked to also compose in a second image), then
-      // the artwork is pasted on deterministically at the exact resolved
-      // geometry. Guarantees a correctly-placed, undistorted mockup even
-      // when "let Gemini print it" can't produce a usable result for this
-      // particular crop/artwork combination.
-      const blankPrompt = blankGarmentPrompt({ product, color, placement });
-      const blankRequestBody = JSON.stringify({
-        model,
-        input: [
-          { type: "text", text: blankPrompt },
-          { type: "image", mime_type: "image/png", data: geminiGarmentInput.toString("base64") },
-        ],
-        response_format: { type: "image", mime_type: "image/jpeg" },
-        generation_config: { temperature: 0, top_k: 1 },
-      });
-
-      const blankCandidate = await callGemini(blankRequestBody);
-      if (blankCandidate instanceof Response) return blankCandidate;
-
-      // Same square round-trip as the printed path -- this fallback used to
-      // stretch Gemini's square answer onto the tall crop unchecked.
-      const resizedBlankCrop = await cropOutOfSquare(blankCandidate, frame);
-      const blankGeminiImage = await restoreTemplateAlpha(
-        await sharp(template)
-          .composite([{ input: resizedBlankCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top }])
-          .png()
-          .toBuffer(),
-        template,
-      );
-
-      finalImage = blankGeminiImage;
-      for (const print of prints) {
-        finalImage = await compositeArtworkOntoBase(finalImage, print.artwork, print.resolved);
-      }
-    } else {
-      // Gemini's spliced-back output already has the artwork printed onto
-      // the fabric (see the comment above geminiRequestBody) -- no further
-      // Sharp compositing step needed or wanted here.
-      finalImage = geminiImage as Buffer;
+    // Gemini answers with a square; cut the original crop back out of it and
+    // splice it into the untouched template (background stays byte-identical).
+    const resizedBlankCrop = await cropOutOfSquare(blankCandidate, frame);
+    let finalImage = await restoreTemplateAlpha(
+      await sharp(template)
+        .composite([{ input: resizedBlankCrop, left: templateGarmentBBox.left, top: templateGarmentBBox.top }])
+        .png()
+        .toBuffer(),
+      template,
+    );
+    for (const print of prints) {
+      finalImage = await compositeArtworkOntoBase(finalImage, print.artwork, print.resolved);
     }
 
     // Stored compressed (WebP, <=1600px): the PNG straight out of the

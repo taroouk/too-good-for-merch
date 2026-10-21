@@ -1,5 +1,6 @@
 "use client";
 
+import { confirmSubmit } from "src/components/ui/dialog";
 import { useMemo, useState } from "react";
 import { buttonClass } from "src/components/admin/ui/Button";
 import type { GridColumn } from "src/lib/admin/price-grid";
@@ -63,9 +64,11 @@ export default function PriceGridEditor({
       event.preventDefault();
       return;
     }
-    if (!window.confirm(`Save ${changed.length} price change${changed.length === 1 ? "" : "s"}?\n\nThey apply to customers straight away. Existing orders keep the price they were placed at.`)) {
-      event.preventDefault();
-    }
+    confirmSubmit(event, {
+      title: `Save ${changed.length} price change${changed.length === 1 ? "" : "s"}?`,
+      message: "They apply to customers straight away. Existing orders keep the price they were placed at.",
+      confirmLabel: "Save changes",
+    });
   }
 
   const rows = columns[0]?.cells ?? [];

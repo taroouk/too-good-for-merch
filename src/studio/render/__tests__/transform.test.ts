@@ -53,15 +53,16 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      // CENTER_FRONT is now defined on the torso (TORSO_PLACEMENTS in
-      // placement-config.ts): x .29 / y .24 / width .42 of FITTED WHITE
-      // front's torso frame (x .18, y .295, w .64, h .53), so
-      // left = (.18 + .29*.64)*1000 = 365.6, top = (.295 + .24*.53)*1000
-      // = 422.2, width = .42*.64*1000 = 268.8, height = width/2.
-      assert.equal(resolved.left, 366);
-      assert.equal(resolved.top, 422);
-      assert.equal(resolved.width, 269);
-      assert.equal(resolved.height, 134);
+      // CENTER_FRONT is defined on the torso (TORSO_PLACEMENTS in
+      // placement-config.ts, measured off the placement thumbnails): x .14 /
+      // y .265 / width .72 of FITTED WHITE front's torso frame (x .18,
+      // y .295, w .64, h .53), so left = (.18 + .14*.64)*1000 = 269.6,
+      // top = (.295 + .265*.53)*1000 = 435.45, width = .72*.64*1000 =
+      // 460.8, height = width/2.
+      assert.equal(resolved.left, 270);
+      assert.equal(resolved.top, 435);
+      assert.equal(resolved.width, 461);
+      assert.equal(resolved.height, 230);
       assert.equal(resolved.rotation, 0);
     },
 
@@ -71,8 +72,8 @@ export async function runAll() {
         color: "WHITE",
         placement: "CENTER_FRONT",
         // CENTER_FRONT's own effective scale ceiling (MAX_PLACEMENT_WIDTH_FRACTION
-        // / widthPct = 0.45 / 0.24 = 1.875) is below the requested 2, so the
-        // resolved size reflects the clamped 1.875, not the raw request --
+        // / widthPct = 0.6 / 0.4608 = 1.302) is below the requested 2, so the
+        // resolved size reflects the clamped 1.302, not the raw request --
         // exactly what getEffectiveScaleBounds exists to guarantee.
         transform: { x: 0, y: 0, scale: 2 },
         templateWidth: 1000,
@@ -80,8 +81,8 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.width, 450);
-      assert.equal(resolved.height, 225);
+      assert.equal(resolved.width, 600);
+      assert.equal(resolved.height, 300);
     },
 
     "resolvePlacement moves the anchor with x/y offsets"() {
@@ -100,7 +101,7 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 866);
+      assert.equal(resolved.left, 770);
     },
 
     "resolvePlacement rejects x/y beyond TRANSFORM_BOUNDS"() {
