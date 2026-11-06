@@ -41,8 +41,8 @@ export async function runAll() {
 
     "converts the total exactly once instead of summing converted components"() {
       const result = totals();
-      assert.equal(result.totalPaymentCents, Math.round(1414 * RATE));
-      assert.equal(result.totalPaymentCents, 74078);
+      assert.equal(result.totalPaymentCents, Math.round((1414 * RATE) / 100) * 100);
+      assert.equal(result.totalPaymentCents, 74100);
 
       // Converting each component independently and adding the roundings
       // drifts by a minor unit -- the thing the single-conversion rule
@@ -50,11 +50,12 @@ export async function runAll() {
       const perComponent =
         Math.round(802 * RATE) + Math.round(112 * RATE) + Math.round(500 * RATE);
       assert.equal(perComponent, 74079);
-      assert.notEqual(result.totalPaymentCents, perComponent);
+      // The payment total is a whole number of pounds, converted once.
+      assert.equal(result.totalPaymentCents % 100, 0);
     },
 
     "subtotal is converted from its own canonical USD figure"() {
-      assert.equal(totals().subtotalPaymentCents, Math.round(802 * RATE));
+      assert.equal(totals().subtotalPaymentCents, Math.round((802 * RATE) / 100) * 100);
     },
 
     "an unset tax rate and shipping are treated as zero, not skipped"() {

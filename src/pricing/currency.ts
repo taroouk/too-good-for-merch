@@ -20,8 +20,13 @@ export function isValidExchangeRate(rate: unknown): rate is number {
 // each, never round intermediate components (tax, shipping, per-item
 // amounts) independently and sum the roundings, which would let the
 // payment total drift away from usdCents * rate.
+//
+// EGP prices are whole pounds (EGP 525, never EGP 521.33), so the result is
+// rounded to a whole unit (a multiple of 100 minor units). The storefront
+// display (src/pricing/display.ts) rounds the same way, so the price a
+// customer sees is exactly the amount Paymob charges.
 export function convertUsdCentsToPaymentCents(usdCents: number, rate: number): number {
-  return Math.round(usdCents * rate);
+  return Math.round((usdCents * rate) / 100) * 100;
 }
 
 export class InvalidExchangeRateInputError extends Error {}

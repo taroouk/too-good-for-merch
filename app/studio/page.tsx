@@ -5,6 +5,13 @@ import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { getGuestBuildId } from "src/studio/permissions";
 
+// Entering the Studio always starts at quantity 1, even when it resumes an
+// earlier project (a leftover 500 from a previous visit made the first price
+// look wrong). Failure to reset must never block entry.
+async function resetQuantityOnEntry(buildId: string) {
+  await prisma.buildDraft.updateMany({ where: { buildId, quantity: { not: 1 } }, data: { quantity: 1 } }).catch(() => null);
+}
+
 export default async function StudioPage() {
   const userId = await getUserId();
 
@@ -16,6 +23,7 @@ export default async function StudioPage() {
     });
 
     if (latestBuild) {
+      await resetQuantityOnEntry(latestBuild.id);
       redirect(`/studio/projects/${latestBuild.id}/builder`);
     }
 
@@ -30,6 +38,7 @@ export default async function StudioPage() {
     });
 
     if (guestBuild) {
+      await resetQuantityOnEntry(guestBuild.id);
       redirect(`/studio/projects/${guestBuild.id}/builder`);
     }
   }

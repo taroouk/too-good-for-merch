@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 112" width="100" height="112" role="img" aria-label="Full Front">
+<title>Full Front</title>
+<path d="M36 7 L17 15 L3 33 L16 43 L24 37 L24 81 L76 81 L76 37 L84 43 L97 33 L83 15 L64 7 Q50 19 36 7 Z" fill="#fff" stroke="#2b2b2b" stroke-width="1.8" stroke-linejoin="round"/>
+<path d="M36 7 Q50 19 64 7" fill="none" stroke="#2b2b2b" stroke-width="1.4" stroke-linecap="round"/>
+<clipPath id="c"><rect x="31" y="26" width="38" height="38" rx="1"/></clipPath>
+<g clip-path="url(#c)"><rect x="31" y="26" width="38" height="38" fill="#cfe9f8"/>
+<ellipse cx="56.84" cy="36.64" rx="5.32" ry="3.2600000000000002" fill="#fff"/>
+<path d="M31 55.64 Q44.3 45.760000000000005 69 54.120000000000005 L69 64 L31 64 Z" fill="#a9cf5c"/>
+<path d="M31 59.44 Q50.0 51.08 69 58.68 L69 64 L31 64 Z" fill="#7da21b"/></g>
+<text x="50" y="102" text-anchor="middle" font-family="'League Spartan','Helvetica Neue',Arial,sans-serif" font-size="9.5" font-weight="600" fill="#111">Full Front</text>
+</svg>

@@ -494,7 +494,7 @@ export default function HomePage() {
       <a href="/studio" className="enterInner">
           <span className="enterWord">ENTER</span>
           <div className="enterPanel">
-            <img src="/images/enter.jpg" alt="Enter Studio" loading="lazy" decoding="async" />
+            <img src="/images/enter.jpg" alt="Open Studio" loading="lazy" decoding="async" />
           </div>
           <span className="enterWord">STUDIO</span>
         </a>

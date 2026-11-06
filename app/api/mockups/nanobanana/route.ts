@@ -131,9 +131,6 @@ function asArray(value: unknown) {
   return Array.isArray(value) ? value : [];
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Server error.";
-}
 
 function imageFromDataString(
   value: unknown,
@@ -388,6 +385,9 @@ function geminiTextOutput(value: unknown) {
   return textValues.length ? textValues.join("\n").trim() : null;
 }
 
+// Shown to customers instead of any technical error (logged separately).
+const PREVIEW_FAILED_MESSAGE = "We couldn't create your preview. Please try again.";
+
 function geminiFailureMessage(responseBody: string, statusText?: string) {
   const parsed = parseGeminiJson(responseBody);
   const parsedError = geminiErrorFromData(parsed);
@@ -599,7 +599,8 @@ export async function POST(req: Request) {
 
     const apiKeyRaw = process.env.GEMINI_API_KEY?.trim();
     if (!apiKeyRaw) {
-      return apiError("Missing GEMINI_API_KEY.", 500);
+      console.error("[mockup] Missing GEMINI_API_KEY.");
+      return apiError(PREVIEW_FAILED_MESSAGE, 500);
     }
     // Re-bound to a definite (non-optional) type -- TS can't narrow a
     // captured outer `const` across the nested callGemini() closure below,
@@ -654,7 +655,7 @@ export async function POST(req: Request) {
         { type: "image", mime_type: "image/png", data: geminiGarmentSmall.toString("base64") },
       ],
       response_format: { type: "image", mime_type: "image/jpeg" },
-      generation_config: { temperature: 0, top_k: 1 },
+      generation_config: { temperature: 0 },
     });
 
     // One HTTP call to Gemini, with the bounded inner retry for transient
@@ -685,7 +686,10 @@ export async function POST(req: Request) {
         const retryable = isRetryableGeminiFailure(geminiRes.status, responseBody);
         if (!retryable || attempt >= MAX_GEMINI_ATTEMPTS) {
           logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
-          return apiError(geminiFailureMessage(responseBody, geminiRes.statusText), geminiRes.status);
+          // The technical detail is logged above; the customer only ever
+          // sees the friendly message.
+          console.error("[mockup] Gemini request failed:", geminiFailureMessage(responseBody, geminiRes.statusText));
+          return apiError(PREVIEW_FAILED_MESSAGE, geminiRes.status >= 400 && geminiRes.status < 600 ? geminiRes.status : 502);
         }
 
         await new Promise((resolve) => setTimeout(resolve, GEMINI_RETRY_DELAY_MS));
@@ -696,7 +700,8 @@ export async function POST(req: Request) {
 
       if (!generated) {
         logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: null });
-        return apiError(geminiNoImageMessage(data), 500);
+        console.error("[mockup] Gemini returned no image:", geminiNoImageMessage(data));
+        return apiError(PREVIEW_FAILED_MESSAGE, 500);
       }
 
       logGeminiResponse({ model, status: geminiRes.status, statusText: geminiRes.statusText, body: responseBody, parsedImageLocation: generated.location });
@@ -709,7 +714,8 @@ export async function POST(req: Request) {
         // the Gemini request itself.
         const remoteRes = await fetch(generated.url, { signal: AbortSignal.timeout(60_000) });
         if (!remoteRes.ok) {
-          return apiError("Could not download the generated garment image.", 502);
+          console.error("[mockup] Could not download the generated garment image.");
+          return apiError(PREVIEW_FAILED_MESSAGE, 502);
         }
         const remoteBytes = new Uint8Array(await remoteRes.arrayBuffer());
         return Buffer.from(remoteBytes);
@@ -717,7 +723,8 @@ export async function POST(req: Request) {
       if (generated.data) {
         return Buffer.from(generated.data, "base64");
       }
-      return apiError(geminiNoImageMessage(data), 500);
+      console.error("[mockup] Gemini returned no image:", geminiNoImageMessage(data));
+        return apiError(PREVIEW_FAILED_MESSAGE, 500);
     }
 
     // The print itself is NEVER drawn by Gemini. Gemini only makes the BLANK
@@ -780,11 +787,12 @@ export async function POST(req: Request) {
       side,
     });
   } catch (err: unknown) {
+    // The technical reason is logged; customers only see the friendly message.
+    console.error("[mockup] Preview generation failed:", err);
     if (err instanceof RendererError) {
-      return apiError(err.message, err.status);
+      return apiError(PREVIEW_FAILED_MESSAGE, err.status);
     }
-    console.error(err);
 
-    return apiError(errorMessage(err), 500);
+    return apiError(PREVIEW_FAILED_MESSAGE, 500);
   }
 }

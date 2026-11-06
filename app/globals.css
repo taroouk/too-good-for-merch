@@ -8155,3 +8155,56 @@ body {
   .tgfm-dialog-backdrop,
   .tgfm-dialog { animation: none; }
 }
+
+/* Fabric dropdown: list text matches the selected box (feedback 1.5). */
+.studio-builder-shell .studio-fabric-option-name {
+  font-size: 16px !important;
+  letter-spacing: 0.04em !important;
+}
+.studio-builder-shell .studio-fabric-option-desc {
+  font-size: 14px !important;
+  line-height: 1.25 !important;
+  margin-top: 3px !important;
+}
+
+/* BUILD YOUR T-SHIRT uses the same text style as the other buttons
+   (feedback 8.6). */
+.studio-builder-shell .studio-build-button {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.2em !important;
+  text-transform: uppercase !important;
+}
+@media (max-width: 1024px) {
+  .studio-builder-shell .studio-build-button {
+    font-size: 14px !important;
+    letter-spacing: 0.16em !important;
+  }
+}
+
+/* Page-level "Creating your preview…" status (feedback 4.1). */
+.studio-bespoke-status {
+  margin-top: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.03);
+  padding: 8px 10px;
+  color: rgba(0, 0, 0, 0.7);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.studio-bespoke-error {
+  margin-top: 10px;
+}
+
+/* Select with its own arrow, kept the same distance from the right edge as
+   the text is from the left (checkout country, feedback 6.1). */
+.tgfm-select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 2.75rem !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%23000' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  background-size: 12px 8px;
+}

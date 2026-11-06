@@ -55,11 +55,11 @@ export async function runAll() {
       assert.equal(convertUsdCentsToPaymentCents(802, 50), 40100);
     },
 
-    "convertUsdCentsToPaymentCents rounds to the nearest whole minor unit"() {
-      // 333 * 1.005 = 334.665 -> rounds to 335
-      assert.equal(convertUsdCentsToPaymentCents(333, 1.005), 335);
-      // 100 * 1.004 = 100.4 -> rounds to 100
-      assert.equal(convertUsdCentsToPaymentCents(100, 1.004), 100);
+    "convertUsdCentsToPaymentCents rounds to a whole pound (multiple of 100)"() {
+      // 1000 * 52.39 = 523.90 EGP -> EGP 524
+      assert.equal(convertUsdCentsToPaymentCents(1000, 52.39), 52400);
+      // 993 * 52.39 = 520.23 EGP -> EGP 520
+      assert.equal(convertUsdCentsToPaymentCents(993, 52.39), 52000);
     },
 
     "parseExchangeRateInput returns null for a blank field (unconfigured, not an error)"() {
@@ -91,7 +91,7 @@ export async function runAll() {
       const rate = 50;
       assert.equal(
         convertUsdCentsToPaymentCents(canonicalTotalUsd, rate),
-        Math.round(canonicalTotalUsd * rate),
+        Math.round((canonicalTotalUsd * rate) / 100) * 100,
       );
     },
   });

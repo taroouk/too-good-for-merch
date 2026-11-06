@@ -15,11 +15,11 @@ export async function runAll() {
       assert.deepEqual(effectiveDisplay("EGP", 50), { currency: "EGP", rate: 50 });
       assert.deepEqual(effectiveDisplay("EGP", null), USD_DISPLAY);
       assert.deepEqual(effectiveDisplay("EGP", 0), USD_DISPLAY);
-      assert.deepEqual(effectiveDisplay("USD", 50), USD_DISPLAY);
+      assert.deepEqual(effectiveDisplay("USD", 50), { currency: "EGP", rate: 50 });
     },
     "EGP conversion matches checkout (cents rounded once)"() {
-      assert.equal(convertForDisplay(9.54, { currency: "EGP", rate: 49.5 }), 472.23);
-      assert.equal(formatDisplayPrice(9.54, { currency: "EGP", rate: 49.5 }), "EGP 472.23");
+      assert.equal(convertForDisplay(9.54, { currency: "EGP", rate: 49.5 }), 472);
+      assert.equal(formatDisplayPrice(9.54, { currency: "EGP", rate: 49.5 }), "EGP 472");
       assert.equal(formatDisplayPrice(9.54, USD_DISPLAY), "USD 9.54");
     },
     "adjustPrice percent and fixed, floored at 0.01"() {

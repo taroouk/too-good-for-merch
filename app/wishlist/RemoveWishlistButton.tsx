@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { CARD_BUTTON_SECONDARY } from "src/components/site/ProductCard";
 
 // "Remove" asks first, in place, so one stray click can't delete a saved design.
 export default function RemoveWishlistButton({
@@ -19,7 +20,7 @@ export default function RemoveWishlistButton({
       <button
         type="button"
         onClick={() => setConfirming(true)}
-        className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 transition hover:border-black hover:text-black"
+        className={CARD_BUTTON_SECONDARY}
       >
         Remove
       </button>
@@ -30,10 +31,10 @@ export default function RemoveWishlistButton({
     <form action={action} className="flex items-center gap-2" role="alertdialog" aria-label={`Remove ${name} from your wishlist?`}>
       <input type="hidden" name="itemId" value={itemId} />
       <span className="text-xs font-medium text-black/60">Remove?</span>
-      <button type="button" onClick={() => setConfirming(false)} autoFocus className="rounded-xl border border-black/15 px-3 py-2.5 text-sm font-semibold text-black/70 hover:border-black hover:text-black">
+      <button type="button" onClick={() => setConfirming(false)} autoFocus className={CARD_BUTTON_SECONDARY}>
         Keep
       </button>
-      <button type="submit" className="rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-red-700">
+      <button type="submit" className={`${CARD_BUTTON_SECONDARY} border-red-600 bg-red-600 text-white hover:bg-red-700 hover:text-white`}>
         Remove
       </button>
     </form>

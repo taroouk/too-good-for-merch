@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
 import AccountNav from "src/components/site/AccountNav";
-import { formatMoney, orderItemExtras, resolveOrderMockupIds } from "src/lib/orders/display";
+import { formatMinorPrice } from "src/pricing/display";
+import { orderArtworkLayers, orderItemExtras, resolveOrderMockupIds } from "src/lib/orders/display";
+import { orderItemPreviewUrl } from "src/lib/mockup-preview";
+import ProductCard, { CARD_BUTTON_PRIMARY, CARD_BUTTON_SECONDARY, CARD_GRID_CLASS, PAGE_BUTTON_CLASS } from "src/components/site/ProductCard";
 import { ORDER_FILTERS, customerOrderStatus, matchesOrderFilter, parseOrderFilter, type StatusTone } from "src/lib/orders/customer-view";
 
 const TONE_CLASS: Record<StatusTone, string> = {
@@ -27,22 +30,41 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
     include: { items: { orderBy: { createdAt: "asc" } } },
   });
 
+  // Each order's picture is the customer's own mockup, checked against what
+  // they ordered (cut, colour, design) -- see src/lib/mockup-preview.ts.
+  const mockupIds = [
+    ...new Set(
+      orders.flatMap((order) =>
+        order.items.flatMap((item) => {
+          const ids = resolveOrderMockupIds(item.preview, null);
+          return [ids.printMockupId, ids.aiMockupId].filter((id): id is string => Boolean(id));
+        }),
+      ),
+    ),
+  ];
+  const fingerprints = new Map(
+    (mockupIds.length
+      ? await prisma.mockup.findMany({ where: { id: { in: mockupIds } }, select: { id: true, fingerprint: true } })
+      : []
+    ).map((row) => [row.id, row.fingerprint] as const),
+  );
+
   const counts = new Map(ORDER_FILTERS.map((f) => [f.key, orders.filter((order) => matchesOrderFilter(order, f.key)).length]));
   const visible = orders.filter((order) => matchesOrderFilter(order, filter));
 
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
-      <div className="mx-auto max-w-4xl">
+      <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/40">Account</p>
             <h1 className="mt-2 text-4xl font-semibold">My Orders</h1>
             <p className="mt-2 text-sm text-black/50">
-              {orders.length ? `${orders.length} order${orders.length === 1 ? "" : "s"} · track status, see what you ordered and where it's going.` : "Everything you order will show up here."}
+              {orders.length ? `${orders.length} order${orders.length === 1 ? "" : "s"} · Track your orders and deliveries.` : "Everything you order will show up here."}
             </p>
           </div>
-          <Link href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
-            Design a T-shirt
+          <Link href="/studio" className={PAGE_BUTTON_CLASS}>
+            Open Studio
           </Link>
         </div>
 
@@ -68,88 +90,62 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
           </nav>
         ) : null}
 
-        <div className="mt-6 space-y-4">
+        <div className="mt-6">
+          <div className={visible.length ? CARD_GRID_CLASS.replace("mt-8 ", "") : ""}>
           {visible.map((order) => {
             const status = customerOrderStatus(order);
-            const itemCount = order.items.reduce((sum, item) => sum + item.quantity, 0);
             const first = order.items[0];
-            const thumbs = order.items.slice(0, 3).map((item) => {
-              const mockups = resolveOrderMockupIds(item.preview, null);
-              const imageId = mockups.printMockupId ?? mockups.aiMockupId;
-              const extras = orderItemExtras(item.preview);
-              return imageId ? `/api/mockups/${imageId}/file` : extras.savedArtworkId ? `/api/artworks/${extras.savedArtworkId}/file` : null;
-            });
-            const size = first ? orderItemExtras(first.preview).size : null;
+            const extras = first ? orderItemExtras(first.preview) : null;
+            const image = first
+              ? orderItemPreviewUrl(first, resolveOrderMockupIds(first.preview, null), fingerprints, orderArtworkLayers(first.preview))
+              : null;
+            const payNow = status.key === "awaiting-payment" || status.key === "payment-failed";
             return (
-              <article key={order.id} className="overflow-hidden rounded-3xl bg-white shadow-sm">
-                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-black/5 px-5 py-4 sm:px-6">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[.16em] text-black/40">Order</p>
-                    <p className="font-semibold">{order.orderNumber}</p>
-                  </div>
-                  <div className="text-sm text-black/55">
-                    <span className="block text-xs uppercase tracking-[.16em] text-black/35">Placed</span>
-                    {order.createdAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
-                  </div>
-                  <div className="text-sm">
-                    <span className="block text-xs uppercase tracking-[.16em] text-black/35">Total</span>
-                    <strong>{formatMoney(order.totalCents, order.currency)}</strong>
-                  </div>
-                  <span className={`rounded-full px-3.5 py-1.5 text-xs font-semibold ${TONE_CLASS[status.tone]}`}>{status.label}</span>
-                </div>
-
-                <div className="flex flex-col gap-5 px-5 py-5 sm:flex-row sm:items-center sm:px-6">
-                  <div className="flex shrink-0 -space-x-3">
-                    {thumbs.length ? (
-                      thumbs.map((src, index) =>
-                        src ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img key={index} src={src} alt="Your design" className="h-20 w-20 rounded-2xl border-2 border-white bg-[#efece6] object-contain" />
-                        ) : (
-                          <span key={index} className="h-20 w-20 rounded-2xl border-2 border-white bg-[#efece6]" />
-                        ),
-                      )
-                    ) : (
-                      <span className="h-20 w-20 rounded-2xl bg-[#efece6]" />
-                    )}
-                  </div>
-                  <div className="min-w-0 flex-1 text-sm">
-                    <p className="font-semibold">
-                      {first ? `${first.quantity} × ${titleCase(first.product)} · ${titleCase(first.fabric)}` : "Order"}
-                      {order.items.length > 1 ? <span className="font-normal text-black/50"> + {order.items.length - 1} more</span> : null}
-                    </p>
-                    <p className="mt-1 text-black/55">
-                      {itemCount} item{itemCount === 1 ? "" : "s"}
-                      {first ? ` · ${titleCase(first.color)}` : ""}
-                      {size ? ` · Size ${size}` : ""}
-                    </p>
-                    <p className="mt-2 text-black/60">{status.description}</p>
+              <ProductCard
+                key={order.id}
+                image={image}
+                imageAlt="Your design"
+                title={first ? `${first.quantity} × ${titleCase(first.product)}${order.items.length > 1 ? ` + ${order.items.length - 1} more` : ""}` : "Order"}
+                price={formatMinorPrice(order.totalCents, order.currency)}
+                badge={<span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${TONE_CLASS[status.tone]}`}>{status.label}</span>}
+                details={[
+                  ["Order", order.orderNumber],
+                  ["Placed", order.createdAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })],
+                  ...(first ? ([["Colour", titleCase(first.color)], ["Fabric", titleCase(first.fabric)]] as Array<[string, string]>) : []),
+                  ...(extras?.size ? ([["Size", extras.size]] as Array<[string, string]>) : []),
+                ]}
+                note={
+                  <>
+                    {status.description}
                     {order.trackingNumber ? (
-                      <p className="mt-2 text-xs text-black/55">
+                      <span className="mt-1 block">
                         {order.carrier ? <strong>{order.carrier}</strong> : "Tracking"} <span className="font-mono">{order.trackingNumber}</span>
-                      </p>
+                      </span>
                     ) : null}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2 sm:flex-col">
-                    <Link href={`/orders/${order.id}`} className="rounded-xl bg-black px-5 py-2.5 text-center text-sm font-semibold text-white">
-                      {status.key === "awaiting-payment" || status.key === "payment-failed" ? "Complete payment" : "View details"}
+                  </>
+                }
+                actions={
+                  <>
+                    <Link href={`/orders/${order.id}`} className={CARD_BUTTON_PRIMARY}>
+                      {payNow ? "Complete payment" : "View details"}
                     </Link>
                     {order.trackingUrl ? (
-                      <a href={order.trackingUrl} target="_blank" rel="noreferrer noopener" className="rounded-xl border border-black/15 px-5 py-2.5 text-center text-sm font-semibold text-black/70 hover:border-black hover:text-black">
+                      <a href={order.trackingUrl} target="_blank" rel="noreferrer noopener" className={CARD_BUTTON_SECONDARY}>
                         Track parcel
                       </a>
                     ) : null}
-                  </div>
-                </div>
-              </article>
+                  </>
+                }
+              />
             );
           })}
+          </div>
 
           {!orders.length ? (
             <div className="rounded-3xl bg-white p-12 text-center">
               <p className="text-lg font-semibold">No orders yet</p>
               <p className="mt-2 text-sm text-black/50">Design your first T-shirt and it will appear here.</p>
-              <Link href="/studio" className="mt-6 inline-block rounded-xl bg-black px-6 py-3 text-sm font-semibold text-white">Open the Studio</Link>
+              <Link href="/studio" className={`${PAGE_BUTTON_CLASS} mt-6`}>Open Studio</Link>
             </div>
           ) : !visible.length ? (
             <div className="rounded-3xl bg-white p-10 text-center text-sm text-black/50">

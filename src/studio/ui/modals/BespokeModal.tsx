@@ -98,7 +98,8 @@ type BespokeModalProps = {
   layers: Array<{ placement: PlacementKey; url: string; fileName?: string }>;
   onSelectLayer: (placement: PlacementKey) => void;
   onRemoveLayer: (placement: PlacementKey) => void;
-  onAddAnotherArtwork: () => void;
+  // An image whose file can't be displayed (a broken upload).
+  onBrokenArtwork: (url: string) => void;
   // An upload dragged from "Your uploads" and dropped on the tee.
   onDropAsset: (assetId: string, clientX: number, clientY: number) => void;
   removingAssetId: string | null;
@@ -111,8 +112,6 @@ type BespokeModalProps = {
 
 // Drag payload type for "Your uploads" -> shirt drag & drop.
 const ASSET_DRAG_TYPE = "application/x-tgfm-asset";
-// Mirrors MAX_ARTWORK_LAYERS (src/studio/artwork-layers.ts) for the +Add bar.
-const MAX_LAYERS = 4;
 
 // Another artwork on the tee (not the one being edited).
 function OtherLayerImage({
@@ -196,8 +195,8 @@ export default function BespokeModal({
   layers,
   onSelectLayer,
   onRemoveLayer,
-  onAddAnotherArtwork,
   onDropAsset,
+  onBrokenArtwork,
   onSaveTShirt,
   onCropArtwork,
   onSelectColor,
@@ -376,13 +375,41 @@ export default function BespokeModal({
             ) : null}
 
             {artworkUrl && shouldMountArtworkOverlay({ artworkUrl }) ? (
+              <>
+                {/* The print frame: the artwork is cut off at its edges and can
+                    never spill past them, however far it is zoomed. The dashed
+                    line shows the customer where the print area is. */}
+                <div
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute",
+                    zIndex: 38,
+                    left: `${frame.x * 100}%`,
+                    top: `${frame.y * 100}%`,
+                    width: `${frame.w * 100}%`,
+                    height: `${frame.h * 100}%`,
+                    pointerEvents: "none",
+                    border: "1.5px dashed rgba(120,120,120,.9)",
+                    borderRadius: 4,
+                  }}
+                />
+                <div
+                  style={{
+                    position: "absolute",
+                    inset: 0,
+                    zIndex: 40,
+                    pointerEvents: "none",
+                    clipPath: `inset(${frame.y * 100}% ${(1 - frame.x - frame.w) * 100}% ${(1 - frame.y - frame.h) * 100}% ${frame.x * 100}%)`,
+                  }}
+                >
               <img
                 src={overlayArtworkUrl ?? artworkUrl}
                 alt="Artwork preview"
                 className="studio-bespoke-artwork studio-bespoke-artwork-draggable"
                 style={{
                   position: "absolute",
-                  zIndex: 40,
+                  zIndex: 1,
+                  pointerEvents: "auto",
                   // Mounted, visible and interactive whenever there is
                   // artwork at all -- never gated on mockup freshness.
                   // That gate is what made the canvas look "stuck": this
@@ -400,11 +427,14 @@ export default function BespokeModal({
                   transform: bespokeArtworkTransform,
                 }}
                 draggable={false}
+                onError={() => onBrokenArtwork(artworkUrl)}
                 onPointerDown={onArtworkPointerDown}
                 onPointerMove={onArtworkPointerMove}
                 onPointerUp={onArtworkPointerUp}
                 onPointerCancel={onArtworkPointerUp}
               />
+                </div>
+              </>
             ) : null}
 
             {/* Pick-then-place: the chosen image floats over the tee. Drag it
@@ -490,26 +520,24 @@ export default function BespokeModal({
                 <div
                   role="group"
                   aria-label="Place the image"
-                  style={{ position: "absolute", zIndex: 70, left: "50%", bottom: 12, transform: "translateX(-50%)", width: "calc(100% - 24px)", maxWidth: 380 }}
-                  className="flex items-center gap-3 rounded-2xl border border-black/10 bg-white/95 p-2.5 pl-4 shadow-[0_12px_36px_rgba(0,0,0,0.22)] backdrop-blur"
+                  style={{ position: "absolute", zIndex: 70, left: "50%", bottom: 12, transform: "translateX(-50%)", maxWidth: "calc(100% - 24px)" }}
+                  className="flex items-center gap-3 whitespace-nowrap rounded-xl border border-black/10 bg-white py-2 pl-4 pr-2 text-black shadow-[0_6px_20px_rgba(0,0,0,0.14)]"
                 >
-                  <div className="min-w-0 flex-1 leading-tight">
-                    <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-black">Position your image</div>
-                    <div className="mt-0.5 truncate text-[11px] text-black/55">Drag it into the frame, or place it directly.</div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={onCancelStaged}
-                    className="h-9 shrink-0 whitespace-nowrap rounded-xl px-3 text-[11px] font-bold uppercase tracking-[0.12em] text-black/60 transition hover:bg-black/5 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-black"
-                  >
-                    Cancel
-                  </button>
+                  <span className="text-[12px] font-medium leading-none">Drag your image into the frame</span>
                   <button
                     type="button"
                     onClick={onPlaceStaged}
-                    className="h-9 shrink-0 whitespace-nowrap rounded-xl border border-black bg-black px-4 text-[11px] font-extrabold uppercase tracking-[0.14em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                    className="h-8 shrink-0 whitespace-nowrap rounded-lg border border-black bg-black px-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                   >
                     Place it
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onCancelStaged}
+                    aria-label="Close"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[18px] leading-none text-black/50 transition hover:bg-black/5 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-black"
+                  >
+                    ×
                   </button>
                 </div>
               </>
@@ -597,11 +625,6 @@ export default function BespokeModal({
                   );
                 })}
               </div>
-              {layers.length < MAX_LAYERS ? (
-                <button type="button" className="studio-selected-artworks-add" onClick={onAddAnotherArtwork}>
-                  +Add
-                </button>
-              ) : null}
             </div>
           ) : null}
 
@@ -724,6 +747,7 @@ export default function BespokeModal({
                           src={asset.url}
                           alt={asset.fileName}
                           className="studio-upload-image"
+                          onError={() => onBrokenArtwork(asset.url)}
                         />
                       </button>
                       {isConfirming ? (

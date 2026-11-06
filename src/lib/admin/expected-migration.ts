@@ -3,7 +3,7 @@
 // database that is AHEAD of (or BEHIND) the running deployment is flagged
 // instead of silently breaking checkout. A unit test fails whenever a new
 // folder appears in prisma/migrations without this being updated.
-export const EXPECTED_LATEST_MIGRATION = "20261015100000_store_display_currency";
+export const EXPECTED_LATEST_MIGRATION = "20261105120000_wishlist_full_design";
 
 export type MigrationSkew = "ok" | "db-behind" | "db-ahead";
 

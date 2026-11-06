@@ -1,6 +1,6 @@
 "use client";
 
-import { alertDialog } from "src/components/ui/dialog";
+import { alertDialog, confirmDialog } from "src/components/ui/dialog";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   ChangeEvent,
@@ -35,7 +35,7 @@ import {
 } from "src/studio/artwork-layers";
 import { getPlacementSide } from "src/studio/render/placement-config";
 import { getEditorPlacementBox } from "src/studio/render/editor-surface";
-import { WHATSAPP_URL } from "src/lib/whatsapp";
+import { WHATSAPP_PHONE, WHATSAPP_URL } from "src/lib/whatsapp";
 // transform.ts and placement-css.ts have zero server-only imports (no
 // node:fs, no sharp) -- safe to import directly from a client component.
 // Do not import from the src/studio/render barrel (index.ts) here, since
@@ -226,6 +226,8 @@ function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
+const PREVIEW_FAILED_MESSAGE = "We couldn't create your preview. Please try again.";
+
 function clampQty(qty: number) {
   if (!Number.isFinite(qty)) return 1;
   return Math.max(1, Math.min(9999, Math.floor(qty)));
@@ -317,7 +319,12 @@ export default function BuilderClient({
       )?.assetId ??
       initialLayers[0]?.assetId ??
       draft.primaryAssetId,
-    product: draft.product ?? ("FITTED" as ProductType),
+    // Bespoke is a WhatsApp request, not a selectable product: an old
+    // un-quoted CUSTOM draft opens as Fitted so the price always shows.
+    product:
+      draft.product === "CUSTOM" && initialCustomQuoteUsdCents == null
+        ? ("FITTED" as ProductType)
+        : (draft.product ?? ("FITTED" as ProductType)),
     color: draft.color ?? ("WHITE" as GarmentColor),
     fabric: draft.fabric ?? ("ESSENTIALS_170" as FabricType),
     quantity: draft.quantity ?? 1,
@@ -412,6 +419,12 @@ export default function BuilderClient({
   const [fabricOpen, setFabricOpen] = useState(false);
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
+  const priceCacheRef = useRef(new Map<string, PriceResult>());
+  const lastRetryTokenRef = useRef(0);
+  const priceRef = useRef<PriceResult | null>(null);
+  useEffect(() => {
+    priceRef.current = price;
+  }, [price]);
   // Set only when /api/pricing/quote itself failed (non-2xx, or the fetch
   // rejected outright) -- distinct from price.message, which carries a
   // legitimate "no pricing configured"/"bulk quote" reason from a normal
@@ -500,15 +513,18 @@ export default function BuilderClient({
   // Center Back is no longer offered, but stays visible on a design that
   // already uses it so that artwork can still be seen, edited or removed.
   const placementCards: Array<{ key: PlacementKey; label: string; image: string }> = [
-    { key: "FULL_FRONT", label: "Full Front", image: "/images/Frame 1.png" },
-    { key: "CENTER_FRONT", label: "Center Front", image: "/images/Frame 2.png" },
-    { key: "LEFT_CHEST", label: "Left Chest", image: "/images/Frame 3.png" },
-    { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/Frame 4.png" },
-    { key: "FULL_BACK", label: "Back", image: "/images/Frame 5.png" },
+    { key: "FULL_FRONT", label: "Full Front", image: "/images/placements/full-front.svg" },
+    { key: "CENTER_FRONT", label: "Center Front", image: "/images/placements/center-front.svg" },
+    // Left/Right are the WEARER's sides: the wearer's left chest sits on the
+    // right as you look at the front of the shirt. The internal keys name the
+    // side of the picture, so the two are crossed here (feedback 8.2).
+    { key: "RIGHT_CHEST", label: "Left Chest", image: "/images/placements/left-chest.svg" },
+    { key: "LEFT_CHEST", label: "Right Chest", image: "/images/placements/right-chest.svg" },
+    { key: "FULL_BACK", label: "Full Back", image: "/images/placements/full-back.svg" },
     ...(activePlacement === "CENTER_BACK" ||
     initialLayers.some((layer) => layer.placement === "CENTER_BACK") ||
     otherLayers.some((layer) => layer.placement === "CENTER_BACK")
-      ? [{ key: "CENTER_BACK" as PlacementKey, label: "Center Back", image: "/images/Frame 6.png" }]
+      ? [{ key: "CENTER_BACK" as PlacementKey, label: "Center Back", image: "/images/placements/center-back.svg" }]
       : []),
   ];
 
@@ -656,8 +672,24 @@ export default function BuilderClient({
   useEffect(() => {
     let cancelled = false;
 
+    // Prices are cached per (product, fabric, quantity, placements) so
+    // switching size or going back to a combination already seen is instant
+    // and never shows "Calculating...". Size is not part of the key: it
+    // does not affect the price and must never trigger a lookup.
+    const priceKey = JSON.stringify([state.product, state.fabric, qty, [...pricingPlacements].sort()]);
+    const cached = priceCacheRef.current.get(priceKey);
+    if (pricingRetryToken === lastRetryTokenRef.current && cached) {
+      setPrice(cached);
+      setPriceError(null);
+      setLoadingPrice(false);
+      return;
+    }
+    lastRetryTokenRef.current = pricingRetryToken;
+
     async function loadPrice() {
-      setLoadingPrice(true);
+      // Keep showing the last price while a new one loads rather than
+      // flashing "Calculating..." over it.
+      setLoadingPrice(priceRef.current == null);
       setPriceError(null);
 
       // Bounded: attempt 1 plus (at most) one retry for a transient
@@ -697,6 +729,7 @@ export default function BuilderClient({
           const data = (await res.json().catch(() => null)) as PriceResult | null;
           if (!cancelled) {
             if (data) {
+              if (data.mode === "standard") priceCacheRef.current.set(priceKey, data);
               setPrice(data);
             } else {
               setPrice(null);
@@ -781,7 +814,10 @@ export default function BuilderClient({
       const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
       // The chosen S/M/L/XL travels with the add (the Builder never persists
       // it to BuildDraft -- see the schema comment on BagItem.size).
-      if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
+      if (buyNowAfterAuthRef.current) {
+        buyNowAfterAuthRef.current = false;
+        router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+      } else if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
       else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
       else void addToBag();
     } else {
@@ -826,7 +862,8 @@ export default function BuilderClient({
   // is on screen once, so checkout, the wishlist and product switching all
   // read the same selection the customer sees (previously they saw NULLs).
   useEffect(() => {
-    if (draft.product && draft.color && draft.fabric) return;
+    if (draft.product && draft.product !== "CUSTOM" && draft.color && draft.fabric) return;
+    if (draft.product === "CUSTOM" && initialCustomQuoteUsdCents != null) return;
     save(state);
     // Mount-only: `state` here is the just-initialised defaults.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -953,7 +990,8 @@ export default function BuilderClient({
           // swap in the saved copy -- nothing is put on the shirt or saved.
           if (options.stage && !placedEarly) {
             setStaged((current) => (current?.id === tempId ? persisted : current));
-            URL.revokeObjectURL(localUrl);
+            // Only release the local copy once the saved one can replace it.
+            if (persistedUrl) URL.revokeObjectURL(localUrl);
             return;
           }
           // Promote the preview from the temporary blob: URL to the durable
@@ -1029,6 +1067,32 @@ export default function BuilderClient({
     }
     void selectAsset(asset);
   }
+
+  // An image that fails to load (a broken upload) must never be shown or kept
+  // in "Your uploads": take it off the shirt and out of the list, and tell the
+  // customer in plain words.
+  const handleBrokenArtwork = useCallback(
+    (url: string) => {
+      const brokenIds: string[] = [];
+      setUserAssets((prev) => {
+        const next = prev.filter((asset) => {
+          if (asset.url !== url) return true;
+          brokenIds.push(asset.id);
+          return false;
+        });
+        return next.length === prev.length ? prev : next;
+      });
+      setStaged((current) => (current?.url === url ? null : current));
+      if (artworkUrl === url) {
+        setArtworkUrl(null);
+        setUploadName("");
+        setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+        setState((current) => ({ ...current, primaryAssetId: null }));
+      }
+      setMockupError("This image couldn't be uploaded. Please try a PNG or JPG.");
+    },
+    [artworkUrl],
+  );
 
   // The floating image never outlives the popup.
   useEffect(() => {
@@ -1249,13 +1313,39 @@ export default function BuilderClient({
     }
 
     if (isBespokeRequest) {
-      router.push(`/bespoke/new?buildId=${buildId}`);
+      continueCustomRequest();
     } else if (state.product === "CUSTOM") {
       // An admin-quoted bespoke build pays through the normal checkout.
       router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
     } else {
       void addToBag();
     }
+  }
+
+  // BUY NOW: straight to checkout with the current design, colour, fabric,
+  // size and quantity (no trip through the bag).
+  const buyNowAfterAuthRef = useRef(false);
+
+  function buyNow() {
+    if (!state.product || !state.color || !state.fabric) {
+      void alertDialog({ title: "Complete your selection", message: "Choose a product, colour and fabric before continuing." });
+      return;
+    }
+    if (state.product === "CUSTOM" && customQuoteUsdCents == null) {
+      continueCustomRequest();
+      return;
+    }
+    if (state.product !== "CUSTOM" && price?.mode !== "standard") {
+      void alertDialog({ title: "Pricing not ready", message: "We're still calculating your price. Please try again in a moment." });
+      return;
+    }
+    if (status !== "authenticated") {
+      buyNowAfterAuthRef.current = true;
+      setCheckoutAfterAuth(true);
+      setShowAuthModal(true);
+      return;
+    }
+    router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
   }
 
   function openCustomRequestPopup() {
@@ -1268,8 +1358,40 @@ export default function BuilderClient({
     setShowAuthModal(true);
   }
 
-  function openBespokeBuilder() {
+  // A design left over from an earlier visit is never dropped on the customer
+  // unannounced: the first time the popup opens it asks whether to continue
+  // it or start from a blank T-shirt. Changing colour, size or fabric within
+  // the same visit keeps the design and never asks. Closing the question
+  // (Escape / outside click) means Continue, so nothing is lost by accident.
+  const designDecidedRef = useRef(initialLayers.length === 0 || openDesignerOnLoad || editingBagItem);
+
+  function startFreshDesign() {
+    setOtherLayers([]);
+    setArtworkUrl(null);
+    setUploadName("");
+    setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+    setActivePlacement("CENTER_FRONT");
+    setPrintMockupUrl(null);
+    setAiMockupUrl(null);
+    setBackPrintMockupUrl(null);
+    setBackAiMockupUrl(null);
+    setStaged(null);
+    setMockupError(null);
+    save({ ...state, primaryAssetId: null });
+  }
+
+  async function openBespokeBuilder() {
     if (status === "authenticated") {
+      if (!designDecidedRef.current) {
+        designDecidedRef.current = true;
+        const startFresh = await confirmDialog({
+          title: "Continue your last design?",
+          message: "You have an unfinished design from your last visit.",
+          confirmLabel: "Start fresh",
+          cancelLabel: "Continue",
+        });
+        if (startFresh) startFreshDesign();
+      }
       setShowBespokeModal(true);
       return;
     }
@@ -1325,7 +1447,10 @@ export default function BuilderClient({
       if (checkoutAfterAuth) {
         setCheckoutAfterAuth(false);
         const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
-        if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
+        if (buyNowAfterAuthRef.current) {
+          buyNowAfterAuthRef.current = false;
+          router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+        } else if (isBespokeRequest) continueCustomRequest();
         else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
         else {
           void addToBag();
@@ -1342,10 +1467,22 @@ export default function BuilderClient({
     }
   }
 
-  async function continueCustomRequest() {
+  // Bespoke is quoted individually over WhatsApp. The message carries what
+  // the customer has picked so far; the selected product is left untouched
+  // (Bespoke has no price, so it must never replace a Fitted/Oversized pick).
+  function bespokeWhatsAppUrl() {
+    const colour = state.color === "BLACK" ? "Black" : "White";
+    const fabricName = currentFabric.name.charAt(0).toUpperCase() + currentFabric.name.slice(1).toLowerCase();
+    const fabricLabel = `${fabricName} ${currentFabric.gsm.replace(/\s*Cotton$/i, "")}`.trim();
+    const message =
+      `Hi TGFM, I'd like a quote for a bespoke piece. Colour: ${colour}. ` +
+      `Fabric: ${fabricLabel}. Size: ${selectedSize}. Quantity: ${qty}.`;
+    return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(message)}`;
+  }
+
+  function continueCustomRequest() {
     setShowCustomPopup(false);
-    await switchProduct("CUSTOM" as ProductType);
-    openBespokeBuilder();
+    window.open(bespokeWhatsAppUrl(), "_blank", "noopener,noreferrer");
   }
 
   // Single-select: picking a placement replaces the previous one, and
@@ -1586,6 +1723,7 @@ export default function BuilderClient({
   function closeAuthModal() {
     setShowAuthModal(false);
     setCheckoutAfterAuth(false);
+    buyNowAfterAuthRef.current = false;
   }
 
   function toggleAuthMode() {
@@ -1617,9 +1755,35 @@ export default function BuilderClient({
     if (savePending || mockupPending) return;
     const layers = allLayers;
 
-    // 1. AI mockup for every side whose design changed (front and back are
-    //    generated separately). A failure keeps the popup open with the
-    //    error so nothing is lost.
+    // 1. Persist the whole design first: every layer, plus the legacy mirrors
+    //    and the priced placements (actionSaveArtworkLayers). A failure keeps
+    //    the popup open with the error so nothing is lost.
+    setSavePending(true);
+    try {
+      await actionSaveArtworkLayers(
+        buildId,
+        layers.map(({ placement, assetId, x, y, scale, rotation }) => ({ placement, assetId, x, y, scale, rotation })),
+      );
+    } catch (error) {
+      console.error("[studio] Could not save the design", error);
+      setMockupError("We couldn't save your design. Please try again.");
+      return;
+    } finally {
+      setSavePending(false);
+    }
+
+    // 2. Back to the Studio page straight away; the preview is made there,
+    //    on the main photo, with its own progress and retry.
+    setShowBespokeModal(false);
+    await runPreviewGeneration(layers);
+  }
+
+  // Makes the model preview for every side whose design changed (front and
+  // back are generated separately) and stores the saved-artwork image used by
+  // Wishlist/Bespoke/Admin (actionSaveArtwork, from the FRONT AI mockup -- a
+  // back-only design simply has none). Also what "Try again" runs.
+  async function runPreviewGeneration(layers: EditorLayer[]) {
+    if (mockupPending) return;
     if (sidesNeedingGeneration.length) {
       setMockupPending(true);
       setMockupError(null);
@@ -1632,19 +1796,7 @@ export default function BuilderClient({
       }
     }
 
-    // 2. Persist the whole design: every layer, plus the legacy mirrors and
-    //    the priced placements (actionSaveArtworkLayers), and the saved
-    //    artwork image for Wishlist/Bespoke/Admin (actionSaveArtwork, from
-    //    the front AI mockup -- or the back one for back-only designs).
-    setSavePending(true);
     try {
-      await actionSaveArtworkLayers(
-        buildId,
-        layers.map(({ placement, assetId, x, y, scale, rotation }) => ({ placement, assetId, x, y, scale, rotation })),
-      );
-      // The saved-artwork image is the FRONT AI mockup (saveArtworkForBuild),
-      // so it only exists for designs with front artwork; a back-only design
-      // simply has none (Wishlist/Admin then use the mockups directly).
       const frontLayers = layersForSide(layers, "front");
       if (frontLayers.length) {
         const first = frontLayers[0];
@@ -1657,13 +1809,9 @@ export default function BuilderClient({
         });
       }
     } catch (error) {
-      setMockupError(error instanceof Error ? error.message : "Could not save your design.");
-      return;
-    } finally {
-      setSavePending(false);
+      console.error("[studio] Could not save the artwork preview", error);
+      setMockupError(PREVIEW_FAILED_MESSAGE);
     }
-
-    setShowBespokeModal(false);
   }
 
   async function handleAddToWishlist() {
@@ -1674,7 +1822,7 @@ export default function BuilderClient({
     setWishlistPending(true);
     setWishlistError(null);
     try {
-      const result = await actionAddToWishlist(buildId);
+      const result = await actionAddToWishlist(buildId, selectedSize);
       if (result.ok) {
         setInWishlist(true);
       } else {
@@ -1705,7 +1853,9 @@ export default function BuilderClient({
       ? [customQuoteNote, "Quoted by our team. Changing your selection will require a new quote."]
           .filter(Boolean)
           .join(" ")
-      : undefined;
+      : state.product === "CUSTOM"
+        ? "" // Bespoke has no fixed price or shipping time.
+        : undefined;
 
   const selectionSummary = [
     state.product === "FITTED"
@@ -1805,24 +1955,6 @@ export default function BuilderClient({
       });
   }, [activePlacement, bespokeCanvasWidth, otherLayers, state.color, state.product]);
 
-  // "+ADD" (Selected Artwork): put a new artwork on the next free
-  // placement -- the active one if it's empty, else the first empty card --
-  // then open the file picker.
-  function addAnotherArtwork() {
-    if (!activeLayer) {
-      fileInputRef.current?.click();
-      return;
-    }
-    if (allLayers.length >= MAX_ARTWORK_LAYERS) {
-      setMockupError(`You can add up to ${MAX_ARTWORK_LAYERS} artworks. Remove one to add another.`);
-      return;
-    }
-    const free = placementCards.find((card) => !selectedPlacements.includes(card.key));
-    if (!free) return;
-    switchPlacement(free.key);
-    fileInputRef.current?.click();
-  }
-
   const bespokeShirtSrc = useMemo(
     () => getBespokeShirtImage(state.product, state.color, activePlacement),
     [activePlacement, state.color, state.product],
@@ -1921,7 +2053,10 @@ export default function BuilderClient({
       }
       return true;
     } catch (error) {
-      setMockupError(error instanceof Error ? error.message : "Could not generate mockup.");
+      // The technical reason is for the developer (console / server logs);
+      // the customer only ever sees the friendly message.
+      console.error("[studio] Preview generation failed", error);
+      setMockupError(PREVIEW_FAILED_MESSAGE);
       return false;
     }
   }
@@ -2020,7 +2155,7 @@ export default function BuilderClient({
               .map((layer) => ({ placement: layer.placement, url: layer.url, fileName: layer.fileName }))}
             onSelectLayer={switchPlacement}
             onRemoveLayer={removeLayer}
-            onAddAnotherArtwork={addAnotherArtwork}
+            onBrokenArtwork={handleBrokenArtwork}
             onDropAsset={dropAssetOnShirt}
             onRemoveAsset={(asset) => void removeUserAsset(asset)}
             removingAssetId={removingAssetId}
@@ -2094,9 +2229,24 @@ export default function BuilderClient({
                   Build Your T-Shirt
                 </button>
 
-                {mockupError && !showBespokeModal ? (
+                {mockupPending && !showBespokeModal ? (
+                  <div className="studio-bespoke-status" role="status" aria-live="polite">
+                    Creating your preview…
+                  </div>
+                ) : null}
+
+                {mockupError && !showBespokeModal && !mockupPending ? (
                   <div className="studio-bespoke-error" role="alert">
                     {mockupError}
+                    {mockupError === PREVIEW_FAILED_MESSAGE ? (
+                      <button
+                        type="button"
+                        className="mt-2 block text-xs font-semibold uppercase tracking-[0.14em] underline underline-offset-2"
+                        onClick={() => void runPreviewGeneration(allLayers)}
+                      >
+                        Try again
+                      </button>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -2208,6 +2358,15 @@ export default function BuilderClient({
                         : "Add To Wishlist"}
                   </button>
                 </div>
+                <button
+                  type="button"
+                  className="studio-build-button"
+                  style={{ marginTop: 12 }}
+                  onClick={buyNow}
+                  disabled={!canCheckout || savePending || bagPending || mockupPending}
+                >
+                  Buy Now
+                </button>
                 {wishlistError ? (
                   <p className="mt-2 text-xs text-red-600">{wishlistError}</p>
                 ) : null}
@@ -2228,10 +2387,9 @@ export default function BuilderClient({
                 <div className="studio-product-info">
                   <div className="studio-info-title">Product Info</div>
 
-                  {/* Copy ends here to match the Figma frame, which sets
-                      the Product Info paragraph as "Constructed from 100%
-                      organic cotton, the Archive" and hugs to it. */}
-                  <p>Constructed from 100% organic cotton, the Archive</p>
+                  <p>
+                    100% cotton, {currentFabric.gsm.match(/\d+\s*GSM/i)?.[0].replace(/\s+/g, " ").toUpperCase() ?? currentFabric.gsm.replace(/\s*Cotton$/i, "")}, printed to order just for you.
+                  </p>
                 </div>
 
                 <div className="studio-model-note">

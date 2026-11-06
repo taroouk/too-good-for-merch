@@ -5,7 +5,7 @@ export type NavLink = { label: string; href: string; active: boolean };
 
 export type NavModel = {
   left: NavLink[];
-  // "Enter studio" -- only where it isn't redundant (null inside the Studio).
+  // "Open Studio" -- only where it isn't redundant (null inside the Studio).
   studio: NavLink | null;
   // The shopping bag: rendered at the end of the LEFT group, with its item count
   // (signed-out visitors who click it are sent to log in).
@@ -57,21 +57,21 @@ function isUnder(pathname: string, base: string): boolean {
 export function buildNavModel(pathname: string, authenticated: boolean, role?: string | null): NavModel {
   const projectId = studioProjectId(pathname);
 
-  const left: NavLink[] = projectId
-    ? [
-        { label: "Home", href: "/", active: false },
-        { label: "Builder", href: `/studio/projects/${projectId}/builder`, active: isUnder(pathname, `/studio/projects/${projectId}/builder`) },
-      ]
-    : [
-        { label: "Home", href: "/", active: pathname === "/" },
-        { label: "Portfolio", href: "/#our-work", active: isUnder(pathname, "/portfolio") },
-        { label: "Contact", href: "/contact", active: isUnder(pathname, "/contact") },
-      ];
-
   const inStudio = isUnder(pathname, "/studio");
+  // One menu on every page; inside the Studio it also shows the active
+  // STUDIO entry (outside, the "Open Studio" button is the way in).
+  const left: NavLink[] = [
+    { label: "Home", href: "/", active: pathname === "/" },
+    { label: "Portfolio", href: "/#our-work", active: isUnder(pathname, "/portfolio") },
+    { label: "Contact", href: "/contact", active: isUnder(pathname, "/contact") },
+    ...(inStudio
+      ? [{ label: "Studio", href: projectId ? `/studio/projects/${projectId}/builder` : "/studio", active: true }]
+      : []),
+  ];
+
   // Wishlist / Bespoke / My orders live in the account dropdown only --
   // listing them in the bar too was pure duplication.
-  const studio: NavLink | null = inStudio ? null : { label: "Enter studio", href: "/studio", active: false };
+  const studio: NavLink | null = inStudio ? null : { label: "Open Studio", href: "/studio", active: false };
   const bagLink: NavLink = { label: "My bag", href: "/bag", active: isUnder(pathname, "/bag") };
 
   const onAuthPage = AUTH_PAGES.some((page) => isUnder(pathname, page));

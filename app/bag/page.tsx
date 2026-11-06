@@ -11,6 +11,8 @@ import { checkoutHref } from "src/lib/bag";
 import BagSync from "./BagSync";
 import { computePrice } from "src/pricing/engine";
 import { placementsFromCustomNotes, placementsOrDefault } from "src/pricing/placements";
+import { designPreviewUrl } from "src/lib/mockup-preview";
+import ProductCard, { CARD_BUTTON_DISABLED, CARD_BUTTON_PRIMARY, CARD_BUTTON_SECONDARY, CARD_GRID_CLASS, PAGE_BUTTON_CLASS } from "src/components/site/ProductCard";
 
 export const dynamic = "force-dynamic";
 
@@ -43,9 +45,13 @@ export default async function BagPage() {
               fabric: true,
               quantity: true,
               customNotes: true,
-              savedArtworkId: true,
+              primaryAssetId: true,
+              artworkPlacement: true,
+              artworkLayers: true,
               printMockupId: true,
+              printMockupFingerprint: true,
               aiMockupId: true,
+              aiMockupFingerprint: true,
             },
           },
         },
@@ -84,13 +90,9 @@ export default async function BagPage() {
         }
       }
       const order = paid.find((candidate) => candidate.buildId === item.buildId && candidate.createdAt >= item.createdAt);
-      const image = draft?.printMockupId
-        ? `/api/mockups/${draft.printMockupId}/file`
-        : draft?.aiMockupId
-          ? `/api/mockups/${draft.aiMockupId}/file`
-          : draft?.savedArtworkId
-            ? `/api/artworks/${draft.savedArtworkId}/file`
-            : null;
+      // The design's own current mockup, or the plain garment of the right
+      // cut and colour -- never a stale picture of another design.
+      const image = draft ? designPreviewUrl(draft) : null;
       return { item, draft, priceText, sellable, image, orderId: order?.id ?? null };
     }),
   );
@@ -98,14 +100,14 @@ export default async function BagPage() {
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
       <BagSync count={rows.length} />
-      <div className="mx-auto max-w-5xl">
+      <div className="mx-auto max-w-6xl">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[.18em] text-black/40">Account</p>
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/40">Account</p>
             <h1 className="mt-2 text-4xl font-semibold">Your Bag</h1>
             {rows.length ? <p className="mt-2 text-sm text-black/50">{rows.length} item{rows.length === 1 ? "" : "s"} · Each item is checked out separately</p> : null}
           </div>
-          <Link href="/studio" className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
+          <Link href="/studio" className={PAGE_BUTTON_CLASS}>
             Open Studio
           </Link>
         </div>
@@ -118,60 +120,51 @@ export default async function BagPage() {
             <p className="mx-auto mt-2 max-w-sm text-sm text-black/50">
               Press “Add to Bag” on a design in the Studio and it will show up here, ready to check out.
             </p>
-            <Link href="/studio" className="mt-6 inline-flex rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white">
+            <Link href="/studio" className={`${PAGE_BUTTON_CLASS} mt-6`}>
               Start your design
             </Link>
           </div>
         ) : (
-          <div className="mt-8 grid gap-4 sm:grid-cols-2">
+          <div className={CARD_GRID_CLASS}>
             {rows.map(({ item, draft, priceText, sellable, image, orderId }) => (
-              <article key={item.id} className="flex flex-col overflow-hidden rounded-2xl bg-white shadow-sm">
-                <div className="flex h-56 items-center justify-center bg-[#efece6]">
-                  {image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={image} alt="Design preview" className="h-full w-full object-contain" />
-                  ) : (
-                    <span className="text-sm text-black/40">No preview yet</span>
-                  )}
-                </div>
-
-                <div className="flex flex-1 flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <h2 className="text-lg font-semibold">{designTitle({ name: item.build.name, product: draft?.product, color: draft?.color })}</h2>
-                    <strong className="shrink-0 text-lg">{priceText}</strong>
-                  </div>
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm text-black/60">
-                    <div className="flex justify-between gap-2"><dt className="text-black/40">Product</dt><dd className="font-medium text-black">{label(draft?.product ?? null)}</dd></div>
-                    <div className="flex justify-between gap-2"><dt className="text-black/40">Colour</dt><dd className="font-medium text-black">{label(draft?.color ?? null)}</dd></div>
-                    <div className="flex justify-between gap-2"><dt className="text-black/40">Fabric</dt><dd className="font-medium text-black">{label(draft?.fabric ?? null)}</dd></div>
-                    <div className="flex justify-between gap-2"><dt className="text-black/40">Size</dt><dd className="font-medium text-black">{item.size}</dd></div>
-                    <div className="flex justify-between gap-2"><dt className="text-black/40">Qty</dt><dd className="font-medium text-black">{draft?.quantity ?? 1}</dd></div>
-                  </dl>
-
-                  <div className="mt-5 flex flex-wrap gap-3 pt-1">
+              <ProductCard
+                key={item.id}
+                image={image}
+                imageAlt="Design preview"
+                title={designTitle({ name: item.build.name, product: draft?.product, color: draft?.color })}
+                price={priceText}
+                details={[
+                  ["Product", label(draft?.product ?? null)],
+                  ["Colour", label(draft?.color ?? null)],
+                  ["Fabric", label(draft?.fabric ?? null)],
+                  ["Size", item.size],
+                  ["Qty", String(draft?.quantity ?? 1)],
+                ]}
+                actions={
+                  <>
                     {orderId ? (
-                      <Link href={`/orders/${orderId}`} className="flex-1 rounded-xl bg-emerald-600 px-4 py-2.5 text-center text-sm font-semibold text-white">
-                        Ordered · view order
+                      <Link href={`/orders/${orderId}`} className={CARD_BUTTON_PRIMARY}>
+                        View order
                       </Link>
                     ) : sellable ? (
-                      <Link href={checkoutHref(item.buildId, item.size)} className="flex-1 rounded-xl bg-black px-4 py-2.5 text-center text-sm font-semibold text-white">
+                      <Link href={checkoutHref(item.buildId, item.size)} className={CARD_BUTTON_PRIMARY}>
                         Checkout
                       </Link>
                     ) : (
-                      <span className="flex-1 rounded-xl bg-black/10 px-4 py-2.5 text-center text-sm font-semibold text-black/45">Unavailable</span>
+                      <span className={CARD_BUTTON_DISABLED}>Unavailable</span>
                     )}
-                    <Link href={`/studio/projects/${item.buildId}/builder?edit=1&size=${encodeURIComponent(item.size)}`} className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 transition hover:border-black hover:text-black">
+                    <Link href={`/studio/projects/${item.buildId}/builder?edit=1&size=${encodeURIComponent(item.size)}`} className={CARD_BUTTON_SECONDARY}>
                       Edit
                     </Link>
                     <form action={actionRemoveFromBagForm}>
                       <input type="hidden" name="itemId" value={item.id} />
-                      <button type="submit" className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 transition hover:border-black hover:text-black">
+                      <button type="submit" className={CARD_BUTTON_SECONDARY}>
                         Remove
                       </button>
                     </form>
-                  </div>
-                </div>
-              </article>
+                  </>
+                }
+              />
             ))}
           </div>
         )}

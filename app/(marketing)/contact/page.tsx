@@ -22,7 +22,7 @@ export default function ContactPage() {
             <a href={TIKTOK_URL}>TikTok</a>
             <a href={WHATSAPP_URL}>WhatsApp {WHATSAPP_PHONE}</a>
             <a href={EMAIL_URL}>{CONTACT_EMAIL}</a>
-            <a href="/studio">ENTER STUDIO</a>
+            <a href="/studio">OPEN STUDIO</a>
           </div>
         </div>
 

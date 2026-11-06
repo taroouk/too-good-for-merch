@@ -175,7 +175,7 @@ export async function runAll() {
       const home = buildNavModel("/", false);
       assert.deepEqual(home.left.map((l) => l.label), ["Home", "Portfolio", "Contact"]);
       assert.equal(home.left[0].active, true);
-      assert.equal(home.studio?.label, "Enter studio");
+      assert.equal(home.studio?.label, "Open Studio");
       assert.equal(home.bagLink.label, "My bag");
       assert.equal(home.bagLink.active, false);
       assert.equal(buildNavModel("/bag", true).bagLink.active, true);
@@ -187,9 +187,9 @@ export async function runAll() {
       assert.equal(contact.left.find((l) => l.label === "Home")?.active, false);
 
       const builder = buildNavModel("/studio/projects/p1/builder", true);
-      assert.deepEqual(builder.left.map((l) => l.label), ["Home", "Builder"]);
-      assert.equal(builder.left[1].href, "/studio/projects/p1/builder");
-      assert.equal(builder.left[1].active, true);
+      assert.deepEqual(builder.left.map((l) => l.label), ["Home", "Portfolio", "Contact", "Studio"]);
+      assert.equal(builder.left[3].href, "/studio/projects/p1/builder");
+      assert.equal(builder.left[3].active, true);
       // inside the Studio "Enter studio" would be redundant, and Wishlist /
       // The account links live in the dropdown only (no duplicates in the bar)
       assert.equal(builder.studio, null);

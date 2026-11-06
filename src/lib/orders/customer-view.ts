@@ -31,18 +31,18 @@ export function customerOrderStatus(order: OrderLike): CustomerStatus {
     return { key: "payment-failed", label: "Payment failed", tone: "danger", description: "Your payment didn't go through. You can try again." };
   }
   if (order.paymentStatus !== "PAID") {
-    return { key: "awaiting-payment", label: "Awaiting payment", tone: "warning", description: "We'll start on your order as soon as payment is confirmed." };
+    return { key: "awaiting-payment", label: "Payment pending", tone: "warning", description: "Complete your payment to confirm this order. We'll start making it once payment is received." };
   }
   if (order.status === "COMPLETED") {
-    return { key: "delivered", label: "Delivered", tone: "success", description: "Your order has been delivered." };
+    return { key: "delivered", label: "Delivered", tone: "success", description: "Your order has been delivered. We hope you love it." };
   }
   if (order.status === "SHIPPED" || order.shippedAt) {
-    return { key: "shipped", label: "Shipped", tone: "info", description: "Your order is on its way." };
+    return { key: "shipped", label: "Shipped", tone: "info", description: "Your order is on its way. Track it here." };
   }
   if (order.status === "IN_PRODUCTION") {
-    return { key: "in-production", label: "In production", tone: "info", description: "Your order is being printed and prepared." };
+    return { key: "in-production", label: "In production", tone: "info", description: "We're printing your order now." };
   }
-  return { key: "confirmed", label: "Confirmed", tone: "success", description: "Payment received — your order is confirmed." };
+  return { key: "confirmed", label: "Confirmed", tone: "success", description: "Payment received. Your order is confirmed." };
 }
 
 export type TimelineStep = { key: string; label: string; at: Date | null; state: "done" | "current" | "upcoming" };
@@ -82,7 +82,7 @@ export type OrderFilter = "all" | "active" | "unpaid" | "delivered" | "closed";
 export const ORDER_FILTERS: Array<{ key: OrderFilter; label: string }> = [
   { key: "all", label: "All" },
   { key: "active", label: "In progress" },
-  { key: "unpaid", label: "Awaiting payment" },
+  { key: "unpaid", label: "Payment pending" },
   { key: "delivered", label: "Delivered" },
   { key: "closed", label: "Cancelled / refunded" },
 ];

@@ -5,8 +5,6 @@ import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { WHATSAPP_URL } from "src/lib/contact";
 import {
-  formatExchangeRate,
-  formatMoney,
   formatShippingAddress,
   orderArtworkLayers,
   orderItemExtras,
@@ -14,6 +12,7 @@ import {
   resolveOrderMockupIds,
 } from "src/lib/orders/display";
 import { customerOrderStatus, itemAmountsInChargedCurrency, orderTimeline, paymentMethodLabel, type StatusTone } from "src/lib/orders/customer-view";
+import { formatMinorPrice } from "src/pricing/display";
 import { placementLabel, type PlacementKey } from "src/pricing/placements";
 import AccountNav from "src/components/site/AccountNav";
 import PaymentStatusClient from "./PaymentStatusClient";
@@ -188,8 +187,8 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
                       </dl>
                     </div>
                     <div className="shrink-0 text-sm sm:text-right">
-                      <p className="font-semibold">{formatMoney(money.totalCents, itemCurrency)}</p>
-                      {item.quantity > 1 ? <p className="text-xs text-black/45">{formatMoney(money.unitCents, itemCurrency)} each</p> : null}
+                      <p className="font-semibold">{formatMinorPrice(money.totalCents, itemCurrency)}</p>
+                      {item.quantity > 1 ? <p className="text-xs text-black/45">{formatMinorPrice(money.unitCents, itemCurrency)} each</p> : null}
                     </div>
                   </article>
                 );
@@ -200,22 +199,17 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
           <div className="space-y-6">
             <Card title="Order summary">
               <dl className="space-y-2 text-sm">
-                <div className="flex justify-between"><dt className="text-black/55">Items subtotal</dt><dd>{formatMoney(breakdown.subtotalCents, order.currency)}</dd></div>
+                <div className="flex justify-between"><dt className="text-black/55">Items subtotal</dt><dd>{formatMinorPrice(breakdown.subtotalCents, order.currency)}</dd></div>
                 {breakdown.surchargeCents !== 0 ? (
-                  <div className="flex justify-between"><dt className="text-black/55">Shipping &amp; tax</dt><dd>{formatMoney(breakdown.surchargeCents, order.currency)}</dd></div>
+                  <div className="flex justify-between"><dt className="text-black/55">Shipping &amp; tax</dt><dd>{formatMinorPrice(breakdown.surchargeCents, order.currency)}</dd></div>
                 ) : null}
-                <div className="flex justify-between border-t border-black/10 pt-3 text-base"><dt className="font-semibold">Total {order.paymentStatus === "PAID" ? "paid" : "charged"}</dt><dd className="font-semibold">{formatMoney(order.totalCents, order.currency)}</dd></div>
+                <div className="flex justify-between border-t border-black/10 pt-3 text-base"><dt className="font-semibold">Total {order.paymentStatus === "PAID" ? "paid" : "charged"}</dt><dd className="font-semibold">{formatMinorPrice(order.totalCents, order.currency)}</dd></div>
               </dl>
-              {order.exchangeRateUsed && order.canonicalTotalUsdCents != null ? (
-                <p className="mt-3 text-xs text-black/45">
-                  Priced at {formatMoney(order.canonicalTotalUsdCents, "USD")} and charged in {order.currency} at 1 USD = {formatExchangeRate(order.exchangeRateUsed)} {order.currency}.
-                </p>
-              ) : null}
             </Card>
 
             <Card title="Payment">
               <dl className="space-y-2 text-sm">
-                <div className="flex justify-between gap-4"><dt className="text-black/55">Status</dt><dd className="font-medium">{order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "REFUNDED" ? "Refunded" : order.paymentStatus === "FAILED" ? "Failed" : "Awaiting payment"}</dd></div>
+                <div className="flex justify-between gap-4"><dt className="text-black/55">Status</dt><dd className="font-medium">{order.paymentStatus === "PAID" ? "Paid" : order.paymentStatus === "REFUNDED" ? "Refunded" : order.paymentStatus === "FAILED" ? "Failed" : "Payment pending"}</dd></div>
                 {order.paymentStatus === "PAID" || order.paymentStatus === "REFUNDED" ? (
                   <>
                     <div className="flex justify-between gap-4"><dt className="text-black/55">Method</dt><dd>{paymentMethodLabel(order.paymentMethod)}</dd></div>

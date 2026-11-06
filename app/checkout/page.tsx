@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { formatMinorPrice } from "src/pricing/display";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
@@ -48,7 +49,7 @@ type BuildQuote = {
 };
 
 function money(cents: number, currency: string) {
-  return new Intl.NumberFormat("en", { style: "currency", currency }).format(cents / 100);
+  return formatMinorPrice(cents, currency);
 }
 
 function titleCase(value: string | null) {
@@ -409,7 +410,7 @@ function CheckoutContent() {
                     onChange={(event) => changeAddressCountry(event.target.value)}
                     required
                     autoComplete="country"
-                    className={inputClass}
+                    className={`${inputClass} tgfm-select`}
                   >
                     {COUNTRIES.map((country) => (
                       <option key={country.code} value={country.code}>
@@ -622,9 +623,6 @@ function CheckoutContent() {
                   <span>Total</span>
                   <span>{money(breakdown.total, totals.paymentCurrency)}</span>
                 </div>
-                <p className="text-xs text-black/45">
-                  ≈ {money(totals.totalUsdCents, "USD")} · charged in {totals.paymentCurrency}
-                </p>
               </>
             ) : (
               <div className="flex justify-between text-lg font-semibold">

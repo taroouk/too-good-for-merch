@@ -39,14 +39,13 @@ export default function ArtworkModal({
         </button>
 
         <div className="studio-modal-scroll">
-          <div className="studio-modal-kicker">TGFM Bespoke</div>
+          <div className="studio-modal-kicker">Made for you</div>
 
           <h2 id="artwork-modal-title" className="studio-custom-request-title">Custom Garment Request</h2>
 
           <p className="studio-custom-request-copy">
-            Custom garment constructions are not available for instant checkout.
-            We&apos;ll review your request and provide a tailored quote based on
-            your customization needs.
+            Custom cuts and constructions are quoted individually. Send us your
+            idea on WhatsApp and we&apos;ll come back with a tailored quote.
           </p>
 
           <button
@@ -54,7 +53,7 @@ export default function ArtworkModal({
             onClick={onContinueCustomRequest}
             className="studio-modal-primary-button"
           >
-            Continue with custom request
+            Continue on WhatsApp
           </button>
 
           <button

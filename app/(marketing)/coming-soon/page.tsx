@@ -19,7 +19,7 @@ export default function ComingSoonPage() {
           <p>COMING SOON</p>
           <h1>TOO GOOD FOR MERCH</h1>
           <div>
-            <a href="/studio">ENTER STUDIO</a>
+            <a href="/studio">OPEN STUDIO</a>
             <a href={WHATSAPP_URL}>WhatsApp</a>
             <a href={EMAIL_URL}>{CONTACT_EMAIL}</a>
           </div>

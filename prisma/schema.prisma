@@ -467,6 +467,10 @@ model WishlistItem {
   size       String?
   placements Json
   transform  Json?
+  // The full design as saved: every artwork layer (placement, position,
+  // zoom, crop), the mockup photos and the customised print notes, so
+  // "Open in Studio" can reload exactly this design.
+  design     Json?
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   build   Build    @relation(fields: [buildId], references: [id], onDelete: Cascade)
   artwork Artwork? @relation(fields: [artworkId], references: [id], onDelete: SetNull)
