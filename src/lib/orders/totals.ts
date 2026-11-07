@@ -35,23 +35,67 @@ export function computeOrderTotals(params: {
   shippingCents: number | null | undefined;
   usdToEgpRate: number;
 }): OrderTotals {
-  const { subtotalUsdCents, usdToEgpRate } = params;
+  // One rounding model for every checkout: a single item is a bag of one line (see computeCartTotals below), so
+  // Buy Now, the bag and the Studio price can never disagree. (Until 9 Nov 2026 this converted subtotal+tax+shipping
+  // in one go, which differed from the bag by up to one pound whenever tax or shipping was configured.)
+  const cart = computeCartTotals({
+    lineUsdCents: [params.subtotalUsdCents],
+    taxRateBps: params.taxRateBps,
+    shippingCents: params.shippingCents,
+    usdToEgpRate: params.usdToEgpRate,
+  });
+  return {
+    subtotalUsdCents: cart.subtotalUsdCents,
+    taxUsdCents: cart.taxUsdCents,
+    shippingUsdCents: cart.shippingUsdCents,
+    totalUsdCents: cart.totalUsdCents,
+    paymentCurrency: PAYMENT_CURRENCY,
+    subtotalPaymentCents: cart.subtotalPaymentCents,
+    totalPaymentCents: cart.totalPaymentCents,
+    exchangeRate: params.usdToEgpRate,
+  };
+}
+
+export type CartTotals = {
+  lineUsdCents: number[];
+  linePaymentCents: number[];
+  subtotalUsdCents: number;
+  taxUsdCents: number;
+  shippingUsdCents: number;
+  totalUsdCents: number;
+  paymentCurrency: typeof PAYMENT_CURRENCY;
+  subtotalPaymentCents: number;
+  totalPaymentCents: number;
+  exchangeRate: number;
+};
+
+// One payment for a whole bag. Each line is converted to whole pounds on its own, and the payment subtotal is
+// the SUM of those displayed lines, so the figures a customer sees always add up to what Paymob charges.
+// Tax (on the summed USD subtotal) and shipping (once per order, not per item) are converted once together.
+// For a bag of one item with no tax/shipping this equals computeOrderTotals().
+export function computeCartTotals(params: {
+  lineUsdCents: number[];
+  taxRateBps: number | null | undefined;
+  shippingCents: number | null | undefined;
+  usdToEgpRate: number;
+}): CartTotals {
+  const { lineUsdCents, usdToEgpRate } = params;
+  const subtotalUsdCents = lineUsdCents.reduce((sum, cents) => sum + cents, 0);
   const taxUsdCents = Math.round(subtotalUsdCents * ((params.taxRateBps ?? 0) / 10_000));
   const shippingUsdCents = Math.max(0, params.shippingCents ?? 0);
-  const totalUsdCents = subtotalUsdCents + taxUsdCents + shippingUsdCents;
-
+  const linePaymentCents = lineUsdCents.map((cents) => convertUsdCentsToPaymentCents(cents, usdToEgpRate));
+  const subtotalPaymentCents = linePaymentCents.reduce((sum, cents) => sum + cents, 0);
+  const feesPaymentCents = convertUsdCentsToPaymentCents(taxUsdCents + shippingUsdCents, usdToEgpRate);
   return {
+    lineUsdCents,
+    linePaymentCents,
     subtotalUsdCents,
     taxUsdCents,
     shippingUsdCents,
-    totalUsdCents,
+    totalUsdCents: subtotalUsdCents + taxUsdCents + shippingUsdCents,
     paymentCurrency: PAYMENT_CURRENCY,
-    // Subtotal and total are each converted exactly once, from their own
-    // canonical USD figure. Tax and shipping are deliberately NOT converted
-    // individually -- rounding each component and summing the roundings
-    // would let the payment total drift off totalUsdCents * rate.
-    subtotalPaymentCents: convertUsdCentsToPaymentCents(subtotalUsdCents, usdToEgpRate),
-    totalPaymentCents: convertUsdCentsToPaymentCents(totalUsdCents, usdToEgpRate),
+    subtotalPaymentCents,
+    totalPaymentCents: subtotalPaymentCents + feesPaymentCents,
     exchangeRate: usdToEgpRate,
   };
 }

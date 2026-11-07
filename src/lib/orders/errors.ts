@@ -9,8 +9,32 @@
 import { PaymentStatus } from "@prisma/client";
 
 export class CheckoutError extends Error {
-  constructor(message: string, public status = 400) {
+  constructor(
+    message: string,
+    public status = 400,
+    // A machine-readable reason the page can act on (default: CHECKOUT_VALIDATION_FAILED).
+    public code?: string,
+    // Extra fields returned to the client next to the message (e.g. the new total).
+    public details?: Record<string, unknown>,
+  ) {
     super(message);
+  }
+}
+
+// The customer approves a TOTAL on the checkout page; an order is only created for exactly that amount.
+// Missing => 400 (a request that never showed the customer a total); different => 409 with the current total,
+// so the page can show it and ask again. Pure: unit-tested in errors.test.ts.
+export function assertApprovedTotal(expected: unknown, actualTotalCents: number, currency: string): void {
+  if (typeof expected !== "number" || !Number.isSafeInteger(expected) || expected <= 0) {
+    throw new CheckoutError("Please review your order total and confirm it to continue.", 400, "TOTAL_CONFIRMATION_REQUIRED");
+  }
+  if (expected !== actualTotalCents) {
+    throw new CheckoutError(
+      "The total for your order has changed. Please review the new total and confirm it to continue.",
+      409,
+      "PRICE_CHANGED",
+      { currentTotalCents: actualTotalCents, approvedTotalCents: expected, currency },
+    );
   }
 }
 

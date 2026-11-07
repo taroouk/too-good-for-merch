@@ -151,6 +151,39 @@ export function getTemplateGarmentFrame(
   return getTemplateTorsoFrame(resolveProduct(product), resolveColor(color), side);
 }
 
+// The frame the flat tee is mapped through for ONE photo. Left/top/width are
+// the drawn tee's own torso (EDITOR_FRAMES); the HEIGHT is set so this frame
+// has the same pixel shape (width : height) as the photo's torso frame.
+//
+// Why: a placement is defined on the garment, and an artwork's height follows
+// its width (it is never stretched). If the flat tee's torso were a different
+// shape from the photo's, the same width would cover a different fraction of
+// the torso's height in the preview than in the print (measured: up to ~12%).
+// With equal pixel shapes, one scale factor maps the photo to the flat tee on
+// BOTH axes, so a rectangle of any shape lands on the same part of the garment
+// in the preview and in the print, with no distortion of the artwork. Only the
+// drawn tee's torso height is re-read as a few percent taller/shorter per
+// photo (the shapes of the four photos' torsos differ by that much).
+export function getEditorMappingFrame(
+  product: string | null | undefined,
+  color: string | null | undefined,
+  side: GarmentSide,
+): GarmentFrame {
+  const editorFrame = EDITOR_FRAMES[side];
+  const templateFrame = getTemplateGarmentFrame(product, color, side);
+  const editorAspect = getEditorAspectRatio(side); // canvas width / height
+  const templateAspect = getTemplateAspect(product, color, side);
+  // torso pixel shape in the photo: (frame width * W) / (frame height * H)
+  const torsoShape = (templateFrame.widthPct * templateAspect) / templateFrame.heightPct;
+  return {
+    xPct: editorFrame.xPct,
+    yPct: editorFrame.yPct,
+    widthPct: editorFrame.widthPct,
+    // same shape on the flat tee: height (fraction of canvas height) = width fraction * editorAspect / shape
+    heightPct: (editorFrame.widthPct * editorAspect) / torsoShape,
+  };
+}
+
 function getTemplateAspect(
   product: string | null | undefined,
   color: string | null | undefined,
@@ -178,7 +211,7 @@ function offsetScaleFactors(
   color: string | null | undefined,
   side: GarmentSide,
 ): { x: number; y: number } {
-  const editorFrame = EDITOR_FRAMES[side];
+  const editorFrame = getEditorMappingFrame(product, color, side);
   const templateFrame = getTemplateGarmentFrame(product, color, side);
   const editorAspect = getEditorAspectRatio(side);
   const templateAspect = getTemplateAspect(product, color, side);
@@ -199,7 +232,7 @@ export function getEditorPlacementBox(
   placement: PlacementType,
 ): PlacementBox {
   const side = getPlacementSide(placement);
-  const editorFrame = EDITOR_FRAMES[side];
+  const editorFrame = getEditorMappingFrame(product, color, side);
   const templateFrame = getTemplateGarmentFrame(product, color, side);
   const box = getPlacementBox(resolveProduct(product), resolveColor(color), placement);
 
@@ -260,7 +293,7 @@ export function getEditorSafeArea(
   color: string | null | undefined,
   side: GarmentSide,
 ): GarmentFrame {
-  const editorFrame = EDITOR_FRAMES[side];
+  const editorFrame = getEditorMappingFrame(product, color, side);
   const templateFrame = getTemplateGarmentFrame(product, color, side);
   const safe = getGarmentSafeArea(side);
   return {

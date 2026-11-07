@@ -5,6 +5,9 @@ import sharp from "sharp";
 // references, so the multi-MB PNGs Gemini/sharp produce are pure storage cost.
 export const COMPRESSED_MAX_SIDE = 1600;
 export const COMPRESSED_QUALITY = 82;
+// Mockups are rendered at 2x the garment photo size (MOCKUP_OUTPUT_SCALE), so
+// they keep a larger longest side than the general 1600px cap.
+export const MOCKUP_MAX_SIDE = 2400;
 
 // Re-encodes an image as WebP (keeps transparency) at a sane size. Falls back
 // to the original bytes when the input can't be decoded or when the result
@@ -12,10 +15,11 @@ export const COMPRESSED_QUALITY = 82;
 export async function compressMockupImage(
   data: Buffer,
   mimeType: string,
+  maxSide: number = COMPRESSED_MAX_SIDE,
 ): Promise<{ data: Buffer; mimeType: string; compressed: boolean }> {
   try {
     const out = await sharp(data)
-      .resize({ width: COMPRESSED_MAX_SIDE, height: COMPRESSED_MAX_SIDE, fit: "inside", withoutEnlargement: true })
+      .resize({ width: maxSide, height: maxSide, fit: "inside", withoutEnlargement: true })
       .webp({ quality: COMPRESSED_QUALITY, effort: 4 })
       .toBuffer();
     if (out.byteLength > 0 && out.byteLength < data.byteLength) {

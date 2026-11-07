@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { auth } from "src/auth";
 import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
+import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,10 @@ async function statusResponse(orderId: string) {
       status: true,
       totalCents: true,
       currency: true,
+      buildId: true,
+      createdAt: true,
+      paidAt: true,
+      items: { select: { preview: true } },
     },
   });
   if (!order) return NextResponse.json({ error: "Order not found." }, { status: 404 });
@@ -35,6 +40,8 @@ async function statusResponse(orderId: string) {
     totalCents: order.totalCents,
     currency: order.currency,
     confirmed: order.paymentStatus === PaymentStatus.PAID,
+    // Read-only: a paid order held for review because the same design was also paid on another order.
+    underReview: (await duplicateReviewIdsFor(order.userId, [order])).has(order.id),
   });
 }
 

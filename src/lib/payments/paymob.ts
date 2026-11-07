@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { OrderStatus, PaymentStatus } from "@prisma/client";
 import type { Order, OrderItem, PaymentMethod, Prisma } from "@prisma/client";
+import { SUPPORTED_PAYMENT_CURRENCY } from "../orders/currency";
 
 const PAYMOB_BASE_URL = "https://accept.paymob.com";
 
@@ -140,6 +141,10 @@ function billingData(order: PaymobOrder) {
 const PAYMOB_CALL_BUDGET_MS = 25_000;
 
 export async function createPaymobPayment(order: PaymobOrder, method: PaymentMethod) {
+  // Only EGP is supported: an order in any other currency is never sent to Paymob (checked before any key or network use).
+  if (order.currency !== SUPPORTED_PAYMENT_CURRENCY) {
+    throw new PaymobError(`Only ${SUPPORTED_PAYMENT_CURRENCY} orders can be paid; this order is in ${order.currency}.`);
+  }
   if (!Number.isSafeInteger(order.totalCents) || order.totalCents <= 0) {
     throw new PaymobError("Order amount is invalid.");
   }

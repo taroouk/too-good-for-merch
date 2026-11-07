@@ -15,6 +15,7 @@ import {
 } from "src/lib/payments/paymob";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
+import { findSupersedingPaidOrder, orderBuildIds } from "src/lib/orders/superseded";
 
 export const runtime = "nodejs";
 
@@ -143,6 +144,8 @@ export async function POST(req: Request) {
   }
 
   const { succeeded, refunded, failed } = classifyTransaction(object);
+  // Set inside the transaction below when this successful payment is for a design that was ALSO paid on another order.
+  let duplicateDesignPayment: { orderNumber: string } | null = null;
 
   await prisma.$transaction(async (tx) => {
     // Every branch below is a read-then-write on the order's payment state,
@@ -192,6 +195,34 @@ export async function POST(req: Request) {
           where: { id: current.id },
           data: classification.update,
         });
+
+        // The money was received and is recorded as received -- the app cannot refuse a charge Paymob already made.
+        // What it can do is notice that this design was also paid on another order and make sure a person looks at it
+        // before anything is produced. The designs are locked (fixed order) first, so two webhooks for two orders of the
+        // same design are decided one after the other and exactly one of them is flagged.
+        const items = await tx.orderItem.findMany({ where: { orderId: current.id }, select: { preview: true } });
+        const orderForCheck = { ...current, items };
+        for (const buildId of orderBuildIds(orderForCheck).sort()) {
+          await tx.$queryRaw`SELECT id FROM "Build" WHERE id = ${buildId} FOR UPDATE`;
+        }
+        const other = await findSupersedingPaidOrder(tx, orderForCheck);
+        if (other) {
+          duplicateDesignPayment = { orderNumber: other.orderNumber };
+          await tx.adminAuditLog.create({
+            data: {
+              orderId: current.id,
+              action: "PAYMOB_DUPLICATE_DESIGN_PAYMENT",
+              newValue: transactionId,
+              metadata: { otherOrderId: other.id, otherOrderNumber: other.orderNumber, amountCents: current.totalCents, note: "This design was also paid on another order." } as Prisma.InputJsonValue,
+            },
+          });
+          await tx.adminNote.create({
+            data: {
+              orderId: current.id,
+              body: `Possible duplicate payment: this design was also paid on order ${other.orderNumber}. Review for a refund of one of the two payments before producing (Paymob transaction ${transactionId ?? "unknown"}).`,
+            },
+          });
+        }
 
         // Payment behaviour is unchanged (money received is always recorded);
         // this only makes sure the team notices a payment that arrived for an
@@ -259,7 +290,8 @@ export async function POST(req: Request) {
   // isolated -- never throws, and is idempotent per order, so a Paymob
   // redelivery can't email twice or fail the webhook.
   if (succeeded) {
-    await sendOrderConfirmationEmail(order.id);
+    // No "your order is confirmed" e-mail for a payment that is under review as a possible duplicate.
+    if (!duplicateDesignPayment) await sendOrderConfirmationEmail(order.id);
     await removePaidBagItem(order.id);
   }
 

@@ -68,7 +68,9 @@ async function baseRequest(overrides: Partial<RenderRequest> = {}): Promise<Rend
     template,
     product: "FITTED",
     color: "WHITE",
-    placement: "CENTER_FRONT",
+    // FULL_FRONT: its square frame holds a 2:1 artwork whole (a wide artwork
+    // on Center Front is cut off at the frame -- see print-frame-clip.test.ts).
+    placement: "FULL_FRONT",
     transform: { x: 0, y: 0, scale: 1 },
     dpi: BASELINE_RENDER_DPI,
     ...overrides,

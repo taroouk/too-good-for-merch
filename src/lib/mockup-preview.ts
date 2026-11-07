@@ -7,8 +7,8 @@
 // is only used when its fingerprint matches the design as it is NOW (same
 // artwork, placement, zoom, product and colour); otherwise the card shows the
 // plain garment in the right cut and colour.
-import { draftArtworkLayers, layersForSide, sideFingerprint, type ArtworkLayer } from "src/studio/artwork-layers";
-import { BASELINE_RENDER_DPI } from "src/studio/render/transform";
+import { draftArtworkLayers, layersForSide, sideFingerprint, type ArtworkLayer } from "../studio/artwork-layers";
+import { BASELINE_RENDER_DPI } from "../studio/render/transform";
 
 type MockupPointers = {
   printMockupId?: string | null;
@@ -84,4 +84,35 @@ export function orderItemPreviewUrl(
   });
   const match = expected ? candidates.find((id) => fingerprintById.get(id) === expected) : null;
   return match ? `/api/mockups/${match}/file` : plainGarmentImage(item.product, item.color);
+}
+
+// The mockup pointers that are current for the design, front and back. Used
+// when an order freezes its snapshot, so an order never records a mockup of a
+// different colour, cut or artwork than the one being bought.
+export function freshMockupPointers(
+  draft: PreviewDraft & {
+    backPrintMockupId?: string | null;
+    backPrintMockupFingerprint?: string | null;
+    backAiMockupId?: string | null;
+    backAiMockupFingerprint?: string | null;
+  },
+  layers: ArtworkLayer[],
+) {
+  const expected = (side: "front" | "back") =>
+    sideFingerprint({
+      layers: layersForSide(layers, side),
+      product: mockupProduct(draft.product),
+      color: mockupColor(draft.color),
+      dpi: BASELINE_RENDER_DPI,
+    });
+  const front = expected("front");
+  const back = expected("back");
+  const keep = (id: string | null | undefined, fingerprint: string | null | undefined, want: string | null) =>
+    id && want && fingerprint === want ? id : null;
+  return {
+    printMockupId: keep(draft.printMockupId, draft.printMockupFingerprint, front),
+    aiMockupId: keep(draft.aiMockupId, draft.aiMockupFingerprint, front),
+    backPrintMockupId: keep(draft.backPrintMockupId, draft.backPrintMockupFingerprint, back),
+    backAiMockupId: keep(draft.backAiMockupId, draft.backAiMockupFingerprint, back),
+  };
 }

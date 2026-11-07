@@ -4,6 +4,8 @@ import { createHmac } from "node:crypto";
 import { OrderStatus, PaymentStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import {
+  createPaymobPayment,
+  PaymobError,
   classifySuccessfulPayment,
   classifyTransaction,
   paymentFailureReason,
@@ -52,6 +54,83 @@ export async function runAll() {
   const originalSecret = process.env.PAYMOB_HMAC_SECRET;
   try {
     return await runSuite("lib/payments/paymob", {
+      // ---- What the app WOULD send to Paymob (Accept "legacy" flow: auth token -> order registration -> payment key ->
+      // hosted iframe, confirmed by the signed transaction callback). fetch is stubbed: NO network is used and the "keys"
+      // below are obvious placeholders that exist only inside this test process.
+      async "Paymob request contract: amounts, currency, key lifetime (nothing is sent anywhere)"() {
+        const realFetch = globalThis.fetch;
+        const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
+        const saved = { ...process.env };
+        process.env.PAYMOB_API_KEY = "test-placeholder-not-a-key";
+        process.env.PAYMOB_INTEGRATION_ID = "111";
+        process.env.PAYMOB_IFRAME_ID = "222";
+        globalThis.fetch = (async (url: string, init: { body: string }) => {
+          const path = new URL(url).pathname;
+          sent.push({ path, body: JSON.parse(init.body) });
+          const reply = path.endsWith("/auth/tokens") ? { token: "auth-t" } : path.endsWith("/ecommerce/orders") ? { id: 4242 } : { token: "pay-k" };
+          return new Response(JSON.stringify(reply), { status: 200, headers: { "content-type": "application/json" } });
+        }) as unknown as typeof fetch;
+        const base = { id: "o1", orderNumber: "TGFM-T-1", currency: "EGP", customerName: "A B", customerEmail: "a@b.test", customerPhone: "+201000000000" };
+        try {
+          // single item: USD 9.54 x 2 = EGP 1,908.00 (rate 50), no tax/shipping
+          await createPaymobPayment({ ...base, subtotalCents: 190800, totalCents: 190800, items: [{ product: "FITTED", fabric: "SIGNATURE_200", color: "BLACK", quantity: 2, unitPriceCents: 954 }] } as never, "CARD" as never);
+          // bag of three, with tax + shipping (total > subtotal)
+          await createPaymobPayment({ ...base, subtotalCents: 193800, totalCents: 200000, items: [
+            { product: "FITTED", fabric: "SIGNATURE_200", color: "BLACK", quantity: 1, unitPriceCents: 954 },
+            { product: "OVERSIZED", fabric: "ESSENTIALS_170", color: "WHITE", quantity: 2, unitPriceCents: 840 },
+            { product: "OVERSIZED", fabric: "HEAVYWEIGHT_300", color: "BLACK", quantity: 1, unitPriceCents: 1242 },
+          ] } as never, "CARD" as never);
+        } finally {
+          globalThis.fetch = realFetch;
+          for (const key of ["PAYMOB_API_KEY", "PAYMOB_INTEGRATION_ID", "PAYMOB_IFRAME_ID"]) {
+            if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+          }
+        }
+        const reg = sent.filter((call) => call.path.endsWith("/ecommerce/orders")).map((call) => call.body);
+        const keys = sent.filter((call) => call.path.endsWith("/payment_keys")).map((call) => call.body);
+        assert.equal(reg.length, 2);
+        assert.equal(keys.length, 2);
+        // order-level amounts: EGP piastres, the order's own total, in EGP, identical at registration and payment key
+        assert.deepEqual(reg.map((body) => [body.amount_cents, body.currency, body.delivery_needed]), [[190800, "EGP", false], [200000, "EGP", false]]);
+        assert.deepEqual(keys.map((body) => [body.amount_cents, body.currency, body.expiration, body.lock_order_when_paid, body.order_id, body.integration_id]), [
+          [190800, "EGP", 3600, true, 4242, 111],
+          [200000, "EGP", 3600, true, 4242, 111],
+        ]);
+        assert.deepEqual(reg.map((body) => body.merchant_order_id), ["TGFM-T-1", "TGFM-T-1"]);
+        // line items: one per order item (name/description/quantity), plus ONE "Tax and shipping" line when total > subtotal
+        const lines = (reg[1].items as Array<{ name: string; amount_cents: number; quantity: number }>);
+        assert.equal(lines.length, 4);
+        assert.deepEqual(lines.slice(0, 3).map((line) => [line.amount_cents, line.quantity]), [[954, 1], [840, 2], [1242, 1]]);
+        assert.deepEqual([lines[3].name, lines[3].amount_cents, lines[3].quantity], ["Tax and shipping", 6200, 1]);
+        assert.equal((reg[0].items as unknown[]).length, 1, "no fee line when total equals subtotal");
+        // CHARACTERIZATION, NOT PROVEN HARMFUL: item amounts are the order items' canonical USD cents, while amount_cents and the
+        // fee line are EGP piastres, so the items do not add up to amount_cents. Paymob's public reference describes `items` as
+        // the order contents and states no sum rule (its own example does not sum either); whether the live service validates or
+        // displays them needs a Paymob SANDBOX call. This assertion documents today's behaviour; do not "fix" it without that test.
+        const itemSum = lines.reduce((sum, line) => sum + line.amount_cents * line.quantity, 0);
+        assert.notEqual(itemSum, reg[1].amount_cents);
+      },
+
+      async "an order that is not in EGP is never sent to Paymob (refused before any key or network use)"() {
+        const realFetch = globalThis.fetch;
+        let calls = 0;
+        globalThis.fetch = (() => { calls += 1; throw new Error("network must not be touched"); }) as typeof fetch;
+        const keys = { PAYMOB_API_KEY: process.env.PAYMOB_API_KEY };
+        delete process.env.PAYMOB_API_KEY; // would otherwise be the first thing to fail, so this proves the order of checks
+        try {
+          for (const currency of ["USD", "EUR", "usd", ""]) {
+            await assert.rejects(
+              () => createPaymobPayment({ id: "o", orderNumber: "N", totalCents: 100, subtotalCents: 100, currency, items: [] } as never, "CARD" as never),
+              (error: unknown) => error instanceof PaymobError && /Only EGP orders can be paid/.test(error.message),
+            );
+          }
+          assert.equal(calls, 0);
+        } finally {
+          globalThis.fetch = realFetch;
+          if (keys.PAYMOB_API_KEY !== undefined) process.env.PAYMOB_API_KEY = keys.PAYMOB_API_KEY;
+        }
+      },
+
       "verifyPaymobHmac accepts a correctly signed payload"() {
         process.env.PAYMOB_HMAC_SECRET = SECRET;
         const signature = sign(SAMPLE_TRANSACTION);

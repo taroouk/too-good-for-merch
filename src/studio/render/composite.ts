@@ -91,12 +91,45 @@ export async function compositeArtworkOntoBase(
     }
   }
 
+  // Cut the print off at the placement frame (the same rectangle the Studio
+  // clips its preview to), so a zoomed or tall artwork can never print past
+  // it. Done after rotation and shading, on the final printed pixels.
+  let placeLeft = left;
+  let placeTop = top;
+  if (resolved.clip) {
+    const x1 = Math.max(left, resolved.clip.left);
+    const y1 = Math.max(top, resolved.clip.top);
+    const x2 = Math.min(left + actualWidth, resolved.clip.left + resolved.clip.width);
+    const y2 = Math.min(top + actualHeight, resolved.clip.top + resolved.clip.height);
+    if (x2 <= x1 || y2 <= y1) {
+      // Entirely outside its frame: nothing to print.
+      return sharp(baseImage).png({ compressionLevel: 9 }).toBuffer();
+    }
+    if (x1 !== left || y1 !== top || x2 !== left + actualWidth || y2 !== top + actualHeight) {
+      try {
+        printLayer = await sharp(printLayer)
+          .extract({ left: x1 - left, top: y1 - top, width: x2 - x1, height: y2 - y1 })
+          .png()
+          .toBuffer();
+      } catch {
+        throw new RendererError("Failed to fit the artwork to its print frame.", 500);
+      }
+      placeLeft = x1;
+      placeTop = y1;
+    }
+  }
+
   try {
     // sharp's .png() strips metadata (no ICC profile, no timestamps) by
     // default unless .withMetadata() is explicitly called, which keeps
     // output deterministic for identical pixel input.
     return await sharp(baseImage)
-      .composite([{ input: printLayer, left, top }])
+      .composite([
+        // "atop": the print sits ON the garment photo and the base keeps its
+        // own transparency -- ink never lands on the cut-out around the model
+        // and never makes the soft garment edge more opaque.
+        { input: printLayer, left: placeLeft, top: placeTop, blend: "atop" },
+      ])
       .png({ compressionLevel: 9 })
       .toBuffer();
   } catch {

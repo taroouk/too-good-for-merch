@@ -4,6 +4,7 @@ import { getPaymobHealth, isEnvConfigured } from "src/lib/admin/paymob-health";
 import { emailSetup } from "src/lib/notify/email-health";
 import { EMAIL_FAILED_ACTION } from "src/lib/notify/email-failure";
 import { getPricingHealth } from "src/lib/admin/pricing-health";
+import { DUPLICATE_DESIGN_ACTION, duplicatePaymentHealthCheck } from "src/lib/orders/duplicate-review";
 import { compareMigrations, EXPECTED_LATEST_MIGRATION } from "src/lib/admin/expected-migration";
 
 export type HealthLevel = "ok" | "warn" | "fail";
@@ -117,6 +118,17 @@ export async function getSystemHealth(): Promise<{ checks: HealthCheck[]; dbLate
         : "No failed checkouts.",
       href: "/admin/audit?action=CHECKOUT_FAILED",
     });
+
+    // Orders paid for a design that was also paid on another order and not yet moved on by the team. Not time-limited:
+    // it stays red until every one has been reviewed (moved to production, cancelled or refunded).
+    try {
+      const unresolvedDuplicates = await prisma.order.count({
+        where: { status: "PAID", paymentStatus: PaymentStatus.PAID, auditLogs: { some: { action: DUPLICATE_DESIGN_ACTION } } },
+      });
+      checks.push(duplicatePaymentHealthCheck(unresolvedDuplicates));
+    } catch {
+      checks.push({ id: "duplicate-payments", label: "Duplicate design payments under review", level: "fail", detail: "Could not be checked — open the audit log (Possible duplicate payment).", href: `/admin/audit?action=${DUPLICATE_DESIGN_ACTION}` });
+    }
 
     checks.push({
       id: "fx",

@@ -55,10 +55,57 @@ export async function runAll() {
         { quantity: 1, unitPriceCents: 333, totalCents: 333 },
         { quantity: 2, unitPriceCents: 333, totalCents: 666 },
       ];
-      const out = itemAmountsInChargedCurrency(items, { subtotalCents: 4995, canonicalTotalUsdCents: 999, exchangeRateUsed: 5 });
-      assert.equal(out.reduce((s, i) => s + i.totalCents, 0), 4995);
+      const out = itemAmountsInChargedCurrency(items, { subtotalCents: 5000, canonicalTotalUsdCents: 999, exchangeRateUsed: 5 });
+      assert.equal(out.reduce((s, i) => s + i.totalCents, 0), 5000);
+      assert.equal(out.every((i) => i.totalCents % 100 === 0), true);
+      // An older order charged with piastres still adds up to what was paid.
+      const old = itemAmountsInChargedCurrency(items, { subtotalCents: 4995, canonicalTotalUsdCents: 999, exchangeRateUsed: 5 });
+      assert.equal(old.reduce((s, i) => s + i.totalCents, 0), 4995);
       const legacy = itemAmountsInChargedCurrency(items, { subtotalCents: 999, canonicalTotalUsdCents: null, exchangeRateUsed: null });
       assert.deepEqual(legacy.map((i) => i.totalCents), [333, 666]);
+    },
+
+    "a paid order under duplicate review reads 'Payment received — under review', never 'Confirmed'"() {
+      const status = customerOrderStatus(paid({ paymentUnderReview: true }));
+      assert.equal(status.key, "payment-under-review");
+      assert.equal(status.label, "Payment received — under review");
+      assert.equal(status.tone, "warning");
+      assert.match(status.description, /received your payment/i);
+      assert.match(status.description, /reviewing it before production starts/i);
+      assert.doesNotMatch(`${status.label} ${status.description}`, /Confirmed/);
+    },
+
+    "an ordinary paid order stays 'Confirmed' with the standard sentence"() {
+      for (const flag of [undefined, false]) {
+        const status = customerOrderStatus(paid({ paymentUnderReview: flag }));
+        assert.equal(status.key, "confirmed");
+        assert.equal(status.label, "Confirmed");
+        assert.equal(status.description, "Payment received. Your order is confirmed.");
+      }
+    },
+
+    "the review ends when the team moves the order on, cancels it or refunds it (the normal status wins)"() {
+      assert.equal(customerOrderStatus(paid({ status: "IN_PRODUCTION", paymentUnderReview: true })).key, "in-production");
+      assert.equal(customerOrderStatus(paid({ status: "SHIPPED", paymentUnderReview: true })).key, "shipped");
+      assert.equal(customerOrderStatus(paid({ status: "COMPLETED", paymentUnderReview: true })).key, "delivered");
+      assert.equal(customerOrderStatus(paid({ status: "CANCELLED", paymentUnderReview: true })).key, "cancelled");
+      assert.equal(customerOrderStatus(paid({ paymentStatus: "REFUNDED", paymentUnderReview: true })).key, "refunded");
+    },
+
+    "the flag never makes an unpaid or failed order look paid"() {
+      assert.equal(customerOrderStatus({ ...base, paymentStatus: "PENDING", paymentUnderReview: true }).key, "awaiting-payment");
+      assert.equal(customerOrderStatus({ ...base, paymentStatus: "FAILED", paymentUnderReview: true }).key, "payment-failed");
+    },
+
+    "under review: in the 'In progress' filter, and the timeline does not say 'Payment confirmed'"() {
+      const order = paid({ paymentUnderReview: true });
+      assert.equal(matchesOrderFilter(order, "active"), true);
+      assert.equal(matchesOrderFilter(order, "unpaid"), false);
+      assert.equal(matchesOrderFilter(order, "closed"), false);
+      const labels = (orderTimeline(order) ?? []).map((step) => step.label);
+      assert.ok(labels.includes("Payment received — under review"));
+      assert.ok(!labels.includes("Payment confirmed"));
+      assert.ok((orderTimeline(paid()) ?? []).some((step) => step.label === "Payment confirmed"));
     },
   });
 }

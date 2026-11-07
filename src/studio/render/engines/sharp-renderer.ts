@@ -7,11 +7,43 @@ import { trimToVisibleBounds } from "../garment-bbox";
 import { getPlacementSide, getTemplateReferenceWidth } from "../placement-config";
 import type { MockupRenderer, RenderRequest, RenderedMockup } from "../types";
 
+// The garment photo enlarged ONCE (lanczos3) to its final output size, so the
+// artwork can be composited directly at that size. Same size formula as the
+// normal path (reference width x dpi scale), times `outputScale`.
+async function upscaleTemplate(
+  template: Buffer,
+  product: RenderRequest["product"],
+  side: ReturnType<typeof getPlacementSide>,
+  dpi: number,
+  outputScale: number,
+): Promise<Buffer> {
+  const meta = await sharp(template).metadata();
+  if (!meta.width || !meta.height) throw new RendererError("Garment template image is missing dimensions.", 500);
+  const dpiScale = (dpi || BASELINE_RENDER_DPI) / BASELINE_RENDER_DPI;
+  const factor = (getTemplateReferenceWidth(product, side) / meta.width) * dpiScale * outputScale;
+  try {
+    return await sharp(template)
+      .resize({
+        width: Math.max(1, Math.round(meta.width * factor)),
+        height: Math.max(1, Math.round(meta.height * factor)),
+        fit: "fill",
+        kernel: "lanczos3",
+      })
+      .png()
+      .toBuffer();
+  } catch {
+    throw new RendererError("Garment template image could not be scaled.", 500);
+  }
+}
+
 // Deterministic: identical RenderRequest -> byte-identical output. No RNG,
 // no network calls, no metadata that varies run to run (timestamps, etc.).
 export class SharpMockupRenderer implements MockupRenderer {
   async render(req: RenderRequest): Promise<RenderedMockup> {
-    const { artwork, template, product, color, placement, transform, dpi } = req;
+    const { artwork, product, color, placement, transform, dpi } = req;
+    let template = req.template;
+    const outputScale = req.outputScale && req.outputScale > 1 ? req.outputScale : 1;
+    if (outputScale > 1) template = await upscaleTemplate(template, product, getPlacementSide(placement), dpi, outputScale);
 
     let templateImage: Sharp;
     let templateMeta: Metadata;
@@ -88,8 +120,9 @@ export class SharpMockupRenderer implements MockupRenderer {
     // composited image's real aspect ratio, whatever it is.
     const side = getPlacementSide(placement);
     const referenceWidth = getTemplateReferenceWidth(product, side);
-    const sizeNormalizationScale = referenceWidth / templateMeta.width;
-    const combinedScale = sizeNormalizationScale * dpiScale;
+    // Already at its final size when outputScale > 1 (see upscaleTemplate).
+    const sizeNormalizationScale = outputScale > 1 ? 1 : referenceWidth / templateMeta.width;
+    const combinedScale = outputScale > 1 ? 1 : sizeNormalizationScale * dpiScale;
     const targetWidth = Math.max(1, Math.round(templateMeta.width * combinedScale));
     const targetHeight = Math.max(1, Math.round(templateMeta.height * combinedScale));
 
@@ -129,6 +162,7 @@ export async function renderLayeredMockup(req: {
   color: RenderRequest["color"];
   layers: Array<{ artwork: Buffer; placement: RenderRequest["placement"]; transform: RenderRequest["transform"] }>;
   dpi: number;
+  outputScale?: number;
 }): Promise<RenderedMockup> {
   if (!req.layers.length) throw new RendererError("No artwork to render.", 400);
   if (req.layers.length === 1) {
@@ -141,7 +175,13 @@ export async function renderLayeredMockup(req: {
       placement: only.placement,
       transform: only.transform,
       dpi: req.dpi,
+      outputScale: req.outputScale,
     });
+  }
+
+  const outputScale = req.outputScale && req.outputScale > 1 ? req.outputScale : 1;
+  if (outputScale > 1) {
+    req = { ...req, template: await upscaleTemplate(req.template, req.product, getPlacementSide(req.layers[0].placement), req.dpi, outputScale) };
   }
 
   let templateMeta: Metadata;
@@ -173,7 +213,7 @@ export async function renderLayeredMockup(req: {
 
   const dpiScale = (req.dpi || BASELINE_RENDER_DPI) / BASELINE_RENDER_DPI;
   const side = getPlacementSide(req.layers[0].placement);
-  const combinedScale = (getTemplateReferenceWidth(req.product, side) / templateMeta.width) * dpiScale;
+  const combinedScale = outputScale > 1 ? 1 : (getTemplateReferenceWidth(req.product, side) / templateMeta.width) * dpiScale;
   const targetWidth = Math.max(1, Math.round(templateMeta.width * combinedScale));
   const targetHeight = Math.max(1, Math.round(templateMeta.height * combinedScale));
   let data = composited;

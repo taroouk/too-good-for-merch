@@ -7,7 +7,7 @@
 // src/lib/orders/errors.ts's orderFailureUpdateFor for the full rationale.
 import assert from "node:assert/strict";
 import { PaymentStatus } from "@prisma/client";
-import { CheckoutError, orderFailureUpdateFor } from "../errors";
+import { assertApprovedTotal, CheckoutError, orderFailureUpdateFor } from "../errors";
 import { runSuite } from "../../../testing/test-harness";
 
 export async function runAll() {
@@ -42,6 +42,34 @@ export async function runAll() {
     "no order (never fetched/created) is a no-op regardless of error type"() {
       assert.equal(orderFailureUpdateFor(null, new CheckoutError("x")), null);
       assert.equal(orderFailureUpdateFor(undefined, new Error("y")), null);
+    },
+
+    "approved total: the exact total passes"() {
+      assertApprovedTotal(193800, 193800, "EGP");
+    },
+
+    "approved total: a total the customer never saw (missing, zero, fractional, text) is refused with 400"() {
+      for (const bad of [undefined, null, 0, -5, 1938.5, "193800", Number.NaN]) {
+        assert.throws(() => assertApprovedTotal(bad, 193800, "EGP"), (e: unknown) => e instanceof CheckoutError && e.status === 400 && e.code === "TOTAL_CONFIRMATION_REQUIRED");
+      }
+    },
+
+    "approved total: a different total is refused with 409 PRICE_CHANGED and carries both amounts"() {
+      assert.throws(
+        () => assertApprovedTotal(193800, 317900, "EGP"),
+        (e: unknown) =>
+          e instanceof CheckoutError &&
+          e.status === 409 &&
+          e.code === "PRICE_CHANGED" &&
+          e.details?.currentTotalCents === 317900 &&
+          e.details?.approvedTotalCents === 193800 &&
+          e.details?.currency === "EGP",
+      );
+    },
+
+    "a PRICE_CHANGED / ORDER_* CheckoutError never marks an order FAILED"() {
+      const err = new CheckoutError("changed", 409, "PRICE_CHANGED");
+      assert.equal(orderFailureUpdateFor({ paymentStatus: PaymentStatus.PENDING }, err), null);
     },
   });
 }

@@ -1,3 +1,4 @@
+import { unsupportedCurrencyMessage } from "./orders/currency";
 import { REQUIRED_PRODUCTION_ENV } from "../../scripts/required-production-env.mjs";
 
 export type EnvRequirement = {
@@ -43,7 +44,7 @@ export const ENV_REQUIREMENTS: EnvRequirement[] = [
   {
     name: "NEXT_PUBLIC_WHATSAPP_PHONE",
     requiredInProduction: false,
-    description: "Public WhatsApp contact phone in international digits.",
+    description: "Public WhatsApp contact phone in international digits. No fallback: when unset, WhatsApp links and Bespoke quote requests are hidden.",
   },
   {
     name: "NEXT_PUBLIC_WHATSAPP_MESSAGE",
@@ -110,6 +111,8 @@ export function publicRuntimeConfigWarnings() {
   if (storeCurrency && !/^[A-Z]{3}$/i.test(storeCurrency)) {
     warnings.push("STORE_CURRENCY should be a 3-letter ISO currency code.");
   }
+  const unsupportedCurrency = unsupportedCurrencyMessage("STORE_CURRENCY", storeCurrency);
+  if (unsupportedCurrency) warnings.push(unsupportedCurrency);
 
   return warnings;
 }

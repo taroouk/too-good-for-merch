@@ -9,12 +9,15 @@ export type OrderLike = {
   paidAt: Date | null;
   shippedAt: Date | null;
   refundedAt: Date | null;
+  // Set by the pages when this paid order's design was also paid on another order (see duplicate-review.ts): the payment
+  // is real and recorded, but the team reviews the order before production starts.
+  paymentUnderReview?: boolean;
 };
 
 export type StatusTone = "neutral" | "warning" | "info" | "success" | "danger";
 
 export type CustomerStatus = {
-  key: "awaiting-payment" | "payment-failed" | "confirmed" | "in-production" | "shipped" | "delivered" | "cancelled" | "refunded";
+  key: "awaiting-payment" | "payment-failed" | "payment-under-review" | "confirmed" | "in-production" | "shipped" | "delivered" | "cancelled" | "refunded";
   label: string;
   tone: StatusTone;
   description: string;
@@ -42,6 +45,14 @@ export function customerOrderStatus(order: OrderLike): CustomerStatus {
   if (order.status === "IN_PRODUCTION") {
     return { key: "in-production", label: "In production", tone: "info", description: "We're printing your order now." };
   }
+  if (order.paymentUnderReview && order.status === "PAID") {
+    return {
+      key: "payment-under-review",
+      label: "Payment received — under review",
+      tone: "warning",
+      description: "We've received your payment. Because this design was also paid for on another order, our team is reviewing it before production starts. We'll contact you if we need anything from you.",
+    };
+  }
   return { key: "confirmed", label: "Confirmed", tone: "success", description: "Payment received. Your order is confirmed." };
 }
 
@@ -63,7 +74,7 @@ export function orderTimeline(order: OrderLike): TimelineStep[] | null {
   };
   const steps: Array<{ key: string; label: string; at: Date | null; done: boolean }> = [
     { key: "placed", label: "Order placed", at: order.createdAt, done: reached.placed },
-    { key: "paid", label: "Payment confirmed", at: order.paidAt, done: reached.paid },
+    { key: "paid", label: status.key === "payment-under-review" ? "Payment received — under review" : "Payment confirmed", at: order.paidAt, done: reached.paid },
     { key: "production", label: "In production", at: null, done: reached.production },
     { key: "shipped", label: "Shipped", at: order.shippedAt, done: reached.shipped },
     { key: "delivered", label: "Delivered", at: null, done: reached.delivered },
@@ -96,7 +107,7 @@ export function matchesOrderFilter(order: OrderLike, filter: OrderFilter): boole
   const key = customerOrderStatus(order).key;
   switch (filter) {
     case "active":
-      return key === "confirmed" || key === "in-production" || key === "shipped";
+      return key === "confirmed" || key === "payment-under-review" || key === "in-production" || key === "shipped";
     case "unpaid":
       return key === "awaiting-payment" || key === "payment-failed";
     case "delivered":
@@ -118,11 +129,15 @@ export function itemAmountsInChargedCurrency(
   const converted = order.canonicalTotalUsdCents != null && typeof rate === "number" && rate > 0;
   if (!converted) return items.map((item) => ({ unitCents: item.unitPriceCents, totalCents: item.totalCents }));
 
-  const totals = items.map((item) => Math.round(item.totalCents * rate));
+  // EGP prices are whole pounds: each line is a whole number of pounds and
+  // the remainder goes on the last line, so the lines add up to the
+  // subtotal that was actually charged.
+  const whole = (minor: number) => Math.round(minor / 100) * 100;
+  const totals = items.map((item) => whole(item.totalCents * rate));
   const drift = order.subtotalCents - totals.reduce((sum, value) => sum + value, 0);
-  if (totals.length && drift !== 0 && Math.abs(drift) <= items.length + 1) totals[totals.length - 1] += drift;
+  if (totals.length && drift !== 0 && Math.abs(drift) <= (items.length + 1) * 100) totals[totals.length - 1] += drift;
   return items.map((item, index) => ({
-    unitCents: item.quantity > 0 ? Math.round(totals[index] / item.quantity) : Math.round(item.unitPriceCents * rate),
+    unitCents: item.quantity > 0 ? whole(totals[index] / item.quantity) : whole(item.unitPriceCents * rate),
     totalCents: totals[index],
   }));
 }

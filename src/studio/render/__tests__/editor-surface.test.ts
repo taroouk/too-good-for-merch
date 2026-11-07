@@ -20,6 +20,7 @@ import type { GarmentColor, PlacementType, ProductType } from "@prisma/client";
 import {
   getEditorAspectRatio,
   getEditorGarmentFrame,
+  getEditorMappingFrame,
   getEditorPlacementBox,
   getEditorSafeArea,
   getTemplateGarmentFrame,
@@ -99,7 +100,7 @@ export async function runAll() {
       forEachCombo((product, color, placement) => {
         const side = getPlacementSide(placement);
         const templateFrame = getTemplateGarmentFrame(product, color, side);
-        const editorFrame = getEditorGarmentFrame(side);
+        const editorFrame = getEditorMappingFrame(product, color, side);
         const templateBox = getPlacementBox(product, color, placement);
         const editorBox = getEditorPlacementBox(product, color, placement);
 
@@ -125,7 +126,7 @@ export async function runAll() {
       forEachCombo((product, color, placement) => {
         const side = getPlacementSide(placement);
         const templateFrame = getTemplateGarmentFrame(product, color, side);
-        const editorFrame = getEditorGarmentFrame(side);
+        const editorFrame = getEditorMappingFrame(product, color, side);
         const templateAspect = templateAspectFor(product, color, side);
         const editorAspect = getEditorAspectRatio(side);
 

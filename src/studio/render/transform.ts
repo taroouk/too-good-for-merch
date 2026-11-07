@@ -44,6 +44,29 @@ export const MAX_ABSOLUTE_COVERAGE_FRACTION = 0.95;
 // template's native resolution.
 export const BASELINE_RENDER_DPI = 150;
 
+// New mockups are rendered at this multiple of the garment photo's reference
+// size (the photos themselves are only ~600px wide). The garment is enlarged
+// once with a high-quality filter and the artwork is then resized from its
+// ORIGINAL pixels straight to its final size, instead of being shrunk to the
+// photo's size first -- so the print stays crisp. Geometry is all fractional,
+// so placement is unchanged. Set to 1 to return to the previous output.
+export const MOCKUP_OUTPUT_SCALE = 2;
+
+// The same placement expressed on a canvas `factor` times larger.
+export function scaleResolvedPlacement(resolved: ResolvedPlacement, factor: number): ResolvedPlacement {
+  const s = (value: number) => Math.round(value * factor);
+  return {
+    left: s(resolved.left),
+    top: s(resolved.top),
+    width: Math.max(1, s(resolved.width)),
+    height: Math.max(1, s(resolved.height)),
+    rotation: resolved.rotation,
+    ...(resolved.clip
+      ? { clip: { left: s(resolved.clip.left), top: s(resolved.clip.top), width: Math.max(1, s(resolved.clip.width)), height: Math.max(1, s(resolved.clip.height)) } }
+      : {}),
+  };
+}
+
 function clamp(value: number, bounds: { min: number; max: number }) {
   return Math.max(bounds.min, Math.min(bounds.max, value));
 }
@@ -111,35 +134,39 @@ export function getDragBounds(
   color: GarmentColor,
   placement: PlacementType,
   scale: number,
+  // The artwork's own height / width (its visible content). Omitted = the
+  // frame's own shape, which is the previous behaviour.
+  artworkAspect?: number,
 ): { x: { min: number; max: number }; y: { min: number; max: number } } {
   const box = getPlacementBox(product, color, placement);
   const side = getPlacementSide(placement);
   const canvasAspect = getTemplateAspectRatio(side); // templateWidth / templateHeight
-  // Each placement is dragged inside ITS OWN frame (the placement box): as
-  // wide as the box, with the height its placeholder has (square, except the
-  // wide Center Front crop).
-  const frameBottom = box.yPct + box.widthPct * canvasAspect * getPlacementFrameAspect(placement);
-  const safeXMin = box.xPct;
-  const safeXMax = box.xPct + box.widthPct;
-  const safeYMin = box.yPct / canvasAspect;
-  const safeYMax = frameBottom / canvasAspect;
-
-  // Artwork is approximated as having its frame's shape (the client has no
-  // reliable natural aspect ratio at drag time); half-extents in canvas-WIDTH
-  // units, the artwork scaling around the frame's own centre.
   const frameAspect = getPlacementFrameAspect(placement);
-  const half = (box.widthPct * scale) / 2;
-  const halfY = half * frameAspect;
-  const centerX = box.xPct + box.widthPct / 2;
-  const centerY = box.yPct / canvasAspect + (box.widthPct * frameAspect) / 2;
+  const aa = artworkAspect && Number.isFinite(artworkAspect) && artworkAspect > 0 ? artworkAspect : frameAspect;
 
-  // An artwork as big as (or bigger than) its frame has no room to move:
-  // pin it to the frame's centre instead of returning an inverted range.
-  const range = (min: number, max: number) =>
-    min <= max ? { min, max } : { min: (min + max) / 2, max: (min + max) / 2 };
+  // Everything in canvas-WIDTH units (artworkOffsetPx's convention: both axes
+  // divide/multiply by width). The placement frame is the box's width times
+  // the frame's shape; the artwork is laid out at the frame's top-left with
+  // its own height (width x aspect) and scales around ITS OWN centre.
+  const fx0 = box.xPct;
+  const fx1 = box.xPct + box.widthPct;
+  const fy0 = box.yPct / canvasAspect;
+  const fy1 = fy0 + box.widthPct * frameAspect;
+  const c0x = box.xPct + box.widthPct / 2;
+  const c0y = fy0 + (box.widthPct * aa) / 2;
+  const hw = (box.widthPct * scale) / 2;
+  const hh = (box.widthPct * aa * scale) / 2;
+
+  // Per axis: an artwork SMALLER than the frame stays wholly inside it; one
+  // LARGER than the frame can be slid, but never far enough to uncover the
+  // frame (nothing outside the frame prints anyway -- it is clipped).
+  const axis = (lo: number, hi: number, half: number, c0: number) =>
+    half * 2 <= hi - lo
+      ? { min: lo + half - c0, max: hi - half - c0 }
+      : { min: hi - half - c0, max: lo + half - c0 };
   return {
-    x: range(safeXMin + half - centerX, safeXMax - centerX - half),
-    y: range(safeYMin + halfY - centerY, safeYMax - centerY - halfY),
+    x: axis(fx0, fx1, hw, c0x),
+    y: axis(fy0, fy1, hh, c0y),
   };
 }
 
@@ -237,12 +264,26 @@ export function resolvePlacement(params: {
     );
   }
 
+  // The print frame is the placement box at scale 1 with the placement's
+  // fixed frame shape (the same rectangle the Studio draws as the dashed
+  // frame and clips the artwork to). Its height comes from the frame shape,
+  // not from the artwork, so a tall or zoomed artwork is cut off at the
+  // frame's edges rather than printing outside it.
+  const clipHeight =
+    box.heightPct != null ? box.heightPct * templateHeight : width0 * getPlacementFrameAspect(placement);
+
   return {
     left: Math.round(scaled.left),
     top: Math.round(scaled.top),
     width: Math.max(1, Math.round(scaled.width)),
     height: Math.max(1, Math.round(scaled.height)),
     rotation,
+    clip: {
+      left: Math.round(left0),
+      top: Math.round(top0),
+      width: Math.max(1, Math.round(width0)),
+      height: Math.max(1, Math.round(clipHeight)),
+    },
   };
 }
 
@@ -287,6 +328,17 @@ export function remapResolvedPlacement(
     width,
     height,
     rotation: resolved.rotation,
+    ...(resolved.clip
+      ? {
+          clip: {
+            left: Math.round((resolved.clip.left / fromWidth) * toWidth),
+            top: Math.round((resolved.clip.top / fromHeight) * toHeight),
+            width: Math.max(1, Math.round((resolved.clip.width / fromWidth) * toWidth)),
+            // Same factor as the width, so the frame keeps its shape.
+            height: Math.max(1, Math.round((resolved.clip.height / fromWidth) * toWidth)),
+          },
+        }
+      : {}),
   };
 }
 
@@ -327,5 +379,15 @@ export function remapResolvedPlacementToGarmentBBox(
     width,
     height,
     rotation: resolved.rotation,
+    ...(resolved.clip
+      ? {
+          clip: {
+            left: Math.round(toGarmentBBox.left + ((resolved.clip.left - fromGarmentBBox.left) / fromGarmentBBox.width) * toGarmentBBox.width),
+            top: Math.round(toGarmentBBox.top + ((resolved.clip.top - fromGarmentBBox.top) / fromGarmentBBox.height) * toGarmentBBox.height),
+            width: Math.max(1, Math.round((resolved.clip.width / fromGarmentBBox.width) * toGarmentBBox.width)),
+            height: Math.max(1, Math.round((resolved.clip.width / fromGarmentBBox.width) * toGarmentBBox.width * (resolved.clip.height / resolved.clip.width))),
+          },
+        }
+      : {}),
   };
 }

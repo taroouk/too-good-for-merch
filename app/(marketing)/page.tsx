@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CONTACT_EMAIL, EMAIL_URL, INSTAGRAM_URL, TIKTOK_URL, WHATSAPP_URL } from "src/lib/contact";
+import { CONTACT_EMAIL, EMAIL_URL, INSTAGRAM_URL, TIKTOK_URL, WHATSAPP_CONFIGURED, WHATSAPP_URL } from "src/lib/contact";
 import {
   BOUTIQUE_PORTFOLIO_ITEMS,
   LARGE_PORTFOLIO_ITEMS,
@@ -544,7 +544,7 @@ export default function HomePage() {
           <div className="contactLinks">
             <a href={INSTAGRAM_URL}>Instagram</a>
             <a href={TIKTOK_URL}>TikTok</a>
-            <a href={WHATSAPP_URL}>WhatsApp</a>
+            {WHATSAPP_CONFIGURED ? <a href={WHATSAPP_URL}>WhatsApp</a> : null}
             <a
               href={EMAIL_URL}
               target="_blank"

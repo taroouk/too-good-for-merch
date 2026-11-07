@@ -2,6 +2,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { draftArtworkLayers, normalizeArtworkLayers } from "src/studio/artwork-layers";
@@ -151,53 +152,107 @@ export async function actionIsInWishlist(buildId: string): Promise<boolean> {
   return Boolean(row);
 }
 
-// "Open in Studio" on a wishlist card: puts the saved design back on its
-// build (product, colour, fabric, quantity, every artwork layer and the
-// mockups) and opens the Studio on it.
+// "Open in Studio" on a wishlist card: starts a NEW build from the saved
+// design (product, colour, fabric, quantity, every artwork layer) and opens
+// the Studio on it. The original build is never touched, because a Bag or
+// Order record may still reference it. The saved artwork files are checked
+// first and copied into the new build; a design whose artwork is gone is not
+// reopened half-empty. Mockups are not carried over (they belong to the old
+// artwork ids) and are regenerated when the customer saves.
 export async function actionOpenWishlistItem(formData: FormData): Promise<void> {
   const userId = await requireUserId("/wishlist");
   const itemId = String(formData.get("itemId") ?? "").trim().slice(0, 128);
   const item = itemId
     ? await prisma.wishlistItem.findFirst({
         where: { id: itemId, userId },
-        select: { buildId: true, product: true, color: true, fabric: true, quantity: true, size: true, design: true },
+        select: { buildId: true, product: true, color: true, fabric: true, quantity: true, size: true, design: true, build: { select: { name: true } } },
       })
     : null;
   if (!item) redirect("/wishlist");
 
   const design = item.design && typeof item.design === "object" ? (item.design as Record<string, unknown>) : null;
   const layers = normalizeArtworkLayers(design?.layers);
-  if (design && layers.length) {
-    const mockups = (design.mockups && typeof design.mockups === "object" ? design.mockups : {}) as Record<string, unknown>;
-    const text = (value: unknown) => (typeof value === "string" && value ? value : null);
-    const first = layers[0];
-    const placements = layers.map((layer) => layer.placement);
-    const notes = upsertPlacementsInNotes(text(design.customNotes), placements);
-    await prisma.buildDraft
-      .update({
-        where: { buildId: item.buildId },
-        data: {
-          product: item.product,
-          color: item.color,
-          fabric: item.fabric as never,
-          quantity: item.quantity,
-          customNotes: notes,
-          artworkLayers: layers as unknown as Prisma.InputJsonValue,
-          primaryAssetId: first.assetId,
-          artworkPlacement: { placement: first.placement, x: first.x, y: first.y, scale: first.scale, rotation: first.rotation } as Prisma.InputJsonValue,
-          printMockupId: text(mockups.printMockupId),
-          printMockupFingerprint: text(mockups.printMockupFingerprint),
-          aiMockupId: text(mockups.aiMockupId),
-          aiMockupFingerprint: text(mockups.aiMockupFingerprint),
-          backPrintMockupId: text(mockups.backPrintMockupId),
-          backPrintMockupFingerprint: text(mockups.backPrintMockupFingerprint),
-          backAiMockupId: text(mockups.backAiMockupId),
-          backAiMockupFingerprint: text(mockups.backAiMockupFingerprint),
-        },
-      })
-      .catch((error) => console.error("[wishlist] Could not restore the saved design", error));
-  }
-
   const size = item.size ? `?size=${encodeURIComponent(item.size)}` : "";
-  redirect(`/studio/projects/${item.buildId}/builder${size}`);
+
+  // Designs saved before layers were stored: nothing to restore, open the
+  // original build as it is (read-only use; nothing is written to it).
+  if (!layers.length) redirect(`/studio/projects/${item.buildId}/builder${size}`);
+
+  // Every artwork file must still exist.
+  const wantedIds = [...new Set(layers.map((layer) => layer.assetId))];
+  const sources = await prisma.asset.findMany({
+    where: { id: { in: wantedIds }, buildId: item.buildId, artworkData: { not: null } },
+    select: {
+      id: true, fileName: true, mimeType: true, sizeBytes: true, uploadedAt: true, artworkData: true,
+      artworkSha256: true, status: true, cropSourceAssetId: true, cropMeta: true,
+    },
+  });
+  if (sources.length !== wantedIds.length) redirect("/wishlist?notice=design-unavailable");
+
+  // A cropped copy keeps its original so the crop can be reopened.
+  const cropSourceIds = [...new Set(sources.map((a) => a.cropSourceAssetId).filter((id): id is string => Boolean(id)))];
+  const cropSources = cropSourceIds.length
+    ? await prisma.asset.findMany({
+        where: { id: { in: cropSourceIds }, buildId: item.buildId, artworkData: { not: null } },
+        select: { id: true, fileName: true, mimeType: true, sizeBytes: true, uploadedAt: true, artworkData: true, artworkSha256: true, status: true, cropSourceAssetId: true, cropMeta: true },
+      })
+    : [];
+
+  const idMap = new Map<string, string>();
+  for (const asset of [...cropSources, ...sources]) idMap.set(asset.id, randomUUID());
+
+  const newBuildId = await prisma.$transaction(async (tx) => {
+    const build = await tx.build.create({
+      data: {
+        userId,
+        name: item.build?.name ?? "Untitled",
+        status: "ACTIVE",
+        draft: {
+          create: {
+            product: item.product,
+            color: item.color,
+            fabric: item.fabric as never,
+            quantity: item.quantity,
+            customNotes: upsertPlacementsInNotes(typeof design?.customNotes === "string" ? design.customNotes : null, layers.map((l) => l.placement)),
+          },
+        },
+      },
+      select: { id: true },
+    });
+    for (const asset of [...cropSources, ...sources]) {
+      const newId = idMap.get(asset.id)!;
+      await tx.asset.create({
+        data: {
+          id: newId,
+          buildId: build.id,
+          fileName: asset.fileName,
+          mimeType: asset.mimeType,
+          sizeBytes: asset.sizeBytes,
+          uploadedAt: asset.uploadedAt,
+          artworkData: asset.artworkData,
+          artworkSha256: asset.artworkSha256,
+          storageKey: null,
+          status: asset.status,
+          url: `/api/assets/${newId}/file`,
+          ...(asset.cropSourceAssetId && idMap.has(asset.cropSourceAssetId)
+            ? { cropSourceAssetId: idMap.get(asset.cropSourceAssetId)!, cropMeta: asset.cropMeta ?? undefined }
+            : {}),
+        },
+      });
+    }
+    const restored = layers.map((layer) => ({ ...layer, assetId: idMap.get(layer.assetId)! }));
+    const first = restored[0];
+    await tx.buildDraft.update({
+      where: { buildId: build.id },
+      data: {
+        artworkLayers: restored as unknown as Prisma.InputJsonValue,
+        primaryAssetId: first.assetId,
+        artworkPlacement: { placement: first.placement, x: first.x, y: first.y, scale: first.scale, rotation: first.rotation } as Prisma.InputJsonValue,
+      },
+    });
+    return build.id;
+  });
+
+  revalidatePath("/wishlist");
+  redirect(`/studio/projects/${newBuildId}/builder${size}`);
 }

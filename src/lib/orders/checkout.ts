@@ -4,11 +4,6 @@ import { prisma } from "src/lib/prisma";
 import { computePrice, customQuotePriceResult } from "src/pricing/engine";
 import { isValidExchangeRate } from "src/pricing/currency";
 import { computeOrderTotals } from "src/lib/orders/totals";
-import {
-  placementsFromCustomNotes,
-  placementsOrDefault,
-  normalizePlacements,
-} from "src/pricing/placements";
 import { canAccessBuild } from "src/studio/permissions";
 import {
   cleanText,
@@ -20,8 +15,12 @@ import {
 import { isPaymobEligible } from "src/lib/bespoke/eligibility";
 import { normalizeArtworkPlacement } from "src/lib/artwork/save";
 import { buildDesignSignature, canReuseOrder, type DesignSignature } from "src/lib/orders/reuse";
-import { CheckoutError } from "src/lib/orders/errors";
+import { assertApprovedTotal, CheckoutError } from "src/lib/orders/errors";
+import { draftPricedPlacements } from "src/lib/orders/draft-placements";
+import { PAYABLE_ORDER_STATUS, PAYABLE_PAYMENT_STATUSES } from "src/lib/orders/payable";
+import { findSupersedingPaidOrder } from "src/lib/orders/superseded";
 import { draftArtworkLayers } from "src/studio/artwork-layers";
+import { freshMockupPointers } from "src/lib/mockup-preview";
 
 export { CheckoutError } from "src/lib/orders/errors";
 
@@ -29,7 +28,9 @@ export type CheckoutInput = {
   buildId: string;
   customer: { name: string; email: string; phone: string };
   shippingAddress?: unknown;
-  placements?: unknown;
+  // The total the customer saw and approved on the checkout page (payment-currency cents). An order is only created
+  // for exactly this amount -- see assertApprovedTotal.
+  expectedTotalCents?: unknown;
   size?: unknown;
 };
 
@@ -74,7 +75,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     throw new CheckoutError("You cannot checkout this build.", 403);
   }
 
-  const { product, fabric, color, quantity, primaryAssetId, customNotes, customQuoteUsdCents } = build.draft;
+  const { product, fabric, color, quantity, primaryAssetId, customQuoteUsdCents } = build.draft;
   if (!product || !fabric || !color) throw new CheckoutError("Complete the product selection before checkout.");
 
   // Explicit guard: a Bespoke/Custom build must be submitted through the
@@ -89,11 +90,9 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     );
   }
 
-  const requestedPlacements = normalizePlacements(input.placements);
-  const draftPlacements = placementsFromCustomNotes(customNotes);
-  const safePlacements = placementsOrDefault(
-    requestedPlacements.length ? requestedPlacements : draftPlacements,
-  );
+  // Priced on the placements of the design SAVED ON THE SERVER. Nothing the client sends (a `placements` field in the
+  // request body, a query string) can change the price -- see draftPricedPlacements.
+  const safePlacements = draftPricedPlacements(build.draft);
 
   // Bespoke/Custom builds never get a computePrice() result (always
   // mode:"custom" by design -- see src/pricing/engine.ts). An admin-set
@@ -121,6 +120,9 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     if (found !== layerAssetIds.length) throw new CheckoutError("One of the selected artworks is invalid.");
   }
 
+  // Only mockups that are current for this exact design are recorded.
+  const mockups = freshMockupPointers(build.draft, layers);
+
   const size = ["S", "M", "L", "XL"].includes(String(input.size)) ? String(input.size) : "M";
   const transform = normalizeArtworkPlacement(build.draft.artworkPlacement);
   const designSignature: DesignSignature = buildDesignSignature({
@@ -134,10 +136,10 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     transform,
     layers,
     savedArtworkId: build.draft.savedArtworkId ?? null,
-    printMockupId: build.draft.printMockupId ?? null,
-    aiMockupId: build.draft.aiMockupId ?? null,
-    backPrintMockupId: build.draft.backPrintMockupId ?? null,
-    backAiMockupId: build.draft.backAiMockupId ?? null,
+    printMockupId: mockups.printMockupId,
+    aiMockupId: mockups.aiMockupId,
+    backPrintMockupId: mockups.backPrintMockupId,
+    backAiMockupId: mockups.backAiMockupId,
   });
 
   // Canonical pricing is entirely in USD; the conversion to the payment
@@ -175,6 +177,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     subtotalPaymentCents,
     totalPaymentCents,
   } = totals;
+  assertApprovedTotal(input.expectedTotalCents, totalPaymentCents, paymentCurrency);
   const exchangeRateAt = new Date();
 
   const orderNumber = `TGFM-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString("hex").toUpperCase()}`;
@@ -213,7 +216,8 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     // creating a fresh order, same as a currency correction invalidating a
     // stale retry.
     const existing = await tx.order.findFirst({
-      where: { buildId, userId, paymentStatus: { notIn: [PaymentStatus.PAID, PaymentStatus.REFUNDED] } },
+      // Only orders that can still be paid (never cancelled, paid, refunded or already in production).
+      where: { buildId, userId, status: PAYABLE_ORDER_STATUS, paymentStatus: { in: [...PAYABLE_PAYMENT_STATUSES] } },
       include: { items: true },
       orderBy: { createdAt: "desc" },
     });
@@ -225,7 +229,8 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
         : null,
       candidate: { currency: paymentCurrency, totalCents: totalPaymentCents, signature: designSignature },
     });
-    if (existing && reusable) {
+    // An open order whose design was paid on another order in the meantime is stale: never reopen it, make a new one.
+    if (existing && reusable && !(await findSupersedingPaidOrder(tx, existing))) {
       return tx.order.update({
         where: { id: existing.id },
         data: {
@@ -290,13 +295,13 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
               // The saved (AI) artwork itself, so production can open the
               // original file -- the mockups above are only previews.
               savedArtworkId: build.draft?.savedArtworkId ?? null,
-              printMockupId: build.draft?.printMockupId ?? null,
-              aiMockupId: build.draft?.aiMockupId ?? null,
+              printMockupId: mockups.printMockupId,
+              aiMockupId: mockups.aiMockupId,
               // Multi-artwork: every layer, and the back-of-garment mockups
               // (the two above are the front).
               layers,
-              backPrintMockupId: build.draft?.backPrintMockupId ?? null,
-              backAiMockupId: build.draft?.backAiMockupId ?? null,
+              backPrintMockupId: mockups.backPrintMockupId,
+              backAiMockupId: mockups.backAiMockupId,
             } as unknown as Prisma.InputJsonValue,
             assetId: primaryAssetId,
           },

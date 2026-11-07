@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
+import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
 import AccountNav from "src/components/site/AccountNav";
 import { formatMinorPrice } from "src/pricing/display";
 import { orderArtworkLayers, orderItemExtras, resolveOrderMockupIds } from "src/lib/orders/display";
@@ -24,11 +25,14 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   if (!session?.user?.id) redirect("/login?callbackUrl=/orders");
   const filter = parseOrderFilter((await searchParams).filter);
 
-  const orders = await prisma.order.findMany({
+  const rawOrders = await prisma.order.findMany({
     where: { userId: session.user.id },
     orderBy: { createdAt: "desc" },
     include: { items: { orderBy: { createdAt: "asc" } } },
   });
+  // Paid orders whose design was also paid on another order are shown as "Payment received — under review", not "Confirmed".
+  const reviewIds = await duplicateReviewIdsFor(session.user.id, rawOrders);
+  const orders = rawOrders.map((order) => ({ ...order, paymentUnderReview: reviewIds.has(order.id) }));
 
   // Each order's picture is the customer's own mockup, checked against what
   // they ordered (cut, colour, design) -- see src/lib/mockup-preview.ts.
@@ -111,8 +115,13 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                 details={[
                   ["Order", order.orderNumber],
                   ["Placed", order.createdAt.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })],
-                  ...(first ? ([["Colour", titleCase(first.color)], ["Fabric", titleCase(first.fabric)]] as Array<[string, string]>) : []),
-                  ...(extras?.size ? ([["Size", extras.size]] as Array<[string, string]>) : []),
+                  // One payment can cover several items: say so instead of describing only the first one.
+                  ...(order.items.length > 1
+                    ? ([["Items", String(order.items.length)]] as Array<[string, string]>)
+                    : [
+                        ...(first ? ([["Colour", titleCase(first.color)], ["Fabric", titleCase(first.fabric)]] as Array<[string, string]>) : []),
+                        ...(extras?.size ? ([["Size", extras.size]] as Array<[string, string]>) : []),
+                      ]),
                 ]}
                 note={
                   <>

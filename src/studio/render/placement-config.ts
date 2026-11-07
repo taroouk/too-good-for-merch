@@ -190,11 +190,38 @@ export function getPlacementSide(placement: PlacementType): GarmentSide {
   return PLACEMENT_SIDES[placement];
 }
 
+// FULL BACK, per back photo, as an absolute box in the template's own
+// fractions. A single torso-relative spec could not suit all four back photos
+// (their torsos differ in width, centre and hem), and the old one hung the
+// print past the hem and out over the sleeves, arms and jeans. Each box below
+// is derived from the garment's own pixels (assets-work/fullback/derive.mjs):
+// centred on the torso, a square 90% of the body width (the width below the
+// armpits, between the arms), starting ~6% of the photo height under the neck
+// line -- verified to lie 100% on the garment, clear of sleeves, arms, hem and
+// background, in every variant. Same rule for Fitted and Oversized, so the
+// print sits in the same place relative to the garment. Re-derive if any back
+// photo is replaced. The Studio preview reads this same box (through
+// editor-surface.ts), so preview and print are one geometry.
+const FULL_BACK_BOXES: Record<"FITTED" | "OVERSIZED", Record<"WHITE" | "BLACK", PlacementBox>> = {
+  FITTED: {
+    WHITE: { xPct: 0.2615, yPct: 0.33, widthPct: 0.4637 },
+    BLACK: { xPct: 0.286, yPct: 0.33, widthPct: 0.4401 },
+  },
+  OVERSIZED: {
+    WHITE: { xPct: 0.2551, yPct: 0.33, widthPct: 0.4946 },
+    BLACK: { xPct: 0.2602, yPct: 0.33, widthPct: 0.5003 },
+  },
+};
+
 export function getPlacementBox(
   product: ProductType,
   color: GarmentColor,
   placement: PlacementType,
 ): PlacementBox {
+  if (placement === "FULL_BACK") {
+    // CUSTOM resolves to the FITTED/WHITE photos, exactly as TEMPLATE_FILES does.
+    return FULL_BACK_BOXES[product === "OVERSIZED" ? "OVERSIZED" : "FITTED"][color === "BLACK" ? "BLACK" : "WHITE"];
+  }
   const torso = TORSO_PLACEMENTS[placement];
   if (torso) {
     const frame = getTemplateTorsoFrame(product, color, PLACEMENT_SIDES[placement]);

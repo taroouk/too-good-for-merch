@@ -1,4 +1,4 @@
-import { compressMockupImage } from "src/lib/image/compress-mockup";
+import { compressMockupImage, MOCKUP_MAX_SIDE } from "src/lib/image/compress-mockup";
 import { Role } from "@prisma/client";
 import sharp, { type Metadata } from "sharp";
 import { auth } from "src/auth";
@@ -32,6 +32,9 @@ import {
   resolvePlacement,
   RendererError,
   trimToVisibleBounds,
+  MOCKUP_OUTPUT_SCALE,
+  scaleResolvedPlacement,
+  getTemplateReferenceWidth,
 } from "src/studio/render";
 
 export const runtime = "nodejs";
@@ -748,13 +751,34 @@ export async function POST(req: Request) {
         .toBuffer(),
       template,
     );
+    // Enlarge the finished garment photo once (lanczos3), then composite each
+    // artwork from its ORIGINAL pixels directly at the larger size, so the
+    // print stays crisp. Placement is the same geometry, scaled.
+    // The target is the canonical reference width for this garment side times
+    // MOCKUP_OUTPUT_SCALE (the same sizing the print mockup uses), so the two
+    // mockups of one design come out the same size whatever the photo's own
+    // native width.
+    const outputFactor = (getTemplateReferenceWidth(product, side) / templateMeta.width) * MOCKUP_OUTPUT_SCALE;
+    finalImage = await sharp(finalImage)
+      .resize({
+        width: Math.round(templateMeta.width * outputFactor),
+        height: Math.round(templateMeta.height * outputFactor),
+        fit: "fill",
+        kernel: "lanczos3",
+      })
+      .png()
+      .toBuffer();
     for (const print of prints) {
-      finalImage = await compositeArtworkOntoBase(finalImage, print.artwork, print.resolved);
+      finalImage = await compositeArtworkOntoBase(
+        finalImage,
+        print.artwork,
+        scaleResolvedPlacement(print.resolved, outputFactor),
+      );
     }
 
     // Stored compressed (WebP, <=1600px): the PNG straight out of the
     // compositor is several MB per mockup.
-    const compressedMockup = await compressMockupImage(finalImage, "image/png");
+    const compressedMockup = await compressMockupImage(finalImage, "image/png", MOCKUP_MAX_SIDE);
     finalImage = compressedMockup.data;
     const storedMimeType = validateMockupData(finalImage, compressedMockup.mimeType);
 

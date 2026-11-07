@@ -1,5 +1,6 @@
 "use server";
 
+import { validatePaymentCurrencyInput } from "src/lib/orders/currency";
 import { PaymentAttemptStatus, PaymentMethod, PaymentStatus, Prisma } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "src/lib/admin/auth";
@@ -103,7 +104,9 @@ export async function updateStoreSettingsAction(formData: FormData) {
     const currency = formString(formData, "currency", 3).toUpperCase();
     const taxRate = Number(formData.get("taxRate"));
     const shipping = Number(formData.get("shipping"));
-    if (storeName.length < 2 || !/^[A-Z]{3}$/.test(currency)) throw new AdminActionError("Store name or currency code is invalid.");
+    if (storeName.length < 2) throw new AdminActionError("Store name or currency code is invalid.");
+    const currencyProblem = validatePaymentCurrencyInput(currency);
+    if (currencyProblem) throw new AdminActionError(currencyProblem);
     if (!Number.isFinite(taxRate) || taxRate < 0 || taxRate > 100) throw new AdminActionError("Tax rate must be between 0 and 100.");
     if (!Number.isFinite(shipping) || shipping < 0) throw new AdminActionError("Shipping must be zero or more.");
 

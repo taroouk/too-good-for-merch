@@ -1,6 +1,6 @@
 // file: src/pricing/__tests__/display.test.ts
 import assert from "node:assert/strict";
-import { convertForDisplay, effectiveDisplay, formatDisplayPrice, parseDisplayCurrency, USD_DISPLAY } from "../display";
+import { convertForDisplay, formatCurrencyAmount, effectiveDisplay, formatDisplayPrice, parseDisplayCurrency, USD_DISPLAY } from "../display";
 import { adjustPrice, validateBulkAdjustment } from "../../lib/admin/bulk-pricing";
 import { runSuite } from "../../testing/test-harness";
 
@@ -21,6 +21,12 @@ export async function runAll() {
       assert.equal(convertForDisplay(9.54, { currency: "EGP", rate: 49.5 }), 472);
       assert.equal(formatDisplayPrice(9.54, { currency: "EGP", rate: 49.5 }), "EGP 472");
       assert.equal(formatDisplayPrice(9.54, USD_DISPLAY), "USD 9.54");
+    },
+    "EGP shows whole pounds, but keeps piastres on historical amounts"() {
+      assert.equal(formatCurrencyAmount(525, "EGP"), "EGP 525");
+      assert.equal(formatCurrencyAmount(1250, "EGP"), "EGP 1,250");
+      assert.equal(formatCurrencyAmount(521.33, "EGP"), "EGP 521.33");
+      assert.equal(formatCurrencyAmount(9.93, "USD"), "USD 9.93");
     },
     "adjustPrice percent and fixed, floored at 0.01"() {
       assert.equal(adjustPrice(10, "percent", 10), 11);

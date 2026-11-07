@@ -89,17 +89,7 @@ export function placementsOrDefault(value: unknown): PlacementKey[] {
   return placements.length ? placements : DEFAULT_PLACEMENTS;
 }
 
-// The key names the side of the picture (LEFT_CHEST is on the viewer's left);
-// customers and production speak in the wearer's sides, which are the
-// opposite, so the two chest labels are crossed.
-const WEARER_SIDE_LABEL: Partial<Record<PlacementKey, string>> = {
-  LEFT_CHEST: "Right Chest",
-  RIGHT_CHEST: "Left Chest",
-};
-
 export function placementLabel(placement: PlacementKey) {
-  const wearerSide = WEARER_SIDE_LABEL[placement];
-  if (wearerSide) return wearerSide;
   return placement
     .split("_")
     .map((part) => part.charAt(0) + part.slice(1).toLowerCase())

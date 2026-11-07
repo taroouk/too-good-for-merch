@@ -12,17 +12,24 @@ export default function PaymentStatusClient({
   orderId,
   initialStatus,
   retryEnabled,
+  underReview = false,
   latestAttemptAt,
 }: {
   orderId: string;
   initialStatus: string;
   retryEnabled: boolean;
+  // The payment arrived, but the order is held for review (the same design was also paid on another order).
+  underReview?: boolean;
   latestAttemptAt: string | null;
 }) {
   const router = useRouter();
   const [status, setStatus] = useState(initialStatus);
   const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the server says the stored consent is missing or no longer matches the current Terms / Refund revision.
+  const [competing, setCompeting] = useState<{ id: string; number: string } | null>(null);
+  const [needsConsent, setNeedsConsent] = useState<{ changed: boolean } | null>(null);
+  const [consentTicked, setConsentTicked] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(
     () => Boolean(latestAttemptAt) && Date.now() - new Date(latestAttemptAt!).getTime() > PAYMENT_LINK_LIFETIME_MS,
   );
@@ -57,11 +64,18 @@ export default function PaymentStatusClient({
     const response = await fetch("/api/payments/paymob/create-intent", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, method: "CARD" }),
+      // No consent is sent unless the customer ticked the box below: the server relies on the consent stored on the
+      // order only while the Terms / Refund revision is unchanged, and asks again otherwise.
+      body: JSON.stringify({ orderId, method: "CARD", ...(consentTicked ? { acceptTerms: true } : {}) }),
     });
     const data = await response.json().catch(() => null);
     if (response.ok && data?.paymentUrl) window.location.assign(data.paymentUrl);
-    else {
+    else if (data?.code === "TERMS_NOT_ACCEPTED") {
+      setNeedsConsent({ changed: Boolean(data.termsChanged) });
+      setError(null);
+      setRetrying(false);
+    } else {
+      if (data?.code === "ORDER_COMPETING_PAYMENT" && typeof data.existingOrderId === "string") setCompeting({ id: data.existingOrderId, number: String(data.existingOrderNumber ?? "") });
       setError(data?.error ?? "Could not create a new payment link.");
       setRetrying(false);
     }
@@ -69,7 +83,9 @@ export default function PaymentStatusClient({
 
   const showExpired = sessionExpired && (status === "PENDING" || status === "UNPAID");
   const copy =
-    status === "PAID"
+    status === "PAID" && underReview
+      ? ["Payment received — under review", "We've received your payment. Our team is reviewing the order before production starts.", "bg-amber-50 text-amber-800"]
+      : status === "PAID"
       ? ["Payment confirmed", "Your order is paid and ready for production.", "bg-emerald-50 text-emerald-800"]
       : status === "FAILED"
         ? ["Payment failed", "Paymob could not complete this payment. Your order is still safe.", "bg-red-50 text-red-800"]
@@ -98,16 +114,31 @@ export default function PaymentStatusClient({
         </div>
         <p className="mt-2 text-sm opacity-80">{copy[1]}</p>
       </div>
+      {needsConsent ? (
+        <label className="mt-4 flex items-start gap-3 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+          <input type="checkbox" checked={consentTicked} onChange={(event) => setConsentTicked(event.target.checked)} className="mt-1" />
+          <span>
+            {needsConsent.changed ? "Our Terms & Conditions or Refund & Returns Policy changed since you placed this order. " : ""}
+            I agree to the <a href="/legal/terms" className="underline" target="_blank" rel="noreferrer">Terms &amp; Conditions</a> and{" "}
+            <a href="/legal/refunds" className="underline" target="_blank" rel="noreferrer">Refund &amp; Returns Policy</a>, and understand my order is made to order.
+          </span>
+        </label>
+      ) : null}
       {retryEnabled && (status === "FAILED" || status === "UNPAID" || showExpired) ? (
         <button
           onClick={retry}
-          disabled={retrying}
+          disabled={retrying || (needsConsent !== null && !consentTicked)}
           className="mt-4 h-12 w-full rounded-xl bg-black font-semibold text-white disabled:opacity-50"
         >
           {retrying ? "Creating secure link..." : "Try card payment again"}
         </button>
       ) : null}
-      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+      {error ? (
+        <p className="mt-3 text-sm text-red-600">
+          {error}
+          {competing ? <a href={`/orders/${competing.id}`} className="mt-1 block font-semibold underline">Open order {competing.number}</a> : null}
+        </p>
+      ) : null}
     </div>
   );
 }

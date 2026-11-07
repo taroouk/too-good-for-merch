@@ -1,4 +1,5 @@
 import { prisma } from "src/lib/prisma";
+import { PAYMENT_CURRENCY } from "src/lib/orders/totals";
 import { placementsOrDefault, type PlacementKey } from "src/pricing/placements";
 import { FALLBACK_PRICES, RANGES } from "src/pricing/defaults";
 
@@ -31,32 +32,15 @@ export type PriceResult =
 // conversion step, which reads this value but never writes back to it).
 export const PRICING_CURRENCY = "USD" as const;
 
-// Resolves the *payment* currency (what Paymob actually charges), which is
-// intentionally a separate concept from PRICING_CURRENCY above. Paymob
-// merchant integrations are provisioned for a specific currency (for this
-// project's Egypt-based Paymob integration, that's EGP) - sending an
-// unsupported currency gets rejected with "Invalid currency sent" at the
-// payment_keys step. EGP is the correct default here; override via the
-// StoreSetting admin page or STORE_CURRENCY if this account is different.
-// computePrice() below does not call this -- pricing currency is fixed,
-// only payment currency is configurable.
-function paymentCurrency() {
-  const value = (process.env.STORE_CURRENCY ?? "EGP").trim().toUpperCase();
-  return /^[A-Z]{3}$/.test(value) ? value : "EGP";
-}
-
-// Mirrors the payment-currency resolution src/lib/orders/checkout.ts's
-// createCheckoutOrder uses when converting a priced order for payment
-// (StoreSetting row wins, falling back to the same paymentCurrency()
-// default). Exposed so callers can detect when an *existing* order's
-// stored payment currency has gone stale relative to current settings
-// (e.g. after fixing STORE_CURRENCY) without needing a full computePrice()
-// call, which requires product/fabric/quantity that a pure payment retry
-// may not have on hand. This is about payment currency, not pricing
-// currency -- see PRICING_CURRENCY above.
+// The *payment* currency (what Paymob actually charges) is a separate concept from PRICING_CURRENCY above.
+// There is ONE source for it: PAYMENT_CURRENCY (src/lib/orders/totals.ts). It is what checkout creates every order in
+// (the conversion is USD -> EGP with StoreSetting.usdToEgpRate, so no other currency can be produced), and it is what
+// a retry / "is this order still valid" check compares against. StoreSetting.currency and STORE_CURRENCY are NOT
+// consulted: until 9 Nov 2026 the retry check read them while creation ignored them, so any store whose setting was not
+// literally "EGP" got a permanent "409 outdated" on retry. Supporting another currency needs its own exchange-rate
+// configuration and is a business decision (see the audit-fix report). computePrice() below does not call this.
 export async function resolveCurrentCurrency(): Promise<string> {
-  const settings = await prisma.storeSetting.findUnique({ where: { id: "store" } }).catch(() => null);
-  return settings?.currency ?? paymentCurrency();
+  return PAYMENT_CURRENCY;
 }
 
 export async function computePrice({

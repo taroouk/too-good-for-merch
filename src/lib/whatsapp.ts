@@ -1,1 +1,1 @@
-export { WHATSAPP_MESSAGE, WHATSAPP_PHONE, WHATSAPP_URL } from "src/lib/contact";
+export { WHATSAPP_CONFIGURED, WHATSAPP_MESSAGE, WHATSAPP_PHONE, WHATSAPP_URL } from "src/lib/contact";

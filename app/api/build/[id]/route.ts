@@ -4,11 +4,7 @@ import { apiError, NO_STORE_HEADERS } from "src/lib/api/responses";
 import { computePrice, customQuotePriceResult } from "src/pricing/engine";
 import { isValidExchangeRate } from "src/pricing/currency";
 import { computeOrderTotals } from "src/lib/orders/totals";
-import {
-  normalizePlacements,
-  placementsFromCustomNotes,
-  placementsOrDefault,
-} from "src/pricing/placements";
+import { draftPricedPlacements } from "src/lib/orders/draft-placements";
 import { productDisplayName } from "src/lib/orders/display";
 import { designPreviewUrl } from "src/lib/mockup-preview";
 import { getUserId } from "src/studio/authz";
@@ -18,7 +14,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -60,12 +56,9 @@ export async function GET(
       return apiError("Build not found.", 404, NO_STORE_HEADERS);
     }
 
-    const queryPlacements = new URL(req.url).searchParams.get("placements");
-    const requestedPlacements = normalizePlacements(queryPlacements);
-    const draftPlacements = placementsFromCustomNotes(build.draft.customNotes);
-    const placements = placementsOrDefault(
-      requestedPlacements.length ? requestedPlacements : draftPlacements,
-    );
+    // The quote shown on the checkout page uses exactly the placements an order would be priced on: the saved
+    // design's. A `placements` query string is ignored, so what is displayed can never differ from what is charged.
+    const placements = draftPricedPlacements(build.draft);
 
     // Bespoke/Custom builds never get a computePrice() result (see
     // src/pricing/engine.ts -- it always returns mode:"custom" for

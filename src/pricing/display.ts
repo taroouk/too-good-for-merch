@@ -41,7 +41,13 @@ export function convertForDisplay(usdAmount: number, display: StoreDisplay): num
 // Customer-facing price text: EGP is whole pounds with no decimals
 // ("EGP 525"); USD keeps cents ("USD 9.93").
 export function formatCurrencyAmount(amount: number, currency: string): string {
-  if (currency === "EGP") return `EGP ${Math.round(amount).toLocaleString("en-US")}`;
+  if (currency === "EGP") {
+    // Prices are whole pounds. An amount that was charged with piastres
+    // (older orders) keeps them: history shows what was actually paid.
+    return Number.isInteger(amount)
+      ? `EGP ${amount.toLocaleString("en-US")}`
+      : `EGP ${amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
   return `${currency} ${amount.toFixed(2)}`;
 }
 

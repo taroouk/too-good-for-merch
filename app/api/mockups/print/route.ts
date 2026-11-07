@@ -8,6 +8,7 @@ import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
 import { getArtwork, validateMockupData } from "src/lib/storage";
+import { compressMockupImage, MOCKUP_MAX_SIDE } from "src/lib/image/compress-mockup";
 import { getFreshPrintMockup, upsertPrintMockup } from "src/db/mockup";
 import {
   normalizeArtworkLayers,
@@ -18,6 +19,7 @@ import {
 import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
 import {
   BASELINE_RENDER_DPI,
+  MOCKUP_OUTPUT_SCALE,
   loadTemplateBuffer,
   renderLayers,
   RendererError,
@@ -171,15 +173,18 @@ export async function POST(req: Request) {
           transform: { x: layer.x, y: layer.y, scale: layer.scale, rotation: layer.rotation },
         })),
         dpi,
+        outputScale: MOCKUP_OUTPUT_SCALE,
       });
 
-      const storedMimeType = validateMockupData(rendered.data, rendered.mimeType);
+      // Stored as WebP: the 2x PNG straight from the compositor is several MB.
+      const compressed = await compressMockupImage(rendered.data, rendered.mimeType, MOCKUP_MAX_SIDE);
+      const storedMimeType = validateMockupData(compressed.data, compressed.mimeType);
 
       const mockup = await upsertPrintMockup(draftId, {
         buildId,
         assetId: layers[0].assetId,
         mimeType: storedMimeType,
-        data: rendered.data,
+        data: compressed.data,
         width: rendered.width,
         height: rendered.height,
         fingerprint,

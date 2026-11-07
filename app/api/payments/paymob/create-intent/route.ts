@@ -9,7 +9,10 @@ import {
   shippingAddressColumns,
   validateCheckoutContact,
 } from "src/lib/orders/checkout";
-import { orderFailureUpdateFor } from "src/lib/orders/errors";
+import { createCartCheckoutOrder } from "src/lib/orders/cart-checkout";
+import { competingPaymentMessage, orderPayability, termsConsentStatus } from "src/lib/orders/payable";
+import { findCompetingLivePayment, findSupersedingPaidOrder, orderBuildIds } from "src/lib/orders/superseded";
+import { assertApprovedTotal, orderFailureUpdateFor } from "src/lib/orders/errors";
 import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
 import { currentTermsVersion } from "src/lib/legal";
 import { recordCheckoutFailure } from "src/lib/orders/checkout-failure";
@@ -52,9 +55,10 @@ function paymobStageInfo(details: unknown): { stage?: string; status?: number } 
 
 function errorResponse(error: unknown, orderId?: string) {
   if (error instanceof CheckoutError) {
+    const code = error.code ?? "CHECKOUT_VALIDATION_FAILED";
     return NextResponse.json(
-      { error: error.message, code: "CHECKOUT_VALIDATION_FAILED", orderId },
-      { status: error.status, headers: { "x-checkout-code": "CHECKOUT_VALIDATION_FAILED" } },
+      { error: error.message, code, orderId, ...(error.details ?? {}) },
+      { status: error.status, headers: { "x-checkout-code": code } },
     );
   }
   if (error instanceof PaymobError) {
@@ -87,6 +91,19 @@ function customerInput(value: unknown) {
   };
 }
 
+function termsRequiredResponse(termsChanged: boolean) {
+  return NextResponse.json(
+    {
+      error: termsChanged
+        ? "Our Terms & Conditions or Refund Policy changed since you agreed. Please review and accept them to continue."
+        : "Please accept the Terms & Conditions and Refund Policy to continue.",
+      code: "TERMS_NOT_ACCEPTED",
+      termsChanged,
+    },
+    { status: 400, headers: { "x-checkout-code": "TERMS_NOT_ACCEPTED" } },
+  );
+}
+
 export async function POST(req: Request) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -115,13 +132,13 @@ export async function POST(req: Request) {
     return apiError("Invalid checkout request.", 400);
   }
 
-  // Consent is mandatory and enforced here, not just by the checkout
-  // checkbox, so a direct API call can't skip it.
-  if (body.acceptTerms !== true) {
-    return NextResponse.json(
-      { error: "Please accept the Terms & Conditions and Refund Policy to continue.", code: "TERMS_NOT_ACCEPTED" },
-      { status: 400 },
-    );
+  // Consent is mandatory and enforced here, not just by the checkout checkbox, so a direct API call can't skip it.
+  // A NEW order always needs it in the request. A retry of an existing order (orderId) may rely on the consent
+  // already stored on that order, but only while the Terms / Refund revision is still the one that was agreed to
+  // (checked below, once the order is loaded). Having an orderId is never consent by itself.
+  const retryingExistingOrder = typeof body.orderId === "string" && Boolean(body.orderId);
+  if (body.acceptTerms !== true && !retryingExistingOrder) {
+    return termsRequiredResponse(false);
   }
 
   if (body.method !== PaymentMethod.CARD && body.method !== PaymentMethod.WALLET) {
@@ -143,9 +160,9 @@ export async function POST(req: Request) {
         include: { items: true },
       });
       if (!order) throw new CheckoutError("Order not found.", 404);
-      if (order.paymentStatus === PaymentStatus.PAID || order.paymentStatus === PaymentStatus.REFUNDED) {
-        throw new CheckoutError("This order has already been paid.", 409);
-      }
+      // Only a payable order can be paid again: never one that is paid, refunded, cancelled or already in production.
+      const verdict = orderPayability(order);
+      if (!verdict.ok) throw new CheckoutError(verdict.message, 409, verdict.code);
       // An order created before a store currency correction (StoreSetting /
       // STORE_CURRENCY) is permanently stuck with its original currency -
       // Paymob will reject the same wrong currency forever on retry. Refuse
@@ -160,37 +177,55 @@ export async function POST(req: Request) {
           409,
         );
       }
-      // The checkout page lets the customer edit their details and resubmit
-      // against the same order (e.g. after correcting the delivery
-      // address), so persist the latest contact + address on retry too.
-      const { customer, address } = validateCheckoutContact(customerInput(body.customer), body.shippingAddress);
-      order = await prisma.order.update({
-        where: { id: order.id },
-        data: {
-          customerName: customer.name,
-          customerEmail: customer.email,
-          customerPhone: customer.phone,
-          ...shippingAddressColumns(address),
-        },
-        include: { items: true },
+      // If the caller states the total it approved, it must be this order's total.
+      if (body.expectedTotalCents !== undefined) assertApprovedTotal(body.expectedTotalCents, order.totalCents, order.currency);
+      // Consent: either given now, or already stored on this order for the SAME revision of the Terms / Refund pages.
+      if (body.acceptTerms !== true) {
+        const consent = termsConsentStatus(order, await currentTermsVersion());
+        if (!consent.ok) return termsRequiredResponse(consent.termsChanged);
+      }
+      // The checkout page lets the customer edit their details and resubmit against the same order (e.g. after
+      // correcting the delivery address), so the latest contact + address are persisted on retry too. A retry that
+      // sends none (the "Complete payment" button on the order page) keeps the details stored on the order.
+      if (body.customer !== undefined || body.shippingAddress !== undefined) {
+        const { customer, address } = validateCheckoutContact(customerInput(body.customer), body.shippingAddress);
+        order = await prisma.order.update({
+          where: { id: order.id },
+          data: {
+            customerName: customer.name,
+            customerEmail: customer.email,
+            customerPhone: customer.phone,
+            ...shippingAddressColumns(address),
+          },
+          include: { items: true },
+        });
+      }
+    } else if (body.cart === true) {
+      // One checkout for the whole bag: the server reads the bag itself, nothing about items comes from the client.
+      order = await createCartCheckoutOrder(session.user.id, {
+        customer: customerInput(body.customer),
+        shippingAddress: body.shippingAddress,
+        expectedTotalCents: body.expectedTotalCents,
       });
     } else {
       order = await createCheckoutOrder(session.user.id, {
         buildId: typeof body.buildId === "string" ? body.buildId : "",
         customer: customerInput(body.customer),
         shippingAddress: body.shippingAddress,
-        placements: body.placements,
+        expectedTotalCents: body.expectedTotalCents,
         size: body.size,
       });
     }
 
-    // Record the consent against the order, with the revision of the Terms /
-    // Refund pages that was live -- the evidence that this customer agreed
-    // to exactly this text before paying.
-    await prisma.order.update({
-      where: { id: order.id },
-      data: { termsAcceptedAt: new Date(), termsVersion: await currentTermsVersion() },
-    });
+    // Record the consent against the order, with the revision of the Terms / Refund pages that was live -- the
+    // evidence that this customer agreed to exactly this text before paying. Only when it was given in THIS request:
+    // a retry that relies on the stored consent must not overwrite it.
+    if (body.acceptTerms === true) {
+      await prisma.order.update({
+        where: { id: order.id },
+        data: { termsAcceptedAt: new Date(), termsVersion: await currentTermsVersion() },
+      });
+    }
 
     // The check-and-create step below must be serialized per order: without
     // it, two near-simultaneous requests (double click, two tabs) can both
@@ -203,6 +238,14 @@ export async function POST(req: Request) {
     // transaction, never spanning separate pooled connections.
     const decision = await prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order!.id} FOR UPDATE`;
+      // One design, one payment at a time: the designs of this order are locked too (fixed order, so two requests can
+      // never wait on each other), which makes two orders for the same design take this decision one after the other.
+      for (const buildId of orderBuildIds(order!).sort()) {
+        await tx.$queryRaw`SELECT id FROM "Build" WHERE id = ${buildId} FOR UPDATE`;
+      }
+      // Another order for the same design was paid after this one was created: never start a second payment.
+      const winner = await findSupersedingPaidOrder(tx, order!);
+      if (winner) return { kind: "superseded" as const, orderNumber: winner.orderNumber };
 
       const recentAttempt = await tx.paymentAttempt.findFirst({
         where: {
@@ -235,6 +278,10 @@ export async function POST(req: Request) {
         return { kind: "in-flight" as const };
       }
 
+      // Another order for the same design already has a payment link that can still be paid: no second link.
+      const competing = await findCompetingLivePayment(tx, order!);
+      if (competing) return { kind: "competing" as const, orderId: competing.order.id, orderNumber: competing.order.orderNumber, status: competing.status, startedAt: competing.startedAt };
+
       const created = await tx.paymentAttempt.create({
         data: { orderId: order!.id, method, amountCents: order!.totalCents, currency: order!.currency },
       });
@@ -249,6 +296,23 @@ export async function POST(req: Request) {
       timeout: 8_000,
     });
 
+    if (decision.kind === "superseded") {
+      throw new CheckoutError(
+        `Another order for this design (${decision.orderNumber}) was paid after you started this one, so this order can't be paid. To order another copy, start a new checkout.`,
+        409,
+        "ORDER_SUPERSEDED",
+      );
+    }
+    if (decision.kind === "competing") {
+      // Another payment for this design is open: tell the customer plainly what to do. Only their OWN other order is named.
+      const info = competingPaymentMessage({ status: decision.status, startedAt: decision.startedAt, orderNumber: decision.orderNumber }, Date.now());
+      throw new CheckoutError(info.message, 409, "ORDER_COMPETING_PAYMENT", {
+        existingOrderId: decision.orderId,
+        existingOrderNumber: decision.orderNumber,
+        linkExpiresAt: info.linkExpiresAt,
+        minutesLeft: info.minutesLeft,
+      });
+    }
     if (decision.kind === "reuse") {
       return NextResponse.json({
         orderId: order.id,

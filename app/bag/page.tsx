@@ -7,10 +7,12 @@ import { redirect } from "next/navigation";
 import { auth } from "src/auth";
 import { prisma } from "src/lib/prisma";
 import { actionRemoveFromBagForm } from "src/actions/bag-actions";
-import { checkoutHref } from "src/lib/bag";
+import { quoteCart } from "src/lib/orders/cart-checkout";
+import { CheckoutError } from "src/lib/orders/errors";
+import { formatMinorPrice } from "src/pricing/display";
 import BagSync from "./BagSync";
 import { computePrice } from "src/pricing/engine";
-import { placementsFromCustomNotes, placementsOrDefault } from "src/pricing/placements";
+import { draftPricedPlacements } from "src/lib/orders/draft-placements";
 import { designPreviewUrl } from "src/lib/mockup-preview";
 import ProductCard, { CARD_BUTTON_DISABLED, CARD_BUTTON_PRIMARY, CARD_BUTTON_SECONDARY, CARD_GRID_CLASS, PAGE_BUTTON_CLASS } from "src/components/site/ProductCard";
 
@@ -80,7 +82,7 @@ export default async function BagPage() {
           product: draft.product,
           fabric: draft.fabric,
           quantity: draft.quantity,
-          placements: placementsOrDefault(placementsFromCustomNotes(draft.customNotes)),
+          placements: draftPricedPlacements(draft),
         }).catch(() => null);
         if (price?.mode === "standard") {
           priceText = formatDisplayPrice(price.total, display);
@@ -97,6 +99,17 @@ export default async function BagPage() {
     }),
   );
 
+  // One checkout and one payment for the whole bag: the total comes from the same code the order is created with.
+  let cartTotal: { text: string } | { problem: string } | null = null;
+  if (rows.length) {
+    try {
+      const quote = await quoteCart(userId);
+      cartTotal = { text: formatMinorPrice(quote.totals.totalPaymentCents, quote.totals.paymentCurrency) };
+    } catch (error) {
+      cartTotal = { problem: error instanceof CheckoutError ? error.message : "Checkout is unavailable right now. Please try again shortly." };
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#f3f1ed] px-4 py-12 text-black">
       <BagSync count={rows.length} />
@@ -105,7 +118,7 @@ export default async function BagPage() {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/40">Account</p>
             <h1 className="mt-2 text-4xl font-semibold">Your Bag</h1>
-            {rows.length ? <p className="mt-2 text-sm text-black/50">{rows.length} item{rows.length === 1 ? "" : "s"} · Each item is checked out separately</p> : null}
+            {rows.length ? <p className="mt-2 text-sm text-black/50">{rows.length} item{rows.length === 1 ? "" : "s"} · One checkout for everything in your bag</p> : null}
           </div>
           <Link href="/studio" className={PAGE_BUTTON_CLASS}>
             Open Studio
@@ -146,13 +159,9 @@ export default async function BagPage() {
                       <Link href={`/orders/${orderId}`} className={CARD_BUTTON_PRIMARY}>
                         View order
                       </Link>
-                    ) : sellable ? (
-                      <Link href={checkoutHref(item.buildId, item.size)} className={CARD_BUTTON_PRIMARY}>
-                        Checkout
-                      </Link>
-                    ) : (
+                    ) : !sellable ? (
                       <span className={CARD_BUTTON_DISABLED}>Unavailable</span>
-                    )}
+                    ) : null}
                     <Link href={`/studio/projects/${item.buildId}/builder?edit=1&size=${encodeURIComponent(item.size)}`} className={CARD_BUTTON_SECONDARY}>
                       Edit
                     </Link>
@@ -168,6 +177,26 @@ export default async function BagPage() {
             ))}
           </div>
         )}
+
+        {rows.length && cartTotal ? (
+          <section className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white p-6 shadow-sm" aria-label="Bag total">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-black/40">Bag total</p>
+              {"text" in cartTotal ? (
+                <p className="mt-1 text-2xl font-semibold">{cartTotal.text}</p>
+              ) : (
+                <p className="mt-1 text-sm text-black/60">{cartTotal.problem}</p>
+              )}
+            </div>
+            {"text" in cartTotal ? (
+              <Link href="/checkout?cart=1" className={CARD_BUTTON_PRIMARY}>
+                Checkout
+              </Link>
+            ) : (
+              <span className={CARD_BUTTON_DISABLED}>Checkout</span>
+            )}
+          </section>
+        ) : null}
       </div>
     </main>
   );

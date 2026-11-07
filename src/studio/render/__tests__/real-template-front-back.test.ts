@@ -196,11 +196,21 @@ export async function runAll() {
       const side = getPlacementSide(c.placement);
       const referenceWidth = getTemplateReferenceWidth(c.product, side);
       const normalizationScale = referenceWidth / templateWidth;
+      // The print is cut off at its placement frame, so what is rendered is
+      // the resolved box INTERSECTED with the frame (resolved.clip).
+      const box = { left: resolved.left, top: resolved.top, right: resolved.left + resolved.width, bottom: resolved.top + resolved.height };
+      const frame = resolved.clip!;
+      const shown = {
+        left: Math.max(box.left, frame.left),
+        top: Math.max(box.top, frame.top),
+        right: Math.min(box.right, frame.left + frame.width),
+        bottom: Math.min(box.bottom, frame.top + frame.height),
+      };
       const normalizedResolved = {
-        left: resolved.left * normalizationScale,
-        top: resolved.top * normalizationScale,
-        width: resolved.width * normalizationScale,
-        height: resolved.height * normalizationScale,
+        left: shown.left * normalizationScale,
+        top: shown.top * normalizationScale,
+        width: (shown.right - shown.left) * normalizationScale,
+        height: (shown.bottom - shown.top) * normalizationScale,
       };
 
       // Tolerance: at least 3px, or 1% of the NORMALIZED (actually rendered)
@@ -238,9 +248,12 @@ export async function runAll() {
       // Aspect ratio preserved: the detected bbox's own ratio must match
       // the artwork's original ratio within a small relative tolerance
       // (rounding on both the resolve and the marker-detection side).
+      // Only for an artwork that sits whole inside its frame: one that is cut
+      // off at the frame has, by design, the shape of the visible part.
+      const cutOff = shown.left > box.left || shown.top > box.top || shown.right < box.right || shown.bottom < box.bottom;
       const expectedRatio = c.artworkWidth / c.artworkHeight;
       const actualRatio = actual!.width / actual!.height;
-      assert.ok(
+      if (!cutOff) assert.ok(
         Math.abs(actualRatio - expectedRatio) / expectedRatio < 0.05,
         `aspect ratio not preserved for ${caseName(c)}: expected ~${expectedRatio.toFixed(3)}, got ${actualRatio.toFixed(3)}`,
       );

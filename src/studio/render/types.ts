@@ -43,6 +43,9 @@ export type RenderRequest = {
   placement: PlacementType;
   transform: ArtworkTransform;
   dpi: number;
+  // Render the whole mockup at this multiple of the usual output size
+  // (see MOCKUP_OUTPUT_SCALE). Omitted/1 = the original behaviour.
+  outputScale?: number;
 };
 
 export type RenderedMockup = {
@@ -62,6 +65,10 @@ export type ResolvedPlacement = {
   width: number;
   height: number;
   rotation: number;
+  // The placement's print frame in the same pixel space (see
+  // resolvePlacement). The artwork is cut off at its edges, exactly like the
+  // Studio preview clips it, so what prints never spills past the frame.
+  clip?: { left: number; top: number; width: number; height: number };
 };
 
 // The photographed garment's own bounding box within a base image, in that

@@ -52,6 +52,7 @@ export async function renderLayers(req: Parameters<typeof renderLayeredMockup>[0
       placement: only.placement,
       transform: only.transform,
       dpi: req.dpi,
+      outputScale: req.outputScale,
     });
   }
   return renderLayeredMockup(req);

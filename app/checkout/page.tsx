@@ -61,6 +61,19 @@ function titleCase(value: string | null) {
     .join(" ");
 }
 
+// One checkout for the whole bag (/checkout?cart=1): the lines and totals come from /api/bag/quote.
+type CartItemView = {
+  buildId: string;
+  displayName: string;
+  thumbnailUrl: string;
+  product: string;
+  color: string;
+  fabric: string;
+  size: string;
+  quantity: number;
+  linePaymentCents: number;
+};
+
 type PaymentMethod = "CARD" | "WALLET";
 
 // text-base (16px) below sm: iOS Safari zooms the page into any field
@@ -85,6 +98,7 @@ export default function CheckoutPage() {
 function CheckoutContent() {
   const searchParams = useSearchParams();
   const buildId = searchParams.get("buildId");
+  const isCart = searchParams.get("cart") === "1";
   // The Studio Builder's size selector (S/M/L/XL) has no field on
   // BuildDraft to persist to (see WishlistItem.size / BespokeRequest.size in
   // prisma/schema.prisma -- size is only ever snapshotted at the point of a
@@ -96,6 +110,13 @@ function CheckoutContent() {
   const { data: session, status } = useSession();
 
   const [quote, setQuote] = useState<BuildQuote | null>(null);
+  const [cartItems, setCartItems] = useState<CartItemView[] | null>(null);
+  // Set when the total changed after this page was shown: the order is NOT created until the customer confirms
+  // the new total (by pressing the button again, which now carries the refreshed total).
+  const [priceNotice, setPriceNotice] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
+  // Set when another payment for the same design is already open: the customer is pointed at that order.
+  const [competingOrder, setCompetingOrder] = useState<{ id: string; number: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -122,11 +143,12 @@ function CheckoutContent() {
 
   const loginHref = useMemo(() => {
     const params = new URLSearchParams();
+    if (isCart) params.set("cart", "1");
     if (buildId) params.set("buildId", buildId);
     if (sizeParam) params.set("size", size);
     const query = params.toString();
     return `/login?callbackUrl=${encodeURIComponent(`/checkout${query ? `?${query}` : ""}`)}`;
-  }, [buildId, size, sizeParam]);
+  }, [buildId, isCart, size, sizeParam]);
 
   useEffect(() => {
     if (session?.user?.email && !customerEmail) setCustomerEmail(session.user.email);
@@ -140,7 +162,7 @@ function CheckoutContent() {
     let cancelled = false;
 
     async function load() {
-      if (!buildId) {
+      if (!buildId && !isCart) {
         setLoading(false);
         return;
       }
@@ -148,10 +170,29 @@ function CheckoutContent() {
       setLoading(true);
       setError(null);
       try {
-        const response = await fetch(`/api/build/${encodeURIComponent(buildId)}`, { cache: "no-store" });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data?.error ?? "Could not load this build.");
-        if (!cancelled) setQuote(data);
+        if (isCart) {
+          const response = await fetch("/api/bag/quote", { cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.error ?? "Could not load your bag.");
+          const items: CartItemView[] = data.items ?? [];
+          if (!cancelled) {
+            setCartItems(items);
+            // The rest of the page works on a BuildQuote: present the bag as one standard-priced purchase.
+            setQuote({
+              build: { id: "bag", name: "Your bag", draft: { product: null, color: null, fabric: null, quantity: items.reduce((n, item) => n + item.quantity, 0) } },
+              displayName: `${items.length} item${items.length === 1 ? "" : "s"}`,
+              thumbnailUrl: items[0]?.thumbnailUrl ?? null,
+              price: { mode: "standard", unit: 0, total: 0, currency: "USD" },
+              totals: data.totals,
+              walletEnabled: Boolean(data.walletEnabled),
+            });
+          }
+        } else {
+          const response = await fetch(`/api/build/${encodeURIComponent(buildId as string)}`, { cache: "no-store" });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data?.error ?? "Could not load this build.");
+          if (!cancelled) setQuote(data);
+        }
       } catch (loadError) {
         if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Could not load checkout.");
       } finally {
@@ -163,7 +204,7 @@ function CheckoutContent() {
     return () => {
       cancelled = true;
     };
-  }, [buildId]);
+  }, [buildId, isCart, reloadToken]);
 
   function changeAddressCountry(code: string) {
     setAddressCountry(code);
@@ -174,7 +215,7 @@ function CheckoutContent() {
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!quote || quote.price.mode !== "standard" || !buildId) return;
+    if (!quote || quote.price.mode !== "standard" || (!buildId && !isCart)) return;
     if (status !== "authenticated") {
       window.location.assign(loginHref);
       return;
@@ -182,6 +223,8 @@ function CheckoutContent() {
 
     setSubmitting(true);
     setError(null);
+    setPriceNotice(null);
+    setCompetingOrder(null);
 
     try {
       // Reuse the order created by a previous attempt (if any) instead of
@@ -193,8 +236,9 @@ function CheckoutContent() {
         body: JSON.stringify({
           orderId: orderId ?? undefined,
           acceptTerms,
-          buildId,
-          size,
+          // The total this page is showing: the server creates the order only if it is still exactly this amount.
+          expectedTotalCents: quote.totals?.totalPaymentCents,
+          ...(isCart ? { cart: true } : { buildId, size }),
           method,
           customer: {
             name: customerName,
@@ -214,6 +258,16 @@ function CheckoutContent() {
       const data = await response.json().catch(() => null);
 
       if (typeof data?.orderId === "string") setOrderId(data.orderId);
+
+      if (response.status === 409 && data?.code === "PRICE_CHANGED") {
+        const currency = String(data.currency ?? quote.totals?.paymentCurrency ?? "EGP");
+        setPriceNotice(
+          `The total for your order changed from ${money(Number(data.approvedTotalCents), currency)} to ${money(Number(data.currentTotalCents), currency)}. We've updated this page. Please review it and press the button again to confirm the new total.`,
+        );
+        setReloadToken((token) => token + 1);
+        setSubmitting(false);
+        return;
+      }
 
       if (response.ok && data?.paymentUrl) {
         if (method === "CARD") {
@@ -241,6 +295,9 @@ function CheckoutContent() {
         setOrderId(null);
       }
 
+      if (data?.code === "ORDER_COMPETING_PAYMENT" && typeof data.existingOrderId === "string") {
+        setCompetingOrder({ id: data.existingOrderId, number: String(data.existingOrderNumber ?? "") });
+      }
       setSubmitting(false);
       setError(data?.error ?? "Could not start payment.");
     } catch {
@@ -259,7 +316,7 @@ function CheckoutContent() {
     );
   }
 
-  if (!buildId || !quote) {
+  if ((!buildId && !isCart) || !quote) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#f5f4f0] px-4">
         <section className="w-full max-w-md rounded-2xl bg-white p-7 text-center shadow-sm">
@@ -289,7 +346,8 @@ function CheckoutContent() {
   // here and tax takes the remainder, so the lines always sum to the total.
   let breakdown: { subtotal: number; shipping: number; tax: number; total: number } | null = null;
   if (totals) {
-    const shipping = Math.round(totals.shippingUsdCents * totals.exchangeRate);
+    // Whole pounds, like every other EGP figure, so the lines reconcile.
+    const shipping = Math.round((totals.shippingUsdCents * totals.exchangeRate) / 100) * 100;
     const tax =
       totals.taxUsdCents > 0 ? totals.totalPaymentCents - totals.subtotalPaymentCents - shipping : 0;
     breakdown = {
@@ -309,7 +367,24 @@ function CheckoutContent() {
 
           {/* Phones and tablets: the full summary sits below the form, so
               show what's being bought and the total up front. */}
-          <div className="mt-5 flex items-center gap-3 rounded-xl bg-[#f5f4f0] p-3 lg:hidden">
+          {cartItems ? (
+            <ul className="mt-5 space-y-2 rounded-xl bg-[#f5f4f0] p-3 lg:hidden" aria-label="Items in your order">
+              {cartItems.map((item) => (
+                <li key={item.buildId} className="flex items-center gap-3">
+                  <div className="flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- auth-gated API image, not optimizable */}
+                    <img src={item.thumbnailUrl} alt="" className="h-full w-full object-contain" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold leading-tight">{item.displayName}</p>
+                    <p className="truncate text-xs text-black/50">{titleCase(item.color)} · Size {item.size} · Qty {item.quantity}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold">{money(item.linePaymentCents, totals?.paymentCurrency ?? "EGP")}</p>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className={`mt-5 flex items-center gap-3 rounded-xl bg-[#f5f4f0] p-3 lg:hidden${cartItems ? " hidden" : ""}`}>
             <div className="flex h-16 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-white">
               {quote.thumbnailUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element -- auth-gated API image, not optimizable
@@ -504,7 +579,15 @@ function CheckoutContent() {
               {quote.price.mode !== "standard" ? (
                 <div className="rounded-xl bg-amber-50 p-4 text-sm text-amber-800">{quote.price.message}</div>
               ) : null}
-              {error ? <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+              {priceNotice ? <div role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-900">{priceNotice}</div> : null}
+              {error ? (
+                <div className="rounded-xl bg-red-50 p-4 text-sm text-red-700">
+                  {error}
+                  {competingOrder ? (
+                    <a href={`/orders/${competingOrder.id}`} className="mt-2 block font-semibold underline">Open order {competingOrder.number}</a>
+                  ) : null}
+                </div>
+              ) : null}
 
               {detailsLocked ? null : (
                 <label className="flex items-start gap-3 text-sm leading-6 text-black/70">
@@ -578,6 +661,27 @@ function CheckoutContent() {
 
         <aside className="h-fit rounded-2xl bg-white p-6 shadow-sm lg:sticky lg:top-6">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-black/35">Order summary</p>
+          {cartItems ? (
+            <ul className="mt-4 space-y-4" aria-label="Items in your order">
+              {cartItems.map((item) => (
+                <li key={item.buildId} className="flex items-center gap-4">
+                  <div className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#f5f4f0]">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- auth-gated API image, not optimizable */}
+                    <img src={item.thumbnailUrl} alt={item.displayName} className="h-full w-full object-contain" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-base font-semibold leading-tight">{item.displayName}</h2>
+                    <p className="mt-1 text-sm text-black/45">
+                      {titleCase(item.product)} · {titleCase(item.color)} · Size {item.size}
+                    </p>
+                    <p className="text-sm text-black/45">{titleCase(item.fabric)} · Qty {item.quantity}</p>
+                  </div>
+                  <p className="shrink-0 text-sm font-semibold">{money(item.linePaymentCents, totals?.paymentCurrency ?? "EGP")}</p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <>
           <div className="mt-4 flex items-center gap-4">
             <div className="flex h-24 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#f5f4f0]">
               {quote.thumbnailUrl ? (
@@ -602,6 +706,8 @@ function CheckoutContent() {
               <strong>{draft.quantity}</strong>
             </div>
           </div>
+            </>
+          )}
           <div className="mt-5 space-y-2 border-t border-black/10 pt-5 text-sm">
             {breakdown && totals ? (
               <>

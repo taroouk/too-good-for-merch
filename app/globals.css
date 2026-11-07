@@ -8158,7 +8158,7 @@ body {
 
 /* Fabric dropdown: list text matches the selected box (feedback 1.5). */
 .studio-builder-shell .studio-fabric-option-name {
-  font-size: 16px !important;
+  font-size: 18px !important;
   letter-spacing: 0.04em !important;
 }
 .studio-builder-shell .studio-fabric-option-desc {
@@ -8207,4 +8207,49 @@ body {
   background-repeat: no-repeat;
   background-position: right 1rem center;
   background-size: 12px 8px;
+}
+
+/* Transparent vs opaque artwork note (informational; the image is never altered). */
+.studio-artwork-kind {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(0, 0, 0, 0.55);
+}
+.studio-artwork-kind-warn {
+  color: #8a5a00;
+}
+
+/* Studio buttons: one text style at every screen width (15px, 3px letter-spacing). Placed last on purpose,
+   because earlier responsive rules shrink Build/Buy to 14px at tablet widths. */
+.studio-builder-shell .studio-product-button,
+.studio-builder-shell .studio-build-button {
+  font-size: 15px !important;
+  letter-spacing: 3px !important;
+}
+
+/* Your Uploads: where an upload sits on the shirt (one panel instead of a separate "Selected Artwork" list).
+   The label sits on the tile's bottom edge so the grid rows keep their height. */
+.studio-bespoke-modal .studio-upload-tile {
+  position: relative;
+}
+.studio-bespoke-modal .studio-upload-onshirt {
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  bottom: 1px;
+  margin: 0;
+  padding: 3px 2px;
+  border: 0;
+  border-top: 1px solid #e6e6e6;
+  border-radius: 0 0 5px 5px;
+  background: rgba(255, 255, 255, 0.94);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #111;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

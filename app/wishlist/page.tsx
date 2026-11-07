@@ -20,7 +20,8 @@ function label(value: string | null): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export default async function WishlistPage() {
+export default async function WishlistPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
+  const notice = (await searchParams).notice;
   const session = await auth();
   if (!session?.user?.id) redirect("/login?callbackUrl=/wishlist");
 
@@ -58,6 +59,12 @@ export default async function WishlistPage() {
         </div>
 
         <AccountNav />
+
+        {notice === "design-unavailable" ? (
+          <p role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Some artwork in that design is no longer available, so it couldn&apos;t be reopened. Please start it again in the Studio.
+          </p>
+        ) : null}
 
         {items.length === 0 ? (
           <div className="mt-10 rounded-2xl bg-white p-12 text-center shadow-sm">

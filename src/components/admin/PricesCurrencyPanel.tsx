@@ -1,13 +1,13 @@
 import { savePriceGridAction, upsertPlacementPricingRuleAction } from "src/actions/admin-pricing-actions";
 import PriceGridEditor from "src/components/admin/PriceGridEditor";
 import { getPriceGridData } from "src/lib/admin/price-grid-data";
-import { updateDisplayCurrencyAction, updateExchangeRateAction } from "src/actions/admin-system-actions";
+import { updateExchangeRateAction } from "src/actions/admin-system-actions";
 import Card from "src/components/admin/ui/Card";
 import Badge from "src/components/admin/ui/Badge";
 import ConfirmSubmitButton from "src/components/admin/ui/ConfirmSubmitButton";
 import { buttonClass } from "src/components/admin/ui/Button";
 import { prisma } from "src/lib/prisma";
-import { DISPLAY_CURRENCIES, effectiveDisplay, formatDisplayPrice, parseDisplayCurrency } from "src/pricing/display";
+import { effectiveDisplay, formatDisplayPrice } from "src/pricing/display";
 import { CUSTOMER_PLACEMENTS, customerPlacementLabel } from "src/pricing/placements";
 
 const RETURN_TO = "/admin";
@@ -23,7 +23,6 @@ export default async function PricesCurrencyPanel() {
     prisma.storeSetting.findUnique({ where: { id: "store" } }),
   ]);
   const display = effectiveDisplay(settings?.displayCurrency, settings?.usdToEgpRate);
-  const selected = parseDisplayCurrency(settings?.displayCurrency);
   const rate = settings?.usdToEgpRate ?? null;
   const showConverted = display.currency !== "USD";
   const placementByKey = new Map(placementRules.map((rule) => [rule.placement, rule]));
@@ -38,18 +37,10 @@ export default async function PricesCurrencyPanel() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-xl bg-admin-canvas p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-admin-faint">Currency customers see</p>
-          <form action={updateDisplayCurrencyAction} className="mt-2 flex items-center gap-2">
-            <input type="hidden" name="returnTo" value={RETURN_TO} />
-            <select name="displayCurrency" defaultValue={selected} aria-label="Display currency" className="h-10 flex-1 rounded-xl border border-admin-border-strong bg-white px-3 text-sm outline-none focus:border-admin-ink">
-              {DISPLAY_CURRENCIES.map((code) => (
-                <option key={code} value={code}>{code === "USD" ? "USD — US dollar" : "EGP — Egyptian pound"}</option>
-              ))}
-            </select>
-            <button className={buttonClass({ size: "sm", className: "h-10 px-4" })}>Apply</button>
-          </form>
+          <p className="mt-2 text-sm text-admin-ink">Egyptian pounds, whole numbers</p>
           <p className="mt-2 text-xs text-admin-faint">
             Showing <strong className="text-admin-ink">{display.currency}</strong>
-            {selected === "EGP" && display.currency === "USD" ? " (EGP needs an exchange rate first)" : ""}. Orders are recorded in USD and paid in EGP.
+            {display.currency === "USD" ? " (set an exchange rate to switch to EGP)" : ""}. Orders are recorded in USD and paid in EGP.
           </p>
         </div>
 

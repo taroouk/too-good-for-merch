@@ -67,7 +67,7 @@ export default function SizeGuideModal({
           <button
             type="button"
             onClick={() => {
-              window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+              if (whatsappUrl) window.open(whatsappUrl, "_blank", "noopener,noreferrer");
               onClose();
             }}
             className="studio-modal-primary-button"

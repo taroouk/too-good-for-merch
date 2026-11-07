@@ -9,10 +9,18 @@ export async function removePaidBagItem(orderId: string): Promise<void> {
   try {
     const order = await prisma.order.findUnique({
       where: { id: orderId },
-      select: { userId: true, buildId: true, paymentStatus: true },
+      select: { userId: true, buildId: true, paymentStatus: true, items: { select: { preview: true } } },
     });
-    if (!order?.userId || !order.buildId || order.paymentStatus !== "PAID") return;
-    await prisma.bagItem.deleteMany({ where: { userId: order.userId, buildId: order.buildId } });
+    if (!order?.userId || order.paymentStatus !== "PAID") return;
+    // A bag checkout pays for every item at once: each item records the build it came from.
+    const buildIds = new Set<string>();
+    if (order.buildId) buildIds.add(order.buildId);
+    for (const item of order.items) {
+      const id = (item.preview as { buildId?: unknown } | null)?.buildId;
+      if (typeof id === "string" && id) buildIds.add(id);
+    }
+    if (!buildIds.size) return;
+    await prisma.bagItem.deleteMany({ where: { userId: order.userId, buildId: { in: [...buildIds] } } });
   } catch (error) {
     console.error("[bag] could not clear a paid item", error);
   }

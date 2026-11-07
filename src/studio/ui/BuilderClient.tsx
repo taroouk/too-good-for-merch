@@ -33,9 +33,9 @@ import {
   sidesWithLayers,
   type ArtworkLayer,
 } from "src/studio/artwork-layers";
-import { getPlacementSide } from "src/studio/render/placement-config";
+import { getPlacementBox, getPlacementFrameAspect, getPlacementSide } from "src/studio/render/placement-config";
 import { getEditorPlacementBox } from "src/studio/render/editor-surface";
-import { WHATSAPP_PHONE, WHATSAPP_URL } from "src/lib/whatsapp";
+import { WHATSAPP_CONFIGURED, WHATSAPP_PHONE, WHATSAPP_URL } from "src/lib/whatsapp";
 // transform.ts and placement-css.ts have zero server-only imports (no
 // node:fs, no sharp) -- safe to import directly from a client component.
 // Do not import from the src/studio/render barrel (index.ts) here, since
@@ -60,6 +60,8 @@ import {
   toTemplateOffset,
 } from "src/studio/render/editor-surface";
 import { useMeasuredRefCallback } from "src/studio/ui/useContainerSize";
+import { scanAboveThresholdBBox } from "src/studio/render/alpha-trim";
+import { classifyArtwork, type ArtworkKind } from "src/studio/artwork-kind";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 import { upsertPlacementsInNotes, type PlacementKey } from "src/pricing/placements";
 import CheckoutButton from "src/studio/ui/components/CheckoutButton";
@@ -275,6 +277,19 @@ function resolveMockupColor(color: GarmentColor | null): "BLACK" | "WHITE" {
   return color === "BLACK" ? "BLACK" : "WHITE";
 }
 
+// Feedback 3.3: a failed upload always gets a clear, friendly sentence. The server's own sentences (too large,
+// rate limit, ...) are kept; an empty/masked/technical message, or "content does not match its file type" (a corrupt
+// or renamed file), becomes the standard "couldn't be uploaded" text instead of showing nothing.
+const UPLOAD_FAILED_MESSAGE = "This image couldn't be uploaded. Please try a PNG or JPG.";
+function uploadFailureMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message.trim() : "";
+  if (!message) return UPLOAD_FAILED_MESSAGE;
+  if (/does not match its file type|server components render|digest|unexpected response|failed to fetch/i.test(message)) {
+    return UPLOAD_FAILED_MESSAGE;
+  }
+  return message;
+}
+
 export default function BuilderClient({
   fabricCatalog,
   productCopy,
@@ -319,12 +334,7 @@ export default function BuilderClient({
       )?.assetId ??
       initialLayers[0]?.assetId ??
       draft.primaryAssetId,
-    // Bespoke is a WhatsApp request, not a selectable product: an old
-    // un-quoted CUSTOM draft opens as Fitted so the price always shows.
-    product:
-      draft.product === "CUSTOM" && initialCustomQuoteUsdCents == null
-        ? ("FITTED" as ProductType)
-        : (draft.product ?? ("FITTED" as ProductType)),
+    product: draft.product ?? ("FITTED" as ProductType),
     color: draft.color ?? ("WHITE" as GarmentColor),
     fabric: draft.fabric ?? ("ESSENTIALS_170" as FabricType),
     quantity: draft.quantity ?? 1,
@@ -420,6 +430,7 @@ export default function BuilderClient({
   const [price, setPrice] = useState<PriceResult | null>(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
   const priceCacheRef = useRef(new Map<string, PriceResult>());
+  const pendingFitRef = useRef(false);
   const lastRetryTokenRef = useRef(0);
   const priceRef = useRef<PriceResult | null>(null);
   useEffect(() => {
@@ -515,11 +526,11 @@ export default function BuilderClient({
   const placementCards: Array<{ key: PlacementKey; label: string; image: string }> = [
     { key: "FULL_FRONT", label: "Full Front", image: "/images/placements/full-front.svg" },
     { key: "CENTER_FRONT", label: "Center Front", image: "/images/placements/center-front.svg" },
-    // Left/Right are the WEARER's sides: the wearer's left chest sits on the
-    // right as you look at the front of the shirt. The internal keys name the
-    // side of the picture, so the two are crossed here (feedback 8.2).
-    { key: "RIGHT_CHEST", label: "Left Chest", image: "/images/placements/left-chest.svg" },
-    { key: "LEFT_CHEST", label: "Right Chest", image: "/images/placements/right-chest.svg" },
+    // NOTE (feedback 8.2): whether "Left Chest" should be the wearer's left
+    // (right side of the picture) is awaiting production confirmation, so the
+    // original mapping is kept: LEFT_CHEST draws on the viewer's left.
+    { key: "LEFT_CHEST", label: "Left Chest", image: "/images/placements/left-chest.svg" },
+    { key: "RIGHT_CHEST", label: "Right Chest", image: "/images/placements/right-chest.svg" },
     { key: "FULL_BACK", label: "Full Back", image: "/images/placements/full-back.svg" },
     ...(activePlacement === "CENTER_BACK" ||
     initialLayers.some((layer) => layer.placement === "CENTER_BACK") ||
@@ -669,14 +680,27 @@ export default function BuilderClient({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [fabricOpen]);
 
+  // Everything that can change the price, and nothing else. Size is not in
+  // it (the pricing engine has no size input), and a new-but-equal
+  // placements array does not change it, so neither restarts a lookup.
+  const priceKey = useMemo(
+    () => JSON.stringify([state.product, state.fabric, qty, [...pricingPlacements].sort()]),
+    [pricingPlacements, qty, state.fabric, state.product],
+  );
+
   useEffect(() => {
     let cancelled = false;
+    const [keyProduct, keyFabric, keyQty, keyPlacements] = JSON.parse(priceKey) as [
+      ProductType | null,
+      FabricType | null,
+      number,
+      PlacementKey[],
+    ];
 
     // Prices are cached per (product, fabric, quantity, placements) so
     // switching size or going back to a combination already seen is instant
     // and never shows "Calculating...". Size is not part of the key: it
     // does not affect the price and must never trigger a lookup.
-    const priceKey = JSON.stringify([state.product, state.fabric, qty, [...pricingPlacements].sort()]);
     const cached = priceCacheRef.current.get(priceKey);
     if (pricingRetryToken === lastRetryTokenRef.current && cached) {
       setPrice(cached);
@@ -685,6 +709,8 @@ export default function BuilderClient({
       return;
     }
     lastRetryTokenRef.current = pricingRetryToken;
+    // Moving to or from Bespoke must never leave the other one's message on screen.
+    if (priceRef.current && (priceRef.current.mode !== "standard" || keyProduct === "CUSTOM")) setPrice(null);
 
     async function loadPrice() {
       // Keep showing the last price while a new one loads rather than
@@ -703,10 +729,10 @@ export default function BuilderClient({
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              product: state.product,
-              fabric: state.fabric,
-              quantity: qty,
-              placements: pricingPlacements,
+              product: keyProduct,
+              fabric: keyFabric,
+              quantity: keyQty,
+              placements: keyPlacements,
             }),
           });
         } catch {
@@ -764,7 +790,7 @@ export default function BuilderClient({
       if (!cancelled) setLoadingPrice(false);
     }
 
-    if (state.product && state.fabric) {
+    if (keyProduct && keyFabric) {
       void loadPrice();
     } else {
       setPrice(null);
@@ -774,7 +800,7 @@ export default function BuilderClient({
     return () => {
       cancelled = true;
     };
-  }, [pricingPlacements, qty, state.fabric, state.product, pricingRetryToken]);
+  }, [priceKey, pricingRetryToken]);
 
   // "Add to Bag": saves this build + the chosen size into the customer's
   // bag (see src/actions/bag-actions.ts) instead of jumping straight to
@@ -816,7 +842,7 @@ export default function BuilderClient({
       // it to BuildDraft -- see the schema comment on BagItem.size).
       if (buyNowAfterAuthRef.current) {
         buyNowAfterAuthRef.current = false;
-        router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+        setBuyNowResume(true);
       } else if (isBespokeRequest) router.push(`/bespoke/new?buildId=${buildId}`);
       else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
       else void addToBag();
@@ -862,8 +888,7 @@ export default function BuilderClient({
   // is on screen once, so checkout, the wishlist and product switching all
   // read the same selection the customer sees (previously they saw NULLs).
   useEffect(() => {
-    if (draft.product && draft.product !== "CUSTOM" && draft.color && draft.fabric) return;
-    if (draft.product === "CUSTOM" && initialCustomQuoteUsdCents != null) return;
+    if (draft.product && draft.color && draft.fabric) return;
     save(state);
     // Mount-only: `state` here is the just-initialised defaults.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -941,7 +966,10 @@ export default function BuilderClient({
     if (!options.stage) {
       setUploadName(file.name);
       setArtworkUrl(localUrl);
-      if (!options.keepTransform) setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+      if (!options.keepTransform) {
+        pendingFitRef.current = true;
+        setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
+      }
       discardMockups();
     }
 
@@ -1016,7 +1044,7 @@ export default function BuilderClient({
         // failed replacement doesn't wipe out an already-selected artwork.
         setArtworkUrl((current) => (current === localUrl ? previousArtworkUrl : current));
         setUploadName("");
-        setMockupError(error instanceof Error ? error.message : "Could not upload artwork.");
+        setMockupError(uploadFailureMessage(error));
         URL.revokeObjectURL(localUrl);
       });
     });
@@ -1061,6 +1089,7 @@ export default function BuilderClient({
       placeWhenReadyRef.current = asset.id;
       setUploadName(asset.fileName);
       setArtworkUrl(asset.url);
+      pendingFitRef.current = true;
       setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
       discardMockups();
       return;
@@ -1068,18 +1097,16 @@ export default function BuilderClient({
     void selectAsset(asset);
   }
 
-  // An image that fails to load (a broken upload) must never be shown or kept
-  // in "Your uploads": take it off the shirt and out of the list, and tell the
-  // customer in plain words.
-  const handleBrokenArtwork = useCallback(
+  // An image that fails to load is only treated as a BROKEN upload when the
+  // server definitively says so (the file is gone/forbidden, or its bytes
+  // can't be decoded as an image). A temporary network problem, a 5xx/429
+  // answer or a local preview that was just swapped for the saved copy never
+  // deletes a valid upload -- the image simply retries on the next render.
+  const brokenCheckRef = useRef(new Set<string>());
+  const removeBrokenArtwork = useCallback(
     (url: string) => {
-      const brokenIds: string[] = [];
       setUserAssets((prev) => {
-        const next = prev.filter((asset) => {
-          if (asset.url !== url) return true;
-          brokenIds.push(asset.id);
-          return false;
-        });
+        const next = prev.filter((asset) => asset.url !== url);
         return next.length === prev.length ? prev : next;
       });
       setStaged((current) => (current?.url === url ? null : current));
@@ -1093,6 +1120,38 @@ export default function BuilderClient({
     },
     [artworkUrl],
   );
+  const handleBrokenArtwork = useCallback(
+    (url: string) => {
+      if (url.startsWith("blob:") || brokenCheckRef.current.has(url)) return;
+      if (typeof navigator !== "undefined" && navigator.onLine === false) return;
+      brokenCheckRef.current.add(url);
+      void (async () => {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (res.status === 408 || res.status === 429 || res.status >= 500) return; // temporary
+          if (!res.ok) {
+            removeBrokenArtwork(url);
+            return;
+          }
+          // The file is there: only remove it if it really is not an image.
+          const objectUrl = URL.createObjectURL(await res.blob());
+          const decodes = await new Promise<boolean>((resolve) => {
+            const probe = new Image();
+            probe.onload = () => resolve(true);
+            probe.onerror = () => resolve(false);
+            probe.src = objectUrl;
+          });
+          URL.revokeObjectURL(objectUrl);
+          if (!decodes) removeBrokenArtwork(url);
+        } catch {
+          // Network failure: keep the upload.
+        } finally {
+          brokenCheckRef.current.delete(url);
+        }
+      })();
+    },
+    [removeBrokenArtwork],
+  );
 
   // The floating image never outlives the popup.
   useEffect(() => {
@@ -1103,6 +1162,7 @@ export default function BuilderClient({
     if (!canAddArtworkToActivePlacement()) return;
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
+    pendingFitRef.current = true;
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
     discardMockups();
 
@@ -1176,6 +1236,7 @@ export default function BuilderClient({
   }
 
   function removeSelectedArtwork() {
+    pendingFitRef.current = false;
     setArtworkUrl(null);
     setUploadName("");
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
@@ -1183,12 +1244,14 @@ export default function BuilderClient({
     save({ ...state, primaryAssetId: null });
   }
 
-  function updateArtworkTransform(next: ArtworkTransform) {
+  function updateArtworkTransform(next: ArtworkTransform, aspectOverride?: number) {
     const product = state.product ?? "FITTED";
     const color = state.color ?? "WHITE";
     const bounds = getEffectiveScaleBounds(product, color, activePlacement);
     const scale = clampArtworkScale(next.scale, bounds);
-    const dragBounds = getDragBounds(product, color, activePlacement, scale);
+    // The artwork's real shape: it can be dragged anywhere inside its frame
+    // (and, when zoomed past the frame, slid without uncovering it).
+    const dragBounds = getDragBounds(product, color, activePlacement, scale, aspectOverride ?? contentAspect ?? undefined);
     const { x, y } = clampArtworkPosition(next.x, next.y, dragBounds);
     setArtworkTransform({
       // x/y are fractions of the preview container's own width (see
@@ -1326,7 +1389,20 @@ export default function BuilderClient({
   // size and quantity (no trip through the bag).
   const buyNowAfterAuthRef = useRef(false);
 
-  function buyNow() {
+  const [buyNowPending, setBuyNowPending] = useState(false);
+  // Set by the sign-in flow when the customer pressed Buy Now while signed
+  // out: once the session exists, Buy Now runs again (with its full saves).
+  const [buyNowResume, setBuyNowResume] = useState(false);
+  useEffect(() => {
+    if (!buyNowResume || status !== "authenticated") return;
+    setBuyNowResume(false);
+    void buyNow();
+    // buyNow reads the latest state through the render it was created in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [buyNowResume, status]);
+
+  async function buyNow() {
+    if (buyNowPending) return;
     if (!state.product || !state.color || !state.fabric) {
       void alertDialog({ title: "Complete your selection", message: "Choose a product, colour and fabric before continuing." });
       return;
@@ -1345,7 +1421,36 @@ export default function BuilderClient({
       setShowAuthModal(true);
       return;
     }
-    router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+
+    // Checkout reads the saved draft, so everything it needs must be durably
+    // saved first -- not waiting on the debounced background saves.
+    setBuyNowPending(true);
+    try {
+      const fd = new FormData();
+      fd.set("product", state.product ?? "");
+      fd.set("color", state.color ?? "");
+      fd.set("fabric", state.fabric ?? "");
+      fd.set("quantity", String(state.quantity ?? 1));
+      fd.set("customNotes", state.customNotes ?? "");
+      fd.set("primaryAssetId", state.primaryAssetId ?? "");
+      await actionUpdateDraft(buildId, fd);
+      if (allLayers.length) {
+        await actionSaveArtworkLayers(
+          buildId,
+          allLayers.map(({ placement, assetId, x, y, scale, rotation }) => ({ placement, assetId, x, y, scale, rotation })),
+          state.product,
+        );
+        // The mockup of this exact design must exist (and be current) before
+        // paying; a failed generation stops here with the retry message.
+        if (sidesNeedingGeneration.length && !(await runPreviewGeneration(allLayers))) return;
+      }
+      router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+    } catch (error) {
+      console.error("[studio] Buy Now could not save the design", error);
+      setMockupError(PREVIEW_FAILED_MESSAGE);
+    } finally {
+      setBuyNowPending(false);
+    }
   }
 
   function openCustomRequestPopup() {
@@ -1366,6 +1471,7 @@ export default function BuilderClient({
   const designDecidedRef = useRef(initialLayers.length === 0 || openDesignerOnLoad || editingBagItem);
 
   function startFreshDesign() {
+    pendingFitRef.current = false;
     setOtherLayers([]);
     setArtworkUrl(null);
     setUploadName("");
@@ -1449,7 +1555,7 @@ export default function BuilderClient({
         const isBespokeRequest = state.product === "CUSTOM" && customQuoteUsdCents == null;
         if (buyNowAfterAuthRef.current) {
           buyNowAfterAuthRef.current = false;
-          router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
+          setBuyNowResume(true);
         } else if (isBespokeRequest) continueCustomRequest();
         else if (state.product === "CUSTOM") router.push(`/checkout?buildId=${buildId}&size=${encodeURIComponent(selectedSize)}`);
         else {
@@ -1467,22 +1573,30 @@ export default function BuilderClient({
     }
   }
 
-  // Bespoke is quoted individually over WhatsApp. The message carries what
-  // the customer has picked so far; the selected product is left untouched
+  // Bespoke is quoted individually over WhatsApp; the selected product is left untouched
   // (Bespoke has no price, so it must never replace a Fitted/Oversized pick).
   function bespokeWhatsAppUrl() {
-    const colour = state.color === "BLACK" ? "Black" : "White";
-    const fabricName = currentFabric.name.charAt(0).toUpperCase() + currentFabric.name.slice(1).toLowerCase();
-    const fabricLabel = `${fabricName} ${currentFabric.gsm.replace(/\s*Cotton$/i, "")}`.trim();
-    const message =
-      `Hi TGFM, I'd like a quote for a bespoke piece. Colour: ${colour}. ` +
-      `Fabric: ${fabricLabel}. Size: ${selectedSize}. Quantity: ${qty}.`;
+    // Decision (8 Nov 2026): a short quote request only. The product, colour, fabric, size and quantity are
+    // deliberately NOT part of the text.
+    const message = "Hi TGFM, I'd like a quote for a bespoke piece";
     return `https://wa.me/${WHATSAPP_PHONE}?text=${encodeURIComponent(message)}`;
   }
 
   function continueCustomRequest() {
     setShowCustomPopup(false);
+    if (!WHATSAPP_CONFIGURED) {
+      void alertDialog({
+        title: "WhatsApp isn't available right now",
+        message: "Please contact us by email and we'll come back with a quote.",
+      });
+      return;
+    }
+    // Opened first, straight from the click, so the browser allows the new tab.
     window.open(bespokeWhatsAppUrl(), "_blank", "noopener,noreferrer");
+    // Then Bespoke becomes the selection: the page shows the quote message and
+    // REQUEST A QUOTE (no price, no VAT line), and the button, the summary and
+    // the price area all say Bespoke.
+    if (state.product !== "CUSTOM") void switchProduct("CUSTOM" as ProductType);
   }
 
   // Single-select: picking a placement replaces the previous one, and
@@ -1492,6 +1606,7 @@ export default function BuilderClient({
   // loaded into the editor state. Nothing is lost either way.
   function switchPlacement(key: PlacementKey) {
     if (key === activePlacement) return;
+    pendingFitRef.current = false;
     const target = otherLayers.find((layer) => layer.placement === key) ?? null;
     setOtherLayers((prev) => {
       const rest = prev.filter((layer) => layer.placement !== key);
@@ -1782,15 +1897,15 @@ export default function BuilderClient({
   // back are generated separately) and stores the saved-artwork image used by
   // Wishlist/Bespoke/Admin (actionSaveArtwork, from the FRONT AI mockup -- a
   // back-only design simply has none). Also what "Try again" runs.
-  async function runPreviewGeneration(layers: EditorLayer[]) {
-    if (mockupPending) return;
+  async function runPreviewGeneration(layers: EditorLayer[]): Promise<boolean> {
+    if (mockupPending) return false;
     if (sidesNeedingGeneration.length) {
       setMockupPending(true);
       setMockupError(null);
       try {
         // Front and back are independent, so they generate at the same time.
         const results = await Promise.all(sidesNeedingGeneration.map((side) => generateSideMockups(side, layers)));
-        if (results.some((ok) => !ok)) return;
+        if (results.some((ok) => !ok)) return false;
       } finally {
         setMockupPending(false);
       }
@@ -1811,7 +1926,9 @@ export default function BuilderClient({
     } catch (error) {
       console.error("[studio] Could not save the artwork preview", error);
       setMockupError(PREVIEW_FAILED_MESSAGE);
+      return false;
     }
+    return true;
   }
 
   async function handleAddToWishlist() {
@@ -1835,15 +1952,17 @@ export default function BuilderClient({
     }
   }
 
-  const priceText = loadingPrice
-    ? "Calculating..."
-    : state.product === "CUSTOM"
+  // Bespoke never waits on a price lookup; Fitted/Oversized always show a price.
+  const priceText =
+    state.product === "CUSTOM"
       ? customQuoteUsdCents != null
         ? formatDisplayPrice(customQuoteUsdCents / 100, storeDisplay)
         : "Custom garments require a tailored quote."
-      : price?.mode === "standard"
-        ? formatDisplayPrice(price.total, storeDisplay)
-        : (priceError ?? price?.message ?? "Pricing unavailable");
+      : loadingPrice
+        ? "Calculating..."
+        : price?.mode === "standard"
+          ? formatDisplayPrice(price.total, storeDisplay)
+          : (priceError ?? price?.message ?? "Pricing unavailable");
 
   // Shown in PriceCard's secondary-line slot only once quoted -- surfaces
   // the admin's note (if any) and always warns that further edits clear
@@ -1891,6 +2010,102 @@ export default function BuilderClient({
   // identity comparisons, which must keep comparing against the real,
   // untrimmed asset URL.
   const bespokeOverlayArtworkUrl = useTrimmedArtworkUrl(artworkUrl);
+
+  // Whether the artwork on the shirt is a transparent PNG or an opaque picture
+  // (and whether it has a white background): shown to the customer under the
+  // artwork tools. Read-only -- the image itself is never altered.
+  const [artworkKind, setArtworkKind] = useState<ArtworkKind | null>(null);
+  useEffect(() => {
+    if (!artworkUrl) {
+      setArtworkKind(null);
+      return;
+    }
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (cancelled || probe.naturalWidth <= 0 || probe.naturalHeight <= 0) return;
+      try {
+        // a small copy is enough to read the border and the transparency share
+        const scale = Math.min(1, 256 / Math.max(probe.naturalWidth, probe.naturalHeight));
+        const w = Math.max(1, Math.round(probe.naturalWidth * scale));
+        const h = Math.max(1, Math.round(probe.naturalHeight * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.drawImage(probe, 0, 0, w, h);
+        setArtworkKind(classifyArtwork(ctx.getImageData(0, 0, w, h).data, w, h, 4));
+      } catch {
+        setArtworkKind(null); // unreadable canvas: no notice, nothing else changes
+      }
+    };
+    probe.src = artworkUrl;
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkUrl]);
+
+  // A newly placed artwork starts FITTED inside its print frame and centred
+  // in it, so nothing is cut off until the customer zooms in on purpose. The
+  // frame has a fixed shape (square, or wide for Center Front); an artwork
+  // taller than that would otherwise overflow it at the default size.
+  // Only new placements are fitted -- saved designs keep their transform.
+  const [contentAspect, setContentAspect] = useState<number | null>(null);
+  useEffect(() => {
+    const url = artworkUrl;
+    if (!url) {
+      setContentAspect(null);
+      return;
+    }
+    let cancelled = false;
+    const probe = new Image();
+    probe.onload = () => {
+      if (cancelled || probe.naturalWidth <= 0 || probe.naturalHeight <= 0) return;
+      const frameAspect = getPlacementFrameAspect(activePlacement);
+      // The visible content's shape (the same transparent-edge trim the
+      // preview and the server apply), measured on this exact image.
+      let contentW = probe.naturalWidth;
+      let contentH = probe.naturalHeight;
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = probe.naturalWidth;
+        canvas.height = probe.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(probe, 0, 0);
+          const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const { minX, minY, maxX, maxY } = scanAboveThresholdBBox(data, width, height, 4, false);
+          if (maxX >= minX && maxY >= minY) {
+            contentW = maxX - minX + 1;
+            contentH = maxY - minY + 1;
+          }
+        }
+      } catch {
+        // Unreadable canvas: use the full image shape.
+      }
+      const artworkAspect = contentH / contentW;
+      setContentAspect(artworkAspect);
+      if (!pendingFitRef.current) return; // a saved / already placed artwork keeps its transform
+      pendingFitRef.current = false;
+      const box = getPlacementBox(state.product ?? "FITTED", state.color ?? "WHITE", activePlacement);
+      updateArtworkTransform(
+        {
+          x: 0,
+          y: (box.widthPct * (frameAspect - artworkAspect)) / 2,
+          scale: Math.min(1, frameAspect / artworkAspect),
+          rotation: 0,
+        },
+        artworkAspect,
+      );
+    };
+    probe.src = url;
+    return () => {
+      cancelled = true;
+    };
+    // Runs when the artwork image changes; the rest is read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [artworkUrl]);
 
   // The popup's canvas is the FLAT tee, not the model photo, so the
   // canonical template-space placement box has to be expressed in the flat
@@ -1940,7 +2155,8 @@ export default function BuilderClient({
   const bespokeOtherLayers = useMemo(() => {
     const side = getPlacementSide(activePlacement);
     return otherLayers
-      .filter((layer) => getPlacementSide(layer.placement) === side)
+      // never draw a leftover copy of the artwork being edited (same placement)
+      .filter((layer) => getPlacementSide(layer.placement) === side && layer.placement !== activePlacement)
       .map((layer) => {
         const style = getEditorPlacementStyle(state.product, state.color, layer.placement);
         const base = typeof style.transform === "string" ? style.transform : "";
@@ -2113,6 +2329,7 @@ export default function BuilderClient({
             bespokeShirtSrc={bespokeShirtSrc}
             artworkUrl={artworkUrl}
             overlayArtworkUrl={bespokeOverlayArtworkUrl}
+            artworkKind={artworkKind}
             product={state.product}
             color={state.color}
             bespokeArtworkStyle={bespokeArtworkStyle}
@@ -2363,9 +2580,9 @@ export default function BuilderClient({
                   className="studio-build-button"
                   style={{ marginTop: 12 }}
                   onClick={buyNow}
-                  disabled={!canCheckout || savePending || bagPending || mockupPending}
+                  disabled={!canCheckout || savePending || bagPending || mockupPending || buyNowPending}
                 >
-                  Buy Now
+                  {buyNowPending ? "Please wait…" : "Buy Now"}
                 </button>
                 {wishlistError ? (
                   <p className="mt-2 text-xs text-red-600">{wishlistError}</p>
@@ -2397,14 +2614,16 @@ export default function BuilderClient({
                   <span> SIZE GUIDE</span>
                 </div>
 
-                <a
-                  href={WHATSAPP_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="studio-live-assistance"
-                >
-                  Live Assistance
-                </a>
+                {WHATSAPP_CONFIGURED ? (
+                  <a
+                    href={WHATSAPP_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="studio-live-assistance"
+                  >
+                    Live Assistance
+                  </a>
+                ) : null}
               </div>
             </section>
           </div>

@@ -40,6 +40,7 @@
     "../src/lib/catalog-shared.ts",
     "../src/lib/legal-format.ts",
     "../src/lib/bag.ts",
+    "../src/lib/mockup-preview.ts",
     "../src/lib/admin/expected-migration.ts",
     "../src/components/site/nav-model.ts",
     "../src/lib/orders/status-flow.ts",

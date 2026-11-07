@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { auth } from "src/auth";
 import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
-import { WHATSAPP_URL } from "src/lib/contact";
+import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
+import { WHATSAPP_CONFIGURED, WHATSAPP_URL } from "src/lib/contact";
 import {
   formatShippingAddress,
   orderArtworkLayers,
@@ -57,8 +58,10 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
     select: { createdAt: true },
   });
 
-  const status = customerOrderStatus(order);
-  const timeline = orderTimeline(order);
+  const underReview = (await duplicateReviewIdsFor(order.userId, [order])).has(order.id);
+  const shown = { ...order, paymentUnderReview: underReview };
+  const status = customerOrderStatus(shown);
+  const timeline = orderTimeline(shown);
   const needsPayment = order.status !== "CANCELLED" && ["UNPAID", "PENDING", "FAILED"].includes(order.paymentStatus);
 
   // Item money is canonical USD on the current pricing model but the customer
@@ -120,6 +123,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
               orderId={order.id}
               initialStatus={order.paymentStatus}
               retryEnabled
+              underReview={underReview}
               latestAttemptAt={latestAttempt?.createdAt.toISOString() ?? null}
             />
           </section>
@@ -236,7 +240,7 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
             <Card title="Need help?" className="print:hidden">
               <p className="text-sm text-black/60">Questions about this order? Mention <strong>{order.orderNumber}</strong> and we&apos;ll sort it out.</p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <a href={WHATSAPP_URL} target="_blank" rel="noreferrer noopener" className="rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white">WhatsApp us</a>
+                {WHATSAPP_CONFIGURED ? <a href={WHATSAPP_URL} target="_blank" rel="noreferrer noopener" className="rounded-xl bg-black px-4 py-2.5 text-sm font-semibold text-white">WhatsApp us</a> : null}
                 <Link href="/contact" className="rounded-xl border border-black/15 px-4 py-2.5 text-sm font-semibold text-black/70 hover:border-black hover:text-black">Contact</Link>
               </div>
             </Card>

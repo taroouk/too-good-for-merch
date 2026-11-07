@@ -110,6 +110,16 @@ export type FabricShadingOptions = {
   // cloth's texture reads THROUGH the print the way it does in real DTG.
   // 0 disables it.
   textureGain: number;
+  // "zscore" (the original model): modulation is the garment's deviation in
+  // units of its own standard deviation, so even a shallow fold on a bright
+  // garment can drive the full `amplitude`. "relative": modulation is the
+  // garment's deviation relative to its mean brightness (never below
+  // `relativeFloor`), so the print's fold depth follows the cloth's own fold
+  // depth -- a 10% shadow on white cloth darkens the print by ~10%, not 26%.
+  model?: "zscore" | "relative";
+  relativeFloor?: number;
+  // Scale on the relative deviation (1 = exactly the cloth's own fold depth).
+  relativeGain?: number;
 };
 
 // Tuned by rendering the real garment photos in public/images at several
@@ -127,6 +137,28 @@ export type FabricShadingOptions = {
 // minStdDev 5 is just above the measured noise floor of these photos'
 // flattest chest areas, so flat fabric stays flat.
 export const DEFAULT_FABRIC_SHADING: FabricShadingOptions = {
+  strength: 1,
+  // "relative" model (see FabricShadingOptions.model): the print's fold depth
+  // follows the cloth's own. The original z-score model, kept below as
+  // ZSCORE_FABRIC_SHADING, drove 2.5-4.8x the cloth's fold depth and ~3x its
+  // fine grain on white garments (measured in assets-work/shading-review),
+  // which read as blotches and ripples in white and flat-colour areas.
+  model: "relative",
+  relativeFloor: 100,
+  relativeGain: 1.5,
+  amplitude: 0.2,
+  contrastClamp: 2.5,
+  minStdDev: 5,
+  minMultiplier: 0.6,
+  maxMultiplier: 1.4,
+  highlightLift: 0.03,
+  inkOpacity: 0.96,
+  edgeSoftenSigma: 0.45,
+  textureGain: 0.6,
+};
+
+// The previous model and values, for comparison and tests.
+export const ZSCORE_FABRIC_SHADING: FabricShadingOptions = {
   strength: 1,
   amplitude: 0.26,
   contrastClamp: 2.5,
@@ -171,6 +203,11 @@ export function shadingMultiplier(
   // How far this pixel sits from the region's mean, measured in the
   // region's OWN units of variation -- then saturated, so the modulation
   // is bounded no matter how extreme the sample.
+  if (options.model === "relative") {
+    const rel = ((luminance - meanLuminance) / Math.max(meanLuminance, options.relativeFloor ?? 100)) * (options.relativeGain ?? 1);
+    const sat = Math.min(options.amplitude, Math.max(-options.amplitude, rel));
+    return 1 + Math.min(options.maxMultiplier - 1, Math.max(options.minMultiplier - 1, sat)) * options.strength;
+  }
   const spread = Math.max(stdDev, options.minStdDev);
   const normalized = (luminance - meanLuminance) / spread;
   const saturated = Math.min(options.contrastClamp, Math.max(-options.contrastClamp, normalized));
@@ -243,11 +280,20 @@ export async function applyFabricShading(
   const height = art.info.height;
   const lumRaw = Buffer.alloc(pixels);
   for (let i = 0; i < pixels; i++) lumRaw[i] = lum.data[i * lum.info.channels];
-  let smooth: Buffer;
+  // The fold-scale blur is kept in FLOAT. As 8-bit it moves in whole
+  // luminance steps, and a steep shading curve turns each step into a visible
+  // 4-5 level jump across the print -- contour rings and blotches in flat
+  // areas (measured: print grain ~3x the cloth's own). Float steps are
+  // continuous, so flat colours stay flat.
+  let smooth: Float32Array;
   let mid: Buffer;
   try {
     const foldSigma = Math.max(1.5, Math.min(width, height) / 28);
-    smooth = await sharp(lumRaw, { raw: { width, height, channels: 1 } }).blur(foldSigma).extractChannel(0).raw().toBuffer();
+    const blurred = await sharp(lumRaw, { raw: { width, height, channels: 1 } })
+      .blur(foldSigma)
+      .raw({ depth: "float" })
+      .toBuffer();
+    smooth = new Float32Array(blurred.buffer.slice(blurred.byteOffset, blurred.byteOffset + pixels * 4));
     mid = await sharp(lumRaw, { raw: { width, height, channels: 1 } }).blur(1.2).extractChannel(0).raw().toBuffer();
   } catch {
     throw new RendererError("Could not read the garment surface under the artwork.", 500);
@@ -271,22 +317,11 @@ export async function applyFabricShading(
   }
   const stdDev = Math.sqrt(variance / pixels);
 
-  // Precompute the multiplier for all 256 possible luminances instead of
-  // recomputing the same curve per pixel -- identical results, and it
-  // keeps the inner loop to a table lookup on a buffer that can run to a
-  // few hundred thousand pixels.
-  const curve = new Float64Array(256);
-  const lift = new Float64Array(256);
-  for (let l = 0; l < 256; l++) {
-    curve[l] = shadingMultiplier(l, mean, stdDev, options);
-    lift[l] = highlightLiftLevels(l, mean, stdDev, options);
-  }
-
   const shaded = Buffer.alloc(pixels * 4);
   for (let i = 0; i < pixels; i++) {
     const luminance = smooth[i];
-    const multiplier = curve[luminance];
-    const sheen = lift[luminance];
+    const multiplier = shadingMultiplier(luminance, mean, stdDev, options);
+    const sheen = highlightLiftLevels(luminance, mean, stdDev, options);
     const weave = (lumRaw[i] - mid[i]) * options.textureGain;
     const src = i * artChannels;
     const dst = i * 4;

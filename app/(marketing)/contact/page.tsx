@@ -3,6 +3,7 @@ import {
   EMAIL_URL,
   INSTAGRAM_URL,
   TIKTOK_URL,
+  WHATSAPP_CONFIGURED,
   WHATSAPP_PHONE,
   WHATSAPP_URL,
 } from "src/lib/contact";
@@ -20,7 +21,7 @@ export default function ContactPage() {
           <div className="contactLinks">
             <a href={INSTAGRAM_URL}>Instagram</a>
             <a href={TIKTOK_URL}>TikTok</a>
-            <a href={WHATSAPP_URL}>WhatsApp {WHATSAPP_PHONE}</a>
+            {WHATSAPP_CONFIGURED ? <a href={WHATSAPP_URL}>WhatsApp {WHATSAPP_PHONE}</a> : null}
             <a href={EMAIL_URL}>{CONTACT_EMAIL}</a>
             <a href="/studio">OPEN STUDIO</a>
           </div>

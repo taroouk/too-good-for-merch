@@ -1,15 +1,16 @@
+import { unsupportedCurrencyMessage } from "src/lib/orders/currency";
 import { prisma } from "src/lib/prisma";
 import AdminToast from "src/components/admin/AdminToast";
 import ExchangeRateForm from "src/components/admin/ExchangeRateForm";
-import { updateDisplayCurrencyAction, updateStoreSettingsAction } from "src/actions/admin-system-actions";
-import { DISPLAY_CURRENCIES, effectiveDisplay, formatDisplayPrice } from "src/pricing/display";
+import { updateStoreSettingsAction } from "src/actions/admin-system-actions";
+import { effectiveDisplay, formatDisplayPrice } from "src/pricing/display";
 import { PRICING_CURRENCY } from "src/pricing/engine";
 import { requireAdmin } from "src/lib/admin/auth";
 import { getPaymobHealth } from "src/lib/admin/paymob-health";
 import PageHeader from "src/components/admin/ui/PageHeader";
 import Card from "src/components/admin/ui/Card";
 import Badge from "src/components/admin/ui/Badge";
-import { FieldLabel, Select } from "src/components/admin/ui/Input";
+import { FieldLabel } from "src/components/admin/ui/Input";
 import { buttonClass } from "src/components/admin/ui/Button";
 
 // Paymob's current merchant integration is EGP-only (see
@@ -38,6 +39,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const paymobHealth = getPaymobHealth();
   const storeName = settings?.storeName ?? "Too Good For Merch";
   const currencyCode = settings?.currency ?? process.env.STORE_CURRENCY ?? "EGP";
+  // Only EGP is supported; any other stored value is ignored by payments but is flagged here so nobody believes it applies.
+  const currencyProblems = [
+    unsupportedCurrencyMessage("The stored payment currency", settings?.currency),
+    unsupportedCurrencyMessage("STORE_CURRENCY", process.env.STORE_CURRENCY),
+  ].filter((problem): problem is string => Boolean(problem));
   const taxRate = (settings?.taxRateBps ?? 0) / 100;
   const shipping = (settings?.shippingCents ?? 0) / 100;
 
@@ -68,9 +74,6 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     })
     .filter((entry) => entry.from !== entry.to)
     .slice(0, 8);
-  const selectedDisplay = DISPLAY_CURRENCIES.includes((settings?.displayCurrency ?? "USD") as (typeof DISPLAY_CURRENCIES)[number])
-    ? (settings?.displayCurrency ?? "USD")
-    : "USD";
   const activeDisplay = effectiveDisplay(settings?.displayCurrency, settings?.usdToEgpRate);
   const rateLastSetBy = recentSettingsAudits.find((log) => {
     const metadata = log.metadata as { usdToEgpRate?: number } | null;
@@ -96,6 +99,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <p className="mt-1 text-xs leading-5 text-admin-faint">Paymob is currently only provisioned for {PAYMENT_CURRENCY}, so every checkout converts to it below.</p>
             </div>
           </div>
+          {currencyProblems.length ? (
+            <div role="alert" className="mt-4 rounded-xl bg-amber-50 p-4 text-sm text-amber-900">
+              {currencyProblems.map((problem) => (
+                <p key={problem}>{problem} Please set the payment currency code below to EGP.</p>
+              ))}
+            </div>
+          ) : null}
           <div className="mt-5 border-t border-admin-border pt-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-admin-faint">Today&apos;s active rate</p>
             {settings?.usdToEgpRate != null ? (
@@ -121,24 +131,14 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </div>
         </Card>
 
-        <Card className="mt-6" title="Currency customers see" subtitle="What prices look like in the builder, bag and bespoke quotes. Orders are still recorded in USD and paid in EGP.">
-          <form action={updateDisplayCurrencyAction} className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-end">
-            <FieldLabel label="Display currency">
-              <Select name="displayCurrency" defaultValue={selectedDisplay}>
-                {DISPLAY_CURRENCIES.map((code) => (
-                  <option key={code} value={code}>{code === "USD" ? "USD — US dollar" : "EGP — Egyptian pound"}</option>
-                ))}
-              </Select>
-            </FieldLabel>
-            <button className={buttonClass()}>Apply</button>
-          </form>
-          <div className="mt-4 rounded-xl bg-admin-canvas p-4 text-xs leading-5 text-admin-muted">
+        <Card className="mt-6" title="Currency customers see" subtitle="Customers always see prices in Egyptian pounds, as whole numbers. Orders are still recorded in USD and paid in EGP.">
+          <div className="rounded-xl bg-admin-canvas p-4 text-xs leading-5 text-admin-muted">
             <p>
               Right now customers see: <strong className="text-admin-ink">{activeDisplay.currency}</strong>
-              {selectedDisplay === "EGP" && activeDisplay.currency === "USD" ? " (EGP is selected but no exchange rate is set, so USD is shown)" : ""}.
+              {activeDisplay.currency === "USD" ? " (no exchange rate is set yet, so USD is shown until one is)" : ""}.
             </p>
             <p className="mt-1">Example — a {formatDisplayPrice(9.54, { currency: "USD", rate: 1 })} T-shirt appears as <strong className="text-admin-ink">{formatDisplayPrice(9.54, activeDisplay)}</strong>.</p>
-            <p className="mt-1">EGP prices are USD price × the exchange rate above, so they match what Paymob charges.</p>
+            <p className="mt-1">EGP prices are the USD price × the exchange rate above, rounded to a whole pound, so they match what Paymob charges. A fixed EGP price list will replace this conversion once it is provided.</p>
           </div>
         </Card>
 

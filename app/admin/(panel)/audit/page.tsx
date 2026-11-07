@@ -21,7 +21,7 @@ function actionLabel(action: string) {
 
 function actionTone(action: string): BadgeTone {
   if (/DELETED|BLOCKED|DEMOTED|CLEARED|FAILED/.test(action) && !/UNBLOCKED/.test(action)) return "danger";
-  if (/PROMOTED|SETTINGS|PRICING|QUOTE|REGENERATED/.test(action)) return "warning";
+  if (/PROMOTED|SETTINGS|PRICING|QUOTE|REGENERATED|DUPLICATE/.test(action)) return "warning";
   if (/STATUS/.test(action)) return "info";
   return "neutral";
 }

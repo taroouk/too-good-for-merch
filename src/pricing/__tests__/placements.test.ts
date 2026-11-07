@@ -67,7 +67,7 @@ export async function runAll() {
       assert.deepEqual([...CUSTOMER_PLACEMENTS], ["FULL_FRONT", "CENTER_FRONT", "LEFT_CHEST", "RIGHT_CHEST", "FULL_BACK"]);
       for (const key of CUSTOMER_PLACEMENTS) assert.equal((PLACEMENTS as readonly string[]).includes(key), true);
       assert.equal(customerPlacementLabel("FULL_BACK"), "Back");
-      assert.equal(customerPlacementLabel("LEFT_CHEST"), "Right Chest");
+      assert.equal(customerPlacementLabel("LEFT_CHEST"), "Left Chest");
     },
   });
 }

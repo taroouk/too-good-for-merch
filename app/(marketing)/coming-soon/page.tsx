@@ -1,4 +1,4 @@
-import { CONTACT_EMAIL, EMAIL_URL, WHATSAPP_URL } from "src/lib/contact";
+import { CONTACT_EMAIL, EMAIL_URL, WHATSAPP_CONFIGURED, WHATSAPP_URL } from "src/lib/contact";
 
 export default function ComingSoonPage() {
   return (
@@ -20,7 +20,7 @@ export default function ComingSoonPage() {
           <h1>TOO GOOD FOR MERCH</h1>
           <div>
             <a href="/studio">OPEN STUDIO</a>
-            <a href={WHATSAPP_URL}>WhatsApp</a>
+            {WHATSAPP_CONFIGURED ? <a href={WHATSAPP_URL}>WhatsApp</a> : null}
             <a href={EMAIL_URL}>{CONTACT_EMAIL}</a>
           </div>
         </div>

@@ -1,3 +1,5 @@
+import { adminReviewNotice, DUPLICATE_DESIGN_ACTION } from "src/lib/orders/duplicate-review";
+import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
 import DetailsPopover from "src/components/admin/ui/DetailsPopover";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -130,39 +132,68 @@ export default async function AdminOrderDetailsPage({
   // See src/lib/orders/display.ts for the reasoning behind these two.
   const isNewOrder = isNewPricingModel(order);
   const itemCurrency = itemDisplayCurrency(order);
-  // P1-8: prefer the purchase-time mockup snapshot on the first item's
-  // preview over the live (mutable) BuildDraft pointers.
-  const { printMockupId, aiMockupId, backPrintMockupId, backAiMockupId } = resolveOrderMockupIds(
-    order.items[0]?.preview,
-    order.build?.draft,
-  );
-  // Multi-artwork orders: every artwork with its placement and position, as
-  // frozen at checkout (what production prints).
-  const printLayers = orderArtworkLayers(order.items[0]?.preview);
-  const printLayerAssets = printLayers.length
+  // P1-8: prefer the purchase-time mockup snapshot on each item's preview over the live (mutable) BuildDraft
+  // pointers. A bag checkout puts several items on one order, so production sees every item's artworks and mockups.
+  const itemProduction = order.items.map((item, index) => {
+    const ids = resolveOrderMockupIds(item.preview, index === 0 ? order.build?.draft : null);
+    return {
+      key: item.id,
+      heading: order.items.length > 1 ? `Item ${index + 1}: ${item.quantity} × ${item.product.toLowerCase()} · ${item.color.toLowerCase()}` : null,
+      // Multi-artwork orders: every artwork with its placement and position, as frozen at checkout.
+      layers: orderArtworkLayers(item.preview),
+      mockupCards: [
+        { id: ids.printMockupId, title: "Print mockup — front", note: "Deterministic compositor output, used for production." },
+        { id: ids.backPrintMockupId, title: "Print mockup — back", note: "Deterministic compositor output, used for production." },
+        { id: ids.aiMockupId, title: "AI mockup — front", note: "AI-enhanced preview shown to the customer." },
+        { id: ids.backAiMockupId, title: "AI mockup — back", note: "AI-enhanced preview shown to the customer." },
+      ].filter((card): card is { id: string; title: string; note: string } => Boolean(card.id)),
+    };
+  });
+  const allLayerAssetIds = [...new Set(itemProduction.flatMap((entry) => entry.layers.map((layer) => layer.assetId)))];
+  const printLayerAssets = allLayerAssetIds.length
     ? await prisma.asset.findMany({
-        where: { id: { in: printLayers.map((layer) => layer.assetId) } },
+        where: { id: { in: allLayerAssetIds } },
         select: { id: true, url: true, fileName: true },
       })
     : [];
   const printLayerAssetById = new Map(printLayerAssets.map((asset) => [asset.id, asset]));
-  const mockupCards = [
-    { id: printMockupId, title: "Print mockup — front", note: "Deterministic compositor output, used for production." },
-    { id: backPrintMockupId, title: "Print mockup — back", note: "Deterministic compositor output, used for production." },
-    { id: aiMockupId, title: "AI mockup — front", note: "AI-enhanced preview shown to the customer." },
-    { id: backAiMockupId, title: "AI mockup — back", note: "AI-enhanced preview shown to the customer." },
-  ].filter((card): card is { id: string; title: string; note: string } => Boolean(card.id));
   // P3-21d: a payment-currency breakdown that reconciles exactly, plus the
   // canonical USD tax/shipping snapshot reported alongside it (never summed
   // into it -- see src/lib/orders/display.ts).
   const breakdown = orderPaymentBreakdown(order);
-  const usdSurcharges = orderUsdSurcharges(order.items[0]?.preview);
+  // Independent of the (last 50) audit list shown below: the order's own duplicate-payment entry is looked up directly, and the
+  // payment-facts rule is used as a second source, so later audit entries can never hide the warning.
+  const [duplicateEntry, duplicateDerived] = await Promise.all([
+    prisma.adminAuditLog.findFirst({ where: { orderId: order.id, action: DUPLICATE_DESIGN_ACTION }, orderBy: { createdAt: "desc" }, select: { metadata: true } }),
+    duplicateReviewIdsFor(order.userId, [order]).then((ids) => ids.has(order.id)),
+  ]);
+  const duplicateNotice = adminReviewNotice(order, duplicateEntry, duplicateDerived);
+  const usdSurcharges = orderUsdSurcharges(order.items[0]?.preview); // order-level tax/shipping live on the first item
 
   return (
     <main className="px-4 py-10">
       <AdminToast message={query.notice} />
       <div className="mx-auto max-w-7xl">
         <Breadcrumbs items={[{ label: "Orders", href: "/admin/orders" }, { label: order.orderNumber }]} />
+        {duplicateNotice ? (
+          <div role="alert" className={`mt-5 rounded-2xl border p-5 text-sm ${duplicateNotice.unresolved ? "border-amber-300 bg-amber-50 text-amber-900" : "border-black/10 bg-white text-admin-ink"}`}>
+            <p className="font-semibold">
+              {duplicateNotice.unresolved ? "Possible duplicate payment: do not produce before review." : "A duplicate design payment was flagged on this order (kept as a record)."}
+            </p>
+            <p className="mt-1">
+              This design was also paid on{" "}
+              {duplicateNotice.otherOrderId ? (
+                <Link href={`/admin/orders/${duplicateNotice.otherOrderId}`} className="font-semibold underline">{duplicateNotice.otherOrderNumber ?? "another order"}</Link>
+              ) : (
+                duplicateNotice.otherOrderNumber ?? "another order"
+              )}
+              . Both payments are recorded as received.{" "}
+              {duplicateNotice.unresolved
+                ? "The customer sees \"Payment received — under review\" until the order is moved on, cancelled or refunded. Decide on a refund of one payment outside this page; nothing was refunded or cancelled automatically."
+                : "The audit entry and the admin note stay on record."}
+            </p>
+          </div>
+        ) : null}
 
         <Card className="mb-8">
           <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
@@ -277,10 +308,10 @@ export default async function AdminOrderDetailsPage({
               </div>
             </Card>
 
-            {printLayers.length > 1 ? (
-              <Card title="Print artworks" subtitle="Every artwork on this order, with its placement and position as approved at checkout.">
+            {itemProduction.filter((entry) => entry.layers.length > 1).map((entry) => (
+              <Card key={`layers-${entry.key}`} title={entry.heading ? `Print artworks · ${entry.heading}` : "Print artworks"} subtitle="Every artwork on this order, with its placement and position as approved at checkout.">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {printLayers.map((layer) => {
+                  {entry.layers.map((layer) => {
                     const asset = printLayerAssetById.get(layer.assetId);
                     return (
                       <div key={layer.placement} className="flex gap-4 rounded-2xl border border-admin-border p-4 text-sm">
@@ -308,12 +339,12 @@ export default async function AdminOrderDetailsPage({
                   })}
                 </div>
               </Card>
-            ) : null}
+            ))}
 
-            {mockupCards.length ? (
-              <Card title="Mockups">
+            {itemProduction.filter((entry) => entry.mockupCards.length).map((entry) => (
+              <Card key={`mockups-${entry.key}`} title={entry.heading ? `Mockups · ${entry.heading}` : "Mockups"}>
                 <div className="grid gap-4 sm:grid-cols-2">
-                  {mockupCards.map((card) => (
+                  {entry.mockupCards.map((card) => (
                     <div key={card.id} className="overflow-hidden rounded-2xl border border-admin-border">
                       <a href={`/api/mockups/${card.id}/file`} target="_blank" rel="noreferrer" className="flex h-56 items-center justify-center bg-admin-canvas">
                         <img src={`/api/mockups/${card.id}/file`} alt={card.title} className="h-full w-full object-contain" />
@@ -326,7 +357,7 @@ export default async function AdminOrderDetailsPage({
                   ))}
                 </div>
               </Card>
-            ) : null}
+            ))}
 
             <Card title="Order timeline" subtitle="Manual admin actions recorded against this order.">
               <div className="space-y-3">

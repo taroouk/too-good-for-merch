@@ -22,6 +22,7 @@ import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
 import { useModalDialog } from "src/studio/ui/modals/useModalDialog";
 import ArtworkCropper, { type CropResult } from "src/studio/ui/modals/ArtworkCropper";
 import type { CropMeta } from "src/studio/ui/modals/crop-math";
+import { artworkKindNotice, type ArtworkKind } from "src/studio/artwork-kind";
 import { useImageAspectRatio } from "src/studio/ui/useImageAspectRatio";
 import { useTrimmedArtworkUrl } from "src/studio/ui/useTrimmedArtworkUrl";
 
@@ -58,6 +59,8 @@ type BespokeModalProps = {
   // asset-grid identity comparisons elsewhere in this component. Optional
   // + falls back to artworkUrl so this stays backwards compatible.
   overlayArtworkUrl?: string | null;
+  // Transparent vs opaque (and white background) -- informational only.
+  artworkKind?: ArtworkKind | null;
   product: ProductType | null;
   color: GarmentColor | null;
   bespokeArtworkStyle: CSSProperties;
@@ -131,7 +134,7 @@ function OtherLayerImage({
       className="studio-bespoke-artwork studio-bespoke-artwork-other"
       draggable={false}
       onClick={() => onSelect(layer.placement)}
-      style={{ position: "absolute", zIndex: 35, cursor: "pointer", ...previewArtworkBlend(color), ...layer.style, transform: layer.transform }}
+      style={{ position: "absolute", zIndex: 1, pointerEvents: "auto", cursor: "pointer", ...previewArtworkBlend(color), ...layer.style, transform: layer.transform }}
     />
   );
 }
@@ -159,6 +162,7 @@ export default function BespokeModal({
   bespokeShirtSrc,
   artworkUrl,
   overlayArtworkUrl,
+  artworkKind = null,
   product,
   color,
   bespokeArtworkStyle,
@@ -258,11 +262,12 @@ export default function BespokeModal({
   const stageDragRef = useRef<{ pointerId: number; dx: number; dy: number } | null>(null);
 
   // The placement frame on the tee, in canvas fractions.
-  const frame = (() => {
-    const box = getEditorPlacementBox(product, color, activePlacement);
-    const heightFrac = box.heightPct ?? box.widthPct * previewAspectRatio * getPlacementFrameAspect(activePlacement);
+  const frameOf = (placement: PlacementKey) => {
+    const box = getEditorPlacementBox(product, color, placement);
+    const heightFrac = box.heightPct ?? box.widthPct * previewAspectRatio * getPlacementFrameAspect(placement);
     return { x: box.xPct, y: box.yPct, w: box.widthPct, h: heightFrac };
-  })();
+  };
+  const frame = frameOf(activePlacement);
 
   function stageCenterInFrame(el: HTMLElement) {
     const canvas = canvasNodeRef.current?.getBoundingClientRect();
@@ -281,6 +286,8 @@ export default function BespokeModal({
     ? userAssets.find((asset) => asset.id === activeArtworkAsset.cropSourceId) ?? null
     : null;
   const visibleAssets = userAssets.filter((asset) => !asset.cropSourceId);
+  const placementLabelOf = (key: PlacementKey) => placementCards.find((card) => card.key === key)?.label ?? key;
+  const orphanLayers = layers.filter((layer) => !visibleAssets.some((asset) => asset.url === layer.url));
 
   return (
     <div
@@ -346,30 +353,42 @@ export default function BespokeModal({
             {/* The other artworks on this side: not draggable here -- click
                 one to make it the artwork being edited. */}
             {otherLayers.map((layer) => (
-              <OtherLayerImage key={layer.placement} layer={layer} color={color} onSelect={onSelectLayer} />
+              // each artwork is cut off at ITS OWN frame, like the one being edited
+              <div
+                key={layer.placement}
+                style={(() => {
+                  const f = frameOf(layer.placement);
+                  return {
+                    position: "absolute" as const,
+                    inset: 0,
+                    zIndex: 35,
+                    pointerEvents: "none" as const,
+                    clipPath: `inset(${f.y * 100}% ${(1 - f.x - f.w) * 100}% ${(1 - f.y - f.h) * 100}% ${f.x * 100}%)`,
+                  };
+                })()}
+              >
+                <OtherLayerImage layer={layer} color={color} onSelect={onSelectLayer} />
+              </div>
             ))}
 
-            {/* No artwork selected yet: show the Figma placeholder in the
-                selected placement's box (same box the artwork would use),
-                so the customer sees where their design will go. Purely
-                decorative -- not draggable, ignored by screen readers. */}
+            {/* No artwork selected yet: an empty dashed frame marks the print
+                area of the selected placement (the same box the artwork will
+                be cut off at). Purely decorative: not draggable, ignored by
+                screen readers. */}
             {!artworkUrl ? (
-              <img
-                src={
-                  activePlacement === "CENTER_FRONT"
-                    ? "/images/artwork-placeholder-2.png"
-                    : "/images/artwork-placeholder.png"
-                }
-                alt=""
+              <div
                 aria-hidden="true"
-                className="studio-bespoke-artwork-placeholder"
-                draggable={false}
+                data-testid="empty-print-frame"
                 style={{
                   position: "absolute",
                   zIndex: 30,
-                  objectFit: "contain",
+                  left: `${frame.x * 100}%`,
+                  top: `${frame.y * 100}%`,
+                  width: `${frame.w * 100}%`,
+                  height: `${frame.h * 100}%`,
                   pointerEvents: "none",
-                  ...bespokeArtworkStyle,
+                  border: "1.5px dashed rgba(120,120,120,.9)",
+                  borderRadius: 4,
                 }}
               />
             ) : null}
@@ -586,48 +605,6 @@ export default function BespokeModal({
             <h2 id="bespoke-modal-title" className="studio-bespoke-title">Build Your T-Shirt</h2>
           </div>
 
-          {/* Every artwork in the design (up to 4, one per placement), as in
-              the Figma frame. Click a card to edit that artwork; × removes
-              it from the shirt (it stays in Your Uploads). */}
-          {layers.length ? (
-            <div className="studio-selected-artworks">
-              <div className="studio-bespoke-label">Selected Artwork</div>
-              <div className="studio-selected-artworks-grid">
-                {layers.map((layer) => {
-                  const label = placementCards.find((card) => card.key === layer.placement)?.label ?? layer.placement;
-                  return (
-                    <div
-                      key={layer.placement}
-                      className={cn(
-                        "studio-selected-artwork-tile",
-                        layer.placement === activePlacement ? "studio-selected-artwork-tile-active" : "",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        className="studio-selected-artwork-pick"
-                        onClick={() => onSelectLayer(layer.placement)}
-                        aria-label={`Edit artwork on ${label}`}
-                        aria-pressed={layer.placement === activePlacement}
-                      >
-                        <img src={layer.url} alt={layer.fileName ?? ""} />
-                        <span className="studio-selected-artwork-placement">{label}</span>
-                      </button>
-                      <button
-                        type="button"
-                        className="studio-selected-artwork-x"
-                        onClick={() => onRemoveLayer(layer.placement)}
-                        aria-label={`Remove artwork from ${label}`}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-
           <div className="studio-bespoke-colour">
             <div className="studio-bespoke-label">T-Shirt Colour</div>
             <div className="studio-colour-row">
@@ -709,13 +686,47 @@ export default function BespokeModal({
             </div>
           ) : null}
 
+          {artworkUrl && artworkKind ? (
+            <p
+              className={cn("studio-artwork-kind", artworkKind.whiteBackground ? "studio-artwork-kind-warn" : "")}
+              role="note"
+            >
+              {artworkKindNotice(artworkKind)}
+            </p>
+          ) : null}
+
           <div className="studio-bespoke-uploads">
             <div className="studio-bespoke-label">Your Uploads</div>
 
             <div className="studio-upload-grid">
+              {/* One panel: an upload that is on the shirt says where (and can be taken off again); artwork on the
+                  shirt that has no tile of its own (a cropped copy) gets a tile here too. */}
+              {orphanLayers.map((layer) => (
+                <div key={`layer-${layer.placement}`} className="studio-upload-tile">
+                  <button
+                    type="button"
+                    onClick={() => onSelectLayer(layer.placement)}
+                    className={cn("studio-upload-slot", layer.placement === activePlacement ? "border-black border-[1.5px]" : "")}
+                    style={{ padding: 0, overflow: "hidden" }}
+                    aria-label={`Edit artwork on ${placementLabelOf(layer.placement)}`}
+                  >
+                    <img src={layer.url} alt={layer.fileName ?? ""} className="studio-upload-image" />
+                  </button>
+                  <button
+                    type="button"
+                    className="studio-upload-onshirt"
+                    onClick={() => onRemoveLayer(layer.placement)}
+                    aria-label={`Remove artwork from ${placementLabelOf(layer.placement)}`}
+                  >
+                    {placementLabelOf(layer.placement)} ×
+                  </button>
+                </div>
+              ))}
               {visibleAssets.length ? (
                 visibleAssets.map((asset) => {
+                  const onShirtLayer = layers.find((layer) => layer.url === asset.url) ?? null;
                   const isCurrentActive =
+                    (onShirtLayer ? onShirtLayer.placement === activePlacement : false) ||
                     selectedPrimaryAssetId === asset.id ||
                     artworkUrl === asset.url ||
                     stagedAsset?.id === asset.id ||
@@ -729,7 +740,7 @@ export default function BespokeModal({
                     <div key={asset.id} className="studio-upload-tile">
                       <button
                         type="button"
-                        onClick={() => onSelectAsset(asset)}
+                        onClick={() => (onShirtLayer ? onSelectLayer(onShirtLayer.placement) : onSelectAsset(asset))}
                         draggable
                         onDragStart={(event) => {
                           event.dataTransfer.setData(ASSET_DRAG_TYPE, asset.id);
@@ -750,6 +761,16 @@ export default function BespokeModal({
                           onError={() => onBrokenArtwork(asset.url)}
                         />
                       </button>
+                      {onShirtLayer ? (
+                        <button
+                          type="button"
+                          className="studio-upload-onshirt"
+                          onClick={() => onRemoveLayer(onShirtLayer.placement)}
+                          aria-label={`Remove artwork from ${placementLabelOf(onShirtLayer.placement)}`}
+                        >
+                          {placementLabelOf(onShirtLayer.placement)} ×
+                        </button>
+                      ) : null}
                       {isConfirming ? (
                         <div
                           className="studio-upload-confirm"
@@ -805,7 +826,7 @@ export default function BespokeModal({
               ) : null}
               {/* Empty upload slots (dashed, upload icon) fill the grid up to
                   four, as in the frame; each one opens the file picker. */}
-              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - visibleAssets.length) }, (_, index) => (
+              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - visibleAssets.length - orphanLayers.length) }, (_, index) => (
                 <button
                   key={`empty-${index}`}
                   type="button"

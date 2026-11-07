@@ -19,6 +19,7 @@ import assert from "node:assert/strict";
 import sharp from "sharp";
 import {
   DEFAULT_FABRIC_SHADING,
+  ZSCORE_FABRIC_SHADING,
   applyFabricShading,
   canSampleShadingRegion,
   highlightLiftLevels,
@@ -98,31 +99,31 @@ export async function runAll() {
       assert.ok(Math.abs(atClamp - wayPast) < 1e-9, "beyond the contrast clamp the effect must plateau");
     },
 
-    "it adapts to the photo: the same fold reads the same on low- and high-contrast fabric"() {
+    "(z-score model) it adapts to the photo: the same fold reads the same on low- and high-contrast fabric"() {
       // A fold one standard deviation deep should cost the print the same
       // amount of light whether the garment photo is punchy or flat. This
       // is the property a fixed gain does NOT have, and the reason these
       // evenly-lit studio shots looked unconvincing before.
-      const flatFabric = shadingMultiplier(120 - 12, 120, 12, DEFAULT_FABRIC_SHADING);
-      const punchyFabric = shadingMultiplier(120 - 40, 120, 40, DEFAULT_FABRIC_SHADING);
+      const flatFabric = shadingMultiplier(120 - 12, 120, 12, ZSCORE_FABRIC_SHADING);
+      const punchyFabric = shadingMultiplier(120 - 40, 120, 40, ZSCORE_FABRIC_SHADING);
       assert.ok(
         Math.abs(flatFabric - punchyFabric) < 1e-9,
         `expected the same modulation per standard deviation, got ${flatFabric} vs ${punchyFabric}`,
       );
     },
 
-    "the standard-deviation floor stops a flat region from normalizing its own noise to full scale"() {
+    "(z-score model) the standard-deviation floor stops a flat region from normalizing its own noise to full scale"() {
       // Without a floor, adaptive normalization is degenerate on flat
       // fabric: a standard deviation of 0.5 would make a 2-level wobble
       // 4 standard deviations from the mean, i.e. past the contrast clamp,
       // so pure sensor noise would be rendered at the SAME strength as a
       // real deep fold. The floor is what prevents that.
-      const withFloor = shadingMultiplier(128 + 2, 128, 0.5, DEFAULT_FABRIC_SHADING);
+      const withFloor = shadingMultiplier(128 + 2, 128, 0.5, ZSCORE_FABRIC_SHADING);
       const fullScale = shadingMultiplier(128 + 2, 128, 0.5, {
-        ...DEFAULT_FABRIC_SHADING,
+        ...ZSCORE_FABRIC_SHADING,
         minStdDev: 0,
       });
-      const deepFold = shadingMultiplier(128 + 40, 128, 16, DEFAULT_FABRIC_SHADING);
+      const deepFold = shadingMultiplier(128 + 40, 128, 16, ZSCORE_FABRIC_SHADING);
 
       assert.ok(
         Math.abs(fullScale - 1) > Math.abs(withFloor - 1) * 3,
@@ -136,6 +137,51 @@ export async function runAll() {
         Math.abs(withFloor - 1) < Math.abs(deepFold - 1) / 3,
         `floored noise (${withFloor}) must stay well below a real fold (${deepFold})`,
       );
+    },
+
+    "the default (relative) model: print fold depth follows the cloth's own, in proportion to its brightness"() {
+      // A 10% shadow on bright cloth darkens the print ~10% x gain, not the
+      // 26% the z-score model applied to any fold at 2.5 std deviations.
+      const mean = 240;
+      const shadow = shadingMultiplier(mean * 0.9, mean, 4, DEFAULT_FABRIC_SHADING);
+      assert.ok(shadow > 0.8 && shadow < 0.9, `expected ~0.85, got ${shadow}`);
+      const old = shadingMultiplier(mean * 0.9, mean, 4, ZSCORE_FABRIC_SHADING);
+      assert.ok(old < shadow, "the previous model darkened this fold more than the cloth itself");
+      // proportional: a deviation twice as deep modulates twice as much (below the clamp)
+      const a = 1 - shadingMultiplier(mean * 0.97, mean, 4, DEFAULT_FABRIC_SHADING);
+      const b = 1 - shadingMultiplier(mean * 0.94, mean, 4, DEFAULT_FABRIC_SHADING);
+      assert.ok(Math.abs(b / a - 2) < 0.05, `not proportional: ${b / a}`);
+    },
+
+    "the default model is gentle and bounded: the print's slope per level of cloth brightness stays small (and the blur is float, so there are no 8-bit steps)"() {
+      // relativeGain / max(mean, relativeFloor) per cloth level: ~1.5% on bright cloth,
+      // 1.5% on dark cloth (the floor), i.e. <= ~3.9 levels of a white print per cloth level.
+      for (const [mean, max] of [[30, 4.0], [120, 3.2], [245, 1.7]] as const) {
+        const step = Math.abs(shadingMultiplier(mean + 1, mean, 8, DEFAULT_FABRIC_SHADING) - shadingMultiplier(mean, mean, 8, DEFAULT_FABRIC_SHADING));
+        assert.ok(step * 255 < max, `mean ${mean}: one cloth level moves a white print by ${(step * 255).toFixed(2)} levels`);
+      }
+      const old = Math.abs(shadingMultiplier(246, 245, 8, ZSCORE_FABRIC_SHADING) - shadingMultiplier(245, 245, 8, ZSCORE_FABRIC_SHADING));
+      const now = Math.abs(shadingMultiplier(246, 245, 8, DEFAULT_FABRIC_SHADING) - shadingMultiplier(245, 245, 8, DEFAULT_FABRIC_SHADING));
+      assert.ok(now < old, "on bright cloth the new slope must be gentler than the z-score model's");
+    },
+
+    async "flat colour stays flat on bright cloth: the print's fine grain is not larger than the cloth's"() {
+      const W = 160, H = 160;
+      const noise = (i: number) => ((i * 2654435761) % 7) - 3; // deterministic +-3 grain
+      const cloth = Buffer.alloc(W * H * 4);
+      for (let i = 0; i < W * H; i++) { const v = 238 + noise(i); cloth.set([v, v, v, 255], i * 4); }
+      const art = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 217, g: 217, b: 217, alpha: 1 } } }).png().toBuffer();
+      const garment = await sharp(cloth, { raw: { width: W, height: H, channels: 4 } }).png().toBuffer();
+      const out = await sharp(await applyFabricShading(art, garment, DEFAULT_FABRIC_SHADING)).raw().toBuffer();
+      const grain = (buf: Buffer, ch: number) => {
+        let sum = 0, sq = 0;
+        for (let i = 0; i < W * H; i++) { const v = buf[i * ch]; sum += v; sq += v * v; }
+        const m = sum / (W * H);
+        return Math.sqrt(sq / (W * H) - m * m);
+      };
+      const clothGrain = grain(cloth, 4);
+      const printGrain = grain(out, 4);
+      assert.ok(printGrain <= clothGrain * 1.6 + 0.5, `print grain ${printGrain.toFixed(2)} vs cloth ${clothGrain.toFixed(2)}`);
     },
 
     "highlight lift is additive, one-sided and small"() {
