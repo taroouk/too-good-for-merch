@@ -8301,3 +8301,33 @@ body {
 @media (max-width: 480px) {
   .studio-bespoke-modal .studio-sa-chip { font-size: 7px; letter-spacing: 0.04em; padding: 5px 2px; }
 }
+
+/* Preview status: shown above the price while the mockup is created (or if it failed). */
+.studio-mockup-status {
+  position: relative; overflow: hidden; display: flex; align-items: center; gap: 12px;
+  margin-bottom: 14px; padding: 12px 14px; border: 1px solid rgba(0,0,0,0.12); border-radius: 12px;
+  background: #fff; box-shadow: 0 6px 18px rgba(0,0,0,0.06);
+}
+.studio-mockup-spinner {
+  flex: none; width: 18px; height: 18px; border-radius: 999px;
+  border: 2px solid rgba(0,0,0,0.14); border-top-color: #000; animation: studio-mockup-spin 0.8s linear infinite;
+}
+.studio-mockup-status-text { min-width: 0; }
+.studio-mockup-status-title { font-size: 12px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #000; }
+.studio-mockup-status-sub { margin-top: 3px; font-size: 12px; line-height: 1.35; color: rgba(0,0,0,0.55); }
+.studio-mockup-bar { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: rgba(0,0,0,0.06); overflow: hidden; }
+.studio-mockup-bar::after {
+  content: ""; position: absolute; top: 0; left: 0; height: 100%; width: 35%; background: #000;
+  animation: studio-mockup-slide 1.2s ease-in-out infinite;
+}
+.studio-mockup-status-error { border-color: rgba(190,30,30,0.35); background: #fff7f7; box-shadow: none; }
+.studio-mockup-status-error .studio-mockup-status-title { letter-spacing: 0.04em; text-transform: none; font-weight: 600; color: #8a1c1c; }
+.studio-mockup-retry {
+  margin-top: 8px; padding: 7px 14px; border: 0; border-radius: 999px; background: #000; color: #fff; cursor: pointer;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+}
+@keyframes studio-mockup-spin { to { transform: rotate(360deg); } }
+@keyframes studio-mockup-slide { 0% { transform: translateX(-100%); } 100% { transform: translateX(300%); } }
+@media (prefers-reduced-motion: reduce) {
+  .studio-mockup-spinner, .studio-mockup-bar::after { animation-duration: 3s; }
+}

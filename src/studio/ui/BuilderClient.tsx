@@ -2446,27 +2446,6 @@ export default function BuilderClient({
                   Build Your T-Shirt
                 </button>
 
-                {mockupPending && !showBespokeModal ? (
-                  <div className="studio-bespoke-status" role="status" aria-live="polite">
-                    Creating your preview…
-                  </div>
-                ) : null}
-
-                {mockupError && !showBespokeModal && !mockupPending ? (
-                  <div className="studio-bespoke-error" role="alert">
-                    {mockupError}
-                    {mockupError === PREVIEW_FAILED_MESSAGE ? (
-                      <button
-                        type="button"
-                        className="mt-2 block text-xs font-semibold uppercase tracking-[0.14em] underline underline-offset-2"
-                        onClick={() => void runPreviewGeneration(allLayers)}
-                      >
-                        Try again
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-
                 <div className="studio-save-row">
                   <span
                     className={cn(
@@ -2492,6 +2471,34 @@ export default function BuilderClient({
 
             <section className="studio-right-panel" aria-label="Order controls">
               <div className="studio-right-sticky">
+                {mockupPending && !showBespokeModal ? (
+                  <div className="studio-mockup-status" role="status" aria-live="polite" data-testid="preview-status">
+                    <span className="studio-mockup-spinner" aria-hidden="true" />
+                    <div className="studio-mockup-status-text">
+                      <div className="studio-mockup-status-title">Creating your preview…</div>
+                      <div className="studio-mockup-status-sub">This takes a few seconds. Your design is saved.</div>
+                    </div>
+                    <span className="studio-mockup-bar" aria-hidden="true" />
+                  </div>
+                ) : null}
+
+                {mockupError && !showBespokeModal && !mockupPending ? (
+                  <div className="studio-mockup-status studio-mockup-status-error" role="alert" data-testid="preview-error">
+                    <div className="studio-mockup-status-text">
+                      <div className="studio-mockup-status-title">{mockupError}</div>
+                      {mockupError === PREVIEW_FAILED_MESSAGE ? (
+                        <button
+                          type="button"
+                          className="studio-mockup-retry"
+                          onClick={() => void runPreviewGeneration(allLayers)}
+                        >
+                          Try again
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+
                 <PriceCard
                   priceText={priceText}
                   onRetry={priceError ? () => setPricingRetryToken((token) => token + 1) : undefined}
