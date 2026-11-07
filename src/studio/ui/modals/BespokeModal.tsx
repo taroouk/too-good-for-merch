@@ -640,6 +640,54 @@ export default function BespokeModal({
             </div>
           </div>
 
+          <section className="studio-sa" data-testid="selected-artwork" aria-label="Selected artwork">
+            <div className="studio-sa-head">
+              <div className="studio-bespoke-label">Selected Artwork</div>
+              <span className="studio-sa-count" aria-live="polite">
+                {layers.length} / {MAX_ARTWORK_LAYERS}
+              </span>
+            </div>
+            <div className="studio-sa-grid">
+              {Array.from({ length: MAX_ARTWORK_LAYERS }, (_, index) => {
+                const layer = layers[index];
+                if (!layer) {
+                  return (
+                    <div key={`sa-empty-${index}`} className="studio-sa-card studio-sa-card-empty" aria-hidden="true">
+                      <span className="studio-sa-empty-plus">+</span>
+                    </div>
+                  );
+                }
+                return (
+                  <div
+                    key={`sa-${layer.placement}`}
+                    className={cn("studio-sa-card", layer.placement === activePlacement ? "studio-sa-card-active" : "")}
+                  >
+                    <button
+                      type="button"
+                      className="studio-sa-thumb"
+                      onClick={() => onSelectLayer(layer.placement)}
+                      aria-label={`Edit artwork on ${placementLabelOf(layer.placement)}`}
+                    >
+                      <img src={layer.url} alt={layer.fileName ?? ""} />
+                    </button>
+                    <button
+                      type="button"
+                      className="studio-sa-remove"
+                      onClick={() => onRemoveLayer(layer.placement)}
+                      aria-label={`Remove artwork from ${placementLabelOf(layer.placement)}`}
+                    >
+                      ×
+                    </button>
+                    <span className="studio-sa-chip">{placementLabelOf(layer.placement)}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {layers.length === 0 ? (
+              <p className="studio-sa-hint">Upload artwork and place it on the shirt. Up to {MAX_ARTWORK_LAYERS} artworks.</p>
+            ) : null}
+          </section>
+
           <button
             type="button"
             onClick={onAddArtworkClick}
@@ -705,39 +753,6 @@ export default function BespokeModal({
               {artworkKindNotice(artworkKind)}
             </p>
           ) : null}
-
-          <div className="studio-bespoke-uploads" data-testid="selected-artwork">
-            <div className="studio-bespoke-label">
-              Selected Artwork ({layers.length}/{MAX_ARTWORK_LAYERS})
-            </div>
-            {layers.length ? (
-              <div className="studio-upload-grid">
-                {layers.map((layer) => (
-                  <div key={`selected-${layer.placement}`} className="studio-upload-tile">
-                    <button
-                      type="button"
-                      onClick={() => onSelectLayer(layer.placement)}
-                      className={cn("studio-upload-slot", layer.placement === activePlacement ? "border-black border-[1.5px]" : "")}
-                      style={{ padding: 0, overflow: "hidden" }}
-                      aria-label={`Edit artwork on ${placementLabelOf(layer.placement)}`}
-                    >
-                      <img src={layer.url} alt={layer.fileName ?? ""} className="studio-upload-image" />
-                    </button>
-                    <button
-                      type="button"
-                      className="studio-upload-onshirt"
-                      onClick={() => onRemoveLayer(layer.placement)}
-                      aria-label={`Remove artwork from ${placementLabelOf(layer.placement)}`}
-                    >
-                      {placementLabelOf(layer.placement)} ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="studio-artwork-kind" role="note">No artwork on the shirt yet. Up to {MAX_ARTWORK_LAYERS} artworks.</p>
-            )}
-          </div>
 
           <div className="studio-bespoke-uploads">
             <div className="studio-bespoke-label">Your Uploads</div>
