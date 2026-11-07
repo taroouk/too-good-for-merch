@@ -16,6 +16,7 @@ import { getEffectiveScaleBounds } from "src/studio/render/transform";
 import { getPlacementFrameAspect, getPlacementSide } from "src/studio/render/placement-config";
 import { getEditorAspectRatio, getEditorPlacementBox } from "src/studio/render/editor-surface";
 import { previewArtworkBlend } from "src/studio/render/preview-blend";
+import { MAX_ARTWORK_LAYERS } from "src/studio/artwork-layers";
 import { shouldMountArtworkOverlay } from "src/studio/artwork-overlay-visibility";
 import { useEscapeToClose } from "src/studio/ui/modals/useEscapeToClose";
 import { isBackdropClick } from "src/studio/ui/modals/modal-a11y";
@@ -287,7 +288,6 @@ export default function BespokeModal({
     : null;
   const visibleAssets = userAssets.filter((asset) => !asset.cropSourceId);
   const placementLabelOf = (key: PlacementKey) => placementCards.find((card) => card.key === key)?.label ?? key;
-  const orphanLayers = layers.filter((layer) => !visibleAssets.some((asset) => asset.url === layer.url));
 
   return (
     <div
@@ -706,33 +706,45 @@ export default function BespokeModal({
             </p>
           ) : null}
 
+          <div className="studio-bespoke-uploads" data-testid="selected-artwork">
+            <div className="studio-bespoke-label">
+              Selected Artwork ({layers.length}/{MAX_ARTWORK_LAYERS})
+            </div>
+            {layers.length ? (
+              <div className="studio-upload-grid">
+                {layers.map((layer) => (
+                  <div key={`selected-${layer.placement}`} className="studio-upload-tile">
+                    <button
+                      type="button"
+                      onClick={() => onSelectLayer(layer.placement)}
+                      className={cn("studio-upload-slot", layer.placement === activePlacement ? "border-black border-[1.5px]" : "")}
+                      style={{ padding: 0, overflow: "hidden" }}
+                      aria-label={`Edit artwork on ${placementLabelOf(layer.placement)}`}
+                    >
+                      <img src={layer.url} alt={layer.fileName ?? ""} className="studio-upload-image" />
+                    </button>
+                    <button
+                      type="button"
+                      className="studio-upload-onshirt"
+                      onClick={() => onRemoveLayer(layer.placement)}
+                      aria-label={`Remove artwork from ${placementLabelOf(layer.placement)}`}
+                    >
+                      {placementLabelOf(layer.placement)} ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="studio-artwork-kind" role="note">No artwork on the shirt yet. Up to {MAX_ARTWORK_LAYERS} artworks.</p>
+            )}
+          </div>
+
           <div className="studio-bespoke-uploads">
             <div className="studio-bespoke-label">Your Uploads</div>
 
             <div className="studio-upload-grid">
-              {/* One panel: an upload that is on the shirt says where (and can be taken off again); artwork on the
-                  shirt that has no tile of its own (a cropped copy) gets a tile here too. */}
-              {orphanLayers.map((layer) => (
-                <div key={`layer-${layer.placement}`} className="studio-upload-tile">
-                  <button
-                    type="button"
-                    onClick={() => onSelectLayer(layer.placement)}
-                    className={cn("studio-upload-slot", layer.placement === activePlacement ? "border-black border-[1.5px]" : "")}
-                    style={{ padding: 0, overflow: "hidden" }}
-                    aria-label={`Edit artwork on ${placementLabelOf(layer.placement)}`}
-                  >
-                    <img src={layer.url} alt={layer.fileName ?? ""} className="studio-upload-image" />
-                  </button>
-                  <button
-                    type="button"
-                    className="studio-upload-onshirt"
-                    onClick={() => onRemoveLayer(layer.placement)}
-                    aria-label={`Remove artwork from ${placementLabelOf(layer.placement)}`}
-                  >
-                    {placementLabelOf(layer.placement)} ×
-                  </button>
-                </div>
-              ))}
+              {/* An upload that is on the shirt says where (and can be taken off again). Every artwork on the shirt is also
+                  listed above under Selected Artwork (max 4), including cropped copies that have no upload tile. */}
               {visibleAssets.length ? (
                 visibleAssets.map((asset) => {
                   const onShirtLayer = layers.find((layer) => layer.url === asset.url) ?? null;
@@ -837,7 +849,7 @@ export default function BespokeModal({
               ) : null}
               {/* Empty upload slots (dashed, upload icon) fill the grid up to
                   four, as in the frame; each one opens the file picker. */}
-              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - visibleAssets.length - orphanLayers.length) }, (_, index) => (
+              {Array.from({ length: Math.max(0, EMPTY_UPLOAD_SLOTS - visibleAssets.length) }, (_, index) => (
                 <button
                   key={`empty-${index}`}
                   type="button"
