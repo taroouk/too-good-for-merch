@@ -199,3 +199,8 @@ BLOCKED - EXTERNAL SERVICE: 4.1 (success path needs real Gemini), 6.3 (Paymob if
 ### Items that still need input from the owner or an external service
 USER INPUT: 1.3 (final EGP price list incl. placement surcharges; Fitted Heavyweight prices only if it should be shown), 1.6 (real back photo), 8.2 (Left/Right Chest orientation), WhatsApp number confirmation.
 EXTERNAL SERVICE: 4.1 and 7.1 (real Gemini; 7.1 also Paymob Sandbox), 6.3 (Paymob iframe id), 8.1 display check (real mockup), 8.3 payment proof (PostgreSQL + Paymob Sandbox).
+
+## 8 Nov 2026 (owner report from the live site): placeholder image restored in the empty frame
+- Report: on the deployed site the Build dialog's empty print frame showed no placeholder picture. Cause: the 7 Nov change (3.6, "empty dashed frame") removed the Figma placeholder image (`/images/artwork-placeholder.png`, `-2.png` for Center Front).
+- Change: `BespokeModal.tsx` keeps the dashed frame and shows the placeholder image inside it again (same files as before, no new assets). Browser-checked in the isolated copy: image loaded (naturalWidth > 0), fills the Center Front frame (189x77 inside 192x80). tsc clean, eslint 0 errors on the file. Not committed/pushed; not yet on the live site.
+- 3.6 note: the PDF says "empty dashed frame"; the owner now wants the placeholder inside it. Owner's latest instruction applied.

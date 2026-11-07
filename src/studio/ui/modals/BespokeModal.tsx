@@ -389,8 +389,19 @@ export default function BespokeModal({
                   pointerEvents: "none",
                   border: "1.5px dashed rgba(120,120,120,.9)",
                   borderRadius: 4,
+                  overflow: "hidden",
                 }}
-              />
+              >
+                {/* The Figma placeholder sits inside the empty frame so the customer sees where the design will go. */}
+                <img
+                  src={activePlacement === "CENTER_FRONT" ? "/images/artwork-placeholder-2.png" : "/images/artwork-placeholder.png"}
+                  alt=""
+                  aria-hidden="true"
+                  className="studio-bespoke-artwork-placeholder"
+                  draggable={false}
+                  style={{ width: "100%", height: "100%", objectFit: "contain", pointerEvents: "none" }}
+                />
+              </div>
             ) : null}
 
             {artworkUrl && shouldMountArtworkOverlay({ artworkUrl }) ? (
