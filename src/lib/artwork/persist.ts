@@ -21,9 +21,15 @@ export type PersistArtworkResult = {
 const DRAFT_SELECT = {
   id: true,
   aiMockupId: true,
+  printMockupId: true,
   savedArtworkId: true,
   artworkPlacement: true,
   aiMockup: {
+    select: { id: true, mimeType: true, data: true, model: true, prompt: true },
+  },
+  // The Print Mockup is the real print (the customer's artwork at the chosen placement on the model photo). It is
+  // saved when there is no photoreal AI mockup (Gemini unavailable), so a design can always be saved.
+  printMockup: {
     select: { id: true, mimeType: true, data: true, model: true, prompt: true },
   },
 } as const;
@@ -41,10 +47,10 @@ export async function saveArtworkForBuild(
     select: { id: true, userId: true, draft: { select: DRAFT_SELECT } },
   });
   if (!build?.draft) return null;
-  if (!build.draft.aiMockup) return null;
+  const source = build.draft.aiMockup ?? build.draft.printMockup;
+  if (!source) return null;
 
   // The saved copy is stored compressed (older mockups are still big PNGs).
-  const source = build.draft.aiMockup;
   const compressed = source.data
     ? await compressMockupImage(Buffer.from(source.data), source.mimeType || "image/png")
     : null;
@@ -53,11 +59,11 @@ export async function saveArtworkForBuild(
     userId: build.userId ?? opts.ownerUserId ?? null,
     buildId: build.id,
     mockup: {
-      id: build.draft.aiMockup.id,
-      mimeType: compressed?.mimeType ?? build.draft.aiMockup.mimeType,
-      data: compressed?.data ?? build.draft.aiMockup.data,
-      model: build.draft.aiMockup.model,
-      prompt: build.draft.aiMockup.prompt,
+      id: source.id,
+      mimeType: compressed?.mimeType ?? source.mimeType,
+      data: compressed?.data ?? source.data,
+      model: source.model,
+      prompt: source.prompt,
     },
   });
 
@@ -94,11 +100,11 @@ export async function resolveArtworkIdForBuild(
 ): Promise<string | null> {
   const draft = await prisma.buildDraft.findUnique({
     where: { buildId },
-    select: { savedArtworkId: true, aiMockupId: true },
+    select: { savedArtworkId: true, aiMockupId: true, printMockupId: true },
   });
   if (!draft) return null;
   if (draft.savedArtworkId) return draft.savedArtworkId;
-  if (!draft.aiMockupId) return null;
+  if (!draft.aiMockupId && !draft.printMockupId) return null;
   const saved = await saveArtworkForBuild(buildId, { ownerUserId, placement });
   return saved?.artworkId ?? null;
 }

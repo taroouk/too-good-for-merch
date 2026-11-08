@@ -2251,21 +2251,29 @@ export default function BuilderClient({
         setPrintMockupFingerprint(printFp);
       }
 
-      const aiRes = await fetch("/api/mockups/nanobanana", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body,
-      });
-      const ai = await aiRes.json().catch(() => null);
-      if (!aiRes.ok || !ai?.ok) throw new Error(ai?.error ?? "Could not generate mockup.");
-      if (typeof ai.imageUrl !== "string" || !ai.imageUrl) throw new Error("Gemini did not return a mockup image.");
-      const aiFp = typeof ai.fingerprint === "string" && ai.fingerprint ? ai.fingerprint : null;
-      if (side === "back") {
-        setBackAiMockupUrl(ai.imageUrl);
-        setBackAiMockupFingerprint(aiFp);
-      } else {
-        setAiMockupUrl(ai.imageUrl);
-        setAiMockupFingerprint(aiFp);
+      // The Print Mockup above is already the real print: the customer's own artwork pixels at the exact chosen
+      // placement on the model photo. The Gemini step only makes the blank garment more photoreal, so when it is
+      // unavailable or fails the Print Mockup stands in (the preview already falls back to it) instead of the whole
+      // preview failing.
+      try {
+        const aiRes = await fetch("/api/mockups/nanobanana", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+        const ai = await aiRes.json().catch(() => null);
+        if (!aiRes.ok || !ai?.ok) throw new Error(ai?.error ?? "Could not generate mockup.");
+        if (typeof ai.imageUrl !== "string" || !ai.imageUrl) throw new Error("Gemini did not return a mockup image.");
+        const aiFp = typeof ai.fingerprint === "string" && ai.fingerprint ? ai.fingerprint : null;
+        if (side === "back") {
+          setBackAiMockupUrl(ai.imageUrl);
+          setBackAiMockupFingerprint(aiFp);
+        } else {
+          setAiMockupUrl(ai.imageUrl);
+          setAiMockupFingerprint(aiFp);
+        }
+      } catch (aiError) {
+        console.warn("[studio] Photoreal garment step unavailable; showing the print mockup instead", aiError);
       }
       return true;
     } catch (error) {
