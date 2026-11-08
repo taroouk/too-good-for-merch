@@ -19,7 +19,7 @@ for (const file of [".env.production.local", ".env.local", ".env.production", ".
   loadEnv({ path: file });
 }
 
-import { REQUIRED_PRODUCTION_ENV as REQUIRED } from "./required-production-env.mjs";
+import { REQUIRED_PRODUCTION_ENV as REQUIRED, missingPaymobCredentials } from "./required-production-env.mjs";
 
 const missing = REQUIRED.filter((name) => !process.env[name]?.trim());
 const errors = [];
@@ -27,6 +27,13 @@ const warnings = [];
 
 if (missing.length > 0) {
   errors.push(`Missing required production env vars: ${missing.join(", ")}`);
+}
+const paymobMissing = missingPaymobCredentials();
+if (paymobMissing) {
+  errors.push(`Paymob credentials incomplete. Configure one complete set: ${paymobMissing}`);
+}
+if (!process.env.PAYMOB_API_KEY?.trim()) {
+  warnings.push("PAYMOB_API_KEY is not set: admin refunds through Paymob will not work (payments themselves are not affected).");
 }
 
 const nextAuthUrl = process.env.NEXTAUTH_URL?.trim();

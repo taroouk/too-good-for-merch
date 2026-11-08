@@ -275,12 +275,12 @@ function templateAspectFor(product: ProductType, color: GarmentColor, side: "fro
   const resolvedColor = color === "BLACK" ? "BLACK" : "WHITE";
   const table: Record<string, Record<string, Record<string, number>>> = {
     FITTED: {
-      WHITE: { front: 581 / 1185, back: 689 / 1345 },
-      BLACK: { front: 1118 / 2353, back: 683 / 1439 },
+      WHITE: { front: 877 / 1793, back: 877 / 1793 },
+      BLACK: { front: 865 / 1819, back: 865 / 1819 },
     },
     OVERSIZED: {
-      WHITE: { front: 619 / 1197, back: 666 / 1213 },
-      BLACK: { front: 646 / 1205, back: 716 / 1310 },
+      WHITE: { front: 902 / 1744, back: 902 / 1743 },
+      BLACK: { front: 1024 / 1536, back: 1024 / 1536 },
     },
   };
   return table[resolvedProduct][resolvedColor][side];

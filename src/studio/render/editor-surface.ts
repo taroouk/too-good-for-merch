@@ -98,20 +98,23 @@ const EDITOR_FRAMES: Record<GarmentSide, GarmentFrame> = {
 // layout fallback but not for a coordinate transform that has to agree
 // with the real rendered geometry.
 const TEMPLATE_ASPECTS: Record<ProductType, Record<GarmentColor, Record<GarmentSide, number>>> = {
+  // Re-measured 8 Nov 2026 after the model photos were replaced with higher-quality exports:
+  // TGFM White 877x1793 / Back 877x1793, TGFM Black 865x1819 / Back 865x1819,
+  // Oversized White 902x1744 / Back 902x1743, Oversized Black 1024x1536 / Back 1024x1536.
   FITTED: {
-    WHITE: { front: 581 / 1185, back: 689 / 1345 },
-    BLACK: { front: 1118 / 2353, back: 683 / 1439 },
-    CUSTOM: { front: 581 / 1185, back: 689 / 1345 },
+    WHITE: { front: 877 / 1793, back: 877 / 1793 },
+    BLACK: { front: 865 / 1819, back: 865 / 1819 },
+    CUSTOM: { front: 877 / 1793, back: 877 / 1793 },
   },
   OVERSIZED: {
-    WHITE: { front: 619 / 1197, back: 666 / 1213 },
-    BLACK: { front: 646 / 1205, back: 716 / 1310 },
-    CUSTOM: { front: 619 / 1197, back: 666 / 1213 },
+    WHITE: { front: 902 / 1744, back: 902 / 1743 },
+    BLACK: { front: 1024 / 1536, back: 1024 / 1536 },
+    CUSTOM: { front: 902 / 1744, back: 902 / 1743 },
   },
   CUSTOM: {
-    WHITE: { front: 581 / 1185, back: 689 / 1345 },
-    BLACK: { front: 1118 / 2353, back: 683 / 1439 },
-    CUSTOM: { front: 581 / 1185, back: 689 / 1345 },
+    WHITE: { front: 877 / 1793, back: 877 / 1793 },
+    BLACK: { front: 865 / 1819, back: 865 / 1819 },
+    CUSTOM: { front: 877 / 1793, back: 877 / 1793 },
   },
 };
 

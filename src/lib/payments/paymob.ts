@@ -140,7 +140,7 @@ function billingData(order: PaymobOrder) {
 // app/api/payments/paymob/create-intent/route.ts.
 const PAYMOB_CALL_BUDGET_MS = 25_000;
 
-export async function createPaymobPayment(order: PaymobOrder, method: PaymentMethod) {
+async function createLegacyPaymobPayment(order: PaymobOrder, method: PaymentMethod) {
   // Only EGP is supported: an order in any other currency is never sent to Paymob (checked before any key or network use).
   if (order.currency !== SUPPORTED_PAYMENT_CURRENCY) {
     throw new PaymobError(`Only ${SUPPORTED_PAYMENT_CURRENCY} orders can be paid; this order is in ${order.currency}.`);
@@ -240,6 +240,125 @@ export async function createPaymobPayment(order: PaymobOrder, method: PaymentMet
   const iframeId = encodeURIComponent(requiredEnv("PAYMOB_IFRAME_ID"));
   const paymentUrl = `${PAYMOB_BASE_URL}/api/acceptance/iframes/${iframeId}?payment_token=${encodeURIComponent(paymentKey.token)}`;
   return { paymentUrl, paymobOrderId: String(remoteOrder.id) };
+}
+
+// ---------------------------------------------------------------------------
+// Payment Intention API + Unified Checkout (Paymob's current hosted checkout).
+//
+// Official docs (developers.paymob.com, read 8 Nov 2026):
+//   POST {base}/v1/intention/   Authorization: Token <secret key>
+//   body: amount (cents), currency, payment_methods (integration ids or names), items [{name, amount, ...}]
+//         (the amount must equal the sum of items[].amount), billing_data (phone_number required),
+//         special_reference (comes back as merchant_order_id in the transaction callback),
+//         notification_url (server-to-server POST), redirection_url (customer, card/wallet).
+//   response 201: client_secret, intention_order_id (the Paymob order id in the callback), id.
+//   redirect:  https://eg.checkout.paymob.com/?publicKey=<public key>&clientSecret=<client secret>
+// The transaction callback is the SAME processed callback (same HMAC-SHA512 field list) the Accept flow sends, so
+// verifyPaymobHmac, the webhook route and the order matching are shared by both flows.
+// The flow is chosen by configuration: PAYMOB_SECRET_KEY + PAYMOB_PUBLIC_KEY present -> intention (unless
+// PAYMOB_FLOW=legacy); otherwise the legacy Accept flow (PAYMOB_API_KEY + PAYMOB_IFRAME_ID).
+// ---------------------------------------------------------------------------
+export type PaymobFlow = "intention" | "legacy";
+
+export function paymobFlow(env: Record<string, string | undefined> = process.env): PaymobFlow {
+  const forced = env.PAYMOB_FLOW?.trim().toLowerCase();
+  if (forced === "legacy") return "legacy";
+  if (forced === "intention") return "intention";
+  return env.PAYMOB_SECRET_KEY?.trim() && env.PAYMOB_PUBLIC_KEY?.trim() ? "intention" : "legacy";
+}
+
+const DEFAULT_CHECKOUT_URL = "https://eg.checkout.paymob.com";
+
+// A rejected special_reference (Paymob wants it unique per intention) is retried once with a suffixed reference,
+// which baseOrderNumber() maps back to the order. The exact wording of that rejection is not documented, so any
+// 400/422 whose body talks about special_reference / duplicate / unique counts.
+export function isDuplicateSpecialReferenceError(error: unknown): boolean {
+  if (!(error instanceof PaymobError)) return false;
+  const details = error.details as { stage?: unknown; status?: unknown; response?: unknown } | undefined;
+  if (!details || details.stage !== "intention" || (details.status !== 400 && details.status !== 422)) return false;
+  const text = JSON.stringify(details.response ?? "");
+  return /special_reference|duplicate|unique|already/i.test(text);
+}
+
+function appOrigin(): string {
+  const raw = process.env.NEXTAUTH_URL?.trim();
+  if (!raw) throw new PaymobError("Missing server configuration: NEXTAUTH_URL");
+  return new URL(raw).origin;
+}
+
+// Pure: the body of the Create Intention request for an order. Amounts are the order's own total in piastres, the
+// single item carries the whole total so "amount = sum of items" holds by construction.
+export function buildIntentionBody(order: PaymobOrder, method: PaymentMethod, specialReference: string, origin: string, integration: number) {
+  const billing = billingData(order);
+  return {
+    amount: order.totalCents,
+    currency: order.currency,
+    payment_methods: [integration],
+    items: [
+      {
+        name: `Too Good For Merch order ${order.orderNumber}`.slice(0, 100),
+        description: `${order.items.length} custom garment${order.items.length === 1 ? "" : "s"}`.slice(0, 255),
+        amount: order.totalCents,
+        quantity: 1,
+      },
+    ],
+    billing_data: billing,
+    customer: { first_name: billing.first_name, last_name: billing.last_name, email: billing.email },
+    special_reference: specialReference,
+    notification_url: `${origin}/api/payments/paymob/webhook`,
+    redirection_url: `${origin}/orders/${order.id}/success`,
+    extras: { orderNumber: order.orderNumber, method },
+  };
+}
+
+async function createIntentionPayment(order: PaymobOrder, method: PaymentMethod) {
+  if (order.currency !== SUPPORTED_PAYMENT_CURRENCY) {
+    throw new PaymobError(`Only ${SUPPORTED_PAYMENT_CURRENCY} orders can be paid; this order is in ${order.currency}.`);
+  }
+  if (!Number.isSafeInteger(order.totalCents) || order.totalCents <= 0) {
+    throw new PaymobError("Order amount is invalid.");
+  }
+  const secretKey = requiredEnv("PAYMOB_SECRET_KEY");
+  const publicKey = requiredEnv("PAYMOB_PUBLIC_KEY");
+  const integration = integrationId(method);
+  const origin = appOrigin();
+  const reference = { orderId: order.id, orderNumber: order.orderNumber, amountCents: order.totalCents, currency: order.currency, method };
+  const deadline = AbortSignal.timeout(PAYMOB_CALL_BUDGET_MS);
+
+  const create = async (specialReference: string) => {
+    const response = await fetch(`${PAYMOB_BASE_URL}/v1/intention/`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json", Authorization: `Token ${secretKey}` },
+      body: JSON.stringify(buildIntentionBody(order, method, specialReference, origin, integration)),
+      cache: "no-store",
+      signal: deadline,
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      console.error("[Paymob] intention request failed", { stage: "intention", status: response.status, ...reference, response: redact(data) });
+      throw new PaymobError(`Paymob request failed (${response.status}).`, { stage: "intention", status: response.status, response: data });
+    }
+    return data as { client_secret?: string; intention_order_id?: number | string; id?: number | string };
+  };
+
+  let intention: { client_secret?: string; intention_order_id?: number | string; id?: number | string };
+  try {
+    intention = await create(order.orderNumber);
+  } catch (error) {
+    if (!isDuplicateSpecialReferenceError(error)) throw error;
+    intention = await create(retryMerchantOrderId(order.orderNumber));
+  }
+  if (!intention.client_secret) throw new PaymobError("Paymob did not return a client secret.");
+  const paymobOrderId = intention.intention_order_id ?? intention.id;
+  if (paymobOrderId == null) throw new PaymobError("Paymob did not return an order ID.");
+
+  const checkoutBase = (process.env.PAYMOB_CHECKOUT_URL?.trim() || DEFAULT_CHECKOUT_URL).replace(/\/+$/, "");
+  const paymentUrl = `${checkoutBase}/?publicKey=${encodeURIComponent(publicKey)}&clientSecret=${encodeURIComponent(intention.client_secret)}`;
+  return { paymentUrl, paymobOrderId: String(paymobOrderId) };
+}
+
+export async function createPaymobPayment(order: PaymobOrder, method: PaymentMethod) {
+  return paymobFlow() === "intention" ? createIntentionPayment(order, method) : createLegacyPaymobPayment(order, method);
 }
 
 // Full refund of a settled Paymob transaction. Paymob answers with the

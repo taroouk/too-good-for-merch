@@ -55,14 +55,14 @@ export async function runAll() {
       });
       // CENTER_FRONT is defined on the torso (TORSO_PLACEMENTS in
       // placement-config.ts, measured off the placement thumbnails): x .14 /
-      // y .265 / width .72 of FITTED WHITE front's torso frame (x .18,
-      // y .295, w .64, h .53), so left = (.18 + .14*.64)*1000 = 269.6,
-      // top = (.295 + .265*.53)*1000 = 435.45, width = .72*.64*1000 =
-      // 460.8, height = width/2.
-      assert.equal(resolved.left, 270);
-      assert.equal(resolved.top, 435);
-      assert.equal(resolved.width, 461);
-      assert.equal(resolved.height, 230);
+      // y .265 / width .72 of FITTED WHITE front's torso frame (x .185,
+      // y .30, w .65, h .515 -- re-read 8 Nov 2026 for the replaced photos), so
+      // left = (.185 + .14*.65)*1000 = 276, top = (.30 + .265*.515)*1000 =
+      // 436.475, width = .72*.65*1000 = 468, height = width/2.
+      assert.equal(resolved.left, 276);
+      assert.equal(resolved.top, 436);
+      assert.equal(resolved.width, 468);
+      assert.equal(resolved.height, 234);
       assert.equal(resolved.rotation, 0);
     },
 
@@ -101,7 +101,7 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 770);
+      assert.equal(resolved.left, 776);
     },
 
     "resolvePlacement rejects x/y beyond TRANSFORM_BOUNDS"() {

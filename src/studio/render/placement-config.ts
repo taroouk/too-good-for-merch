@@ -28,46 +28,48 @@ export type GarmentFrame = {
 // product genuinely differ by a few percent in both framing and hem
 // height. Re-measure if any template photo is replaced.
 export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<GarmentSide, GarmentFrame>>> = {
+  // Re-read 8 Nov 2026 off the 5% gridline overlays of the REPLACED model photos (higher-quality exports with
+  // new framing; see assets-work/newphotos/).
   FITTED: {
     WHITE: {
-      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
-      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+      front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
     BLACK: {
-      front: { xPct: 0.185, yPct: 0.29, widthPct: 0.645, heightPct: 0.54 },
-      back: { xPct: 0.19, yPct: 0.265, widthPct: 0.63, heightPct: 0.43 },
+      front: { xPct: 0.185, yPct: 0.31, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
     },
     CUSTOM: {
-      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
-      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+      front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
   },
   OVERSIZED: {
     WHITE: {
-      front: { xPct: 0.17, yPct: 0.28, widthPct: 0.66, heightPct: 0.51 },
-      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.68, heightPct: 0.5 },
+      front: { xPct: 0.16, yPct: 0.295, widthPct: 0.68, heightPct: 0.54 },
+      back: { xPct: 0.15, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
     },
     BLACK: {
-      front: { xPct: 0.17, yPct: 0.27, widthPct: 0.66, heightPct: 0.53 },
-      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.66, heightPct: 0.505 },
+      front: { xPct: 0.18, yPct: 0.3, widthPct: 0.64, heightPct: 0.575 },
+      back: { xPct: 0.185, yPct: 0.3, widthPct: 0.62, heightPct: 0.63 },
     },
     CUSTOM: {
-      front: { xPct: 0.17, yPct: 0.28, widthPct: 0.66, heightPct: 0.51 },
-      back: { xPct: 0.17, yPct: 0.275, widthPct: 0.68, heightPct: 0.5 },
+      front: { xPct: 0.16, yPct: 0.295, widthPct: 0.68, heightPct: 0.54 },
+      back: { xPct: 0.15, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
     },
   },
   CUSTOM: {
     WHITE: {
-      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
-      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+      front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
     BLACK: {
-      front: { xPct: 0.185, yPct: 0.29, widthPct: 0.645, heightPct: 0.54 },
-      back: { xPct: 0.19, yPct: 0.265, widthPct: 0.63, heightPct: 0.43 },
+      front: { xPct: 0.185, yPct: 0.31, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
     },
     CUSTOM: {
-      front: { xPct: 0.18, yPct: 0.295, widthPct: 0.64, heightPct: 0.53 },
-      back: { xPct: 0.18, yPct: 0.265, widthPct: 0.66, heightPct: 0.455 },
+      front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
+      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
   },
 };
@@ -203,13 +205,14 @@ export function getPlacementSide(placement: PlacementType): GarmentSide {
 // photo is replaced. The Studio preview reads this same box (through
 // editor-surface.ts), so preview and print are one geometry.
 const FULL_BACK_BOXES: Record<"FITTED" | "OVERSIZED", Record<"WHITE" | "BLACK", PlacementBox>> = {
+  // Re-derived 8 Nov 2026 for the replaced model photos (assets-work/fullback/derive.mjs).
   FITTED: {
-    WHITE: { xPct: 0.2615, yPct: 0.33, widthPct: 0.4637 },
-    BLACK: { xPct: 0.286, yPct: 0.33, widthPct: 0.4401 },
+    WHITE: { xPct: 0.259, yPct: 0.33, widthPct: 0.4608 },
+    BLACK: { xPct: 0.245, yPct: 0.33, widthPct: 0.4859 },
   },
   OVERSIZED: {
-    WHITE: { xPct: 0.2551, yPct: 0.33, widthPct: 0.4946 },
-    BLACK: { xPct: 0.2602, yPct: 0.33, widthPct: 0.5003 },
+    WHITE: { xPct: 0.2444, yPct: 0.33, widthPct: 0.5079 },
+    BLACK: { xPct: 0.2788, yPct: 0.33, widthPct: 0.4289 },
   },
 };
 
@@ -270,9 +273,12 @@ export function getGarmentTemplate(
 // always reads each template's actual width/height via sharp().metadata().
 // Values below use the WHITE file of each side as the representative ratio
 // (same convention as TEMPLATE_REFERENCE_WIDTH below).
+// Re-measured 8 Nov 2026 (the 8 model photos were replaced with higher-quality exports): TGFM White
+// 877x1793 / Back 877x1793, TGFM Black 865x1819 / Back 865x1819, Oversized White 902x1744 / Back 902x1743,
+// Oversized Black 1024x1536 / Back 1024x1536.
 const TEMPLATE_ASPECT_RATIO: Record<GarmentSide, number> = {
-  front: 581 / 1185,
-  back: 689 / 1345,
+  front: 877 / 1793,
+  back: 877 / 1793,
 };
 
 export function getTemplateAspectRatio(side: GarmentSide): number {
@@ -303,9 +309,9 @@ export function getTemplateAspectRatio(side: GarmentSide): number {
 // reference (arbitrary but consistent choice, matching the previous
 // generation's convention of using the majority/lower-resolution file).
 const TEMPLATE_REFERENCE_WIDTH: Record<ProductType, Record<GarmentSide, number>> = {
-  FITTED: { front: 581, back: 689 },
-  OVERSIZED: { front: 619, back: 666 },
-  CUSTOM: { front: 581, back: 689 },
+  FITTED: { front: 877, back: 877 },
+  OVERSIZED: { front: 902, back: 902 },
+  CUSTOM: { front: 877, back: 877 },
 };
 
 export function getTemplateReferenceWidth(product: ProductType, side: GarmentSide): number {

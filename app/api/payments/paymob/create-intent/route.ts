@@ -13,7 +13,7 @@ import { createCartCheckoutOrder } from "src/lib/orders/cart-checkout";
 import { competingPaymentMessage, orderPayability, termsConsentStatus } from "src/lib/orders/payable";
 import { findCompetingLivePayment, findSupersedingPaidOrder, orderBuildIds } from "src/lib/orders/superseded";
 import { assertApprovedTotal, orderFailureUpdateFor } from "src/lib/orders/errors";
-import { createPaymobPayment, PaymobError, walletPaymentsEnabled } from "src/lib/payments/paymob";
+import { createPaymobPayment, PaymobError, paymobFlow, walletPaymentsEnabled } from "src/lib/payments/paymob";
 import { currentTermsVersion } from "src/lib/legal";
 import { recordCheckoutFailure } from "src/lib/orders/checkout-failure";
 import { rateLimitHeaders } from "src/lib/rate-limit";
@@ -318,6 +318,7 @@ export async function POST(req: Request) {
         orderId: order.id,
         orderNumber: order.orderNumber,
         paymentUrl: decision.paymentUrl,
+        redirect: paymobFlow() === "intention",
       });
     }
     if (decision.kind === "in-flight") {
@@ -363,6 +364,8 @@ export async function POST(req: Request) {
       orderId: order.id,
       orderNumber: order.orderNumber,
       paymentUrl: payment.paymentUrl,
+      // Unified Checkout is a full Paymob page: the customer is sent there (the legacy Accept form can be embedded).
+      redirect: paymobFlow() === "intention",
       walletEnabled: walletPaymentsEnabled(),
     });
   } catch (error) {

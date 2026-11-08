@@ -1,5 +1,5 @@
 import { unsupportedCurrencyMessage } from "./orders/currency";
-import { REQUIRED_PRODUCTION_ENV } from "../../scripts/required-production-env.mjs";
+import { REQUIRED_PRODUCTION_ENV, missingPaymobCredentials } from "../../scripts/required-production-env.mjs";
 
 export type EnvRequirement = {
   name: string;
@@ -14,9 +14,7 @@ const REQUIRED_DESCRIPTIONS: Record<string, string> = {
   DATABASE_URL: "PostgreSQL connection string used by Prisma.",
   NEXTAUTH_URL: "Canonical HTTPS application URL.",
   NEXTAUTH_SECRET: "Long random secret used to sign auth tokens.",
-  PAYMOB_API_KEY: "Paymob server API key.",
   PAYMOB_INTEGRATION_ID: "Paymob card integration ID.",
-  PAYMOB_IFRAME_ID: "Paymob hosted card iframe ID.",
   PAYMOB_HMAC_SECRET: "Paymob webhook HMAC secret.",
 };
 
@@ -31,6 +29,10 @@ export const ENV_REQUIREMENTS: EnvRequirement[] = [
     requiredInProduction: false,
     description: "Comma-separated bootstrap admin email list.",
   },
+  { name: "PAYMOB_SECRET_KEY", requiredInProduction: false, description: "Paymob secret key (egy_sk_...), server only. With PAYMOB_PUBLIC_KEY it selects the Payment Intention / Unified Checkout flow." },
+  { name: "PAYMOB_PUBLIC_KEY", requiredInProduction: false, description: "Paymob public key (egy_pk_...), used in the checkout redirect URL." },
+  { name: "PAYMOB_API_KEY", requiredInProduction: false, description: "Paymob API key: required for the legacy iframe flow and for admin refunds." },
+  { name: "PAYMOB_IFRAME_ID", requiredInProduction: false, description: "Paymob hosted card iframe ID (legacy iframe flow only)." },
   {
     name: "PAYMOB_WALLET_INTEGRATION_ID",
     requiredInProduction: false,
@@ -76,6 +78,8 @@ export function getProductionEnvStatus() {
   const missing = entries
     .filter((entry) => entry.requiredInProduction && !entry.configured)
     .map((entry) => entry.name);
+  const paymobMissing = missingPaymobCredentials();
+  if (paymobMissing) missing.push(`PAYMOB credentials (one complete set: ${paymobMissing})`);
 
   return {
     ok: missing.length === 0,

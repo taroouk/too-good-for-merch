@@ -25,7 +25,9 @@ async function markerCentre(png: Buffer, rgb: [number, number, number]) {
   for (let y = 0; y < info.height; y++) {
     for (let x = 0; x < info.width; x++) {
       const o = (y * info.width + x) * 4;
-      if (Math.abs(data[o] - rgb[0]) < 40 && Math.abs(data[o + 1] - rgb[1]) < 40 && Math.abs(data[o + 2] - rgb[2]) < 40) {
+      // Only opaque pixels count: the RGB of a transparent pixel is meaningless (the replaced model photos carry
+      // stray colour values under their fully transparent background).
+      if (data[o + 3] > 200 && Math.abs(data[o] - rgb[0]) < 40 && Math.abs(data[o + 1] - rgb[1]) < 40 && Math.abs(data[o + 2] - rgb[2]) < 40) {
         if (x < minX) minX = x;
         if (y < minY) minY = y;
         if (x > maxX) maxX = x;

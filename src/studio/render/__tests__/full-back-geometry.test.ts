@@ -38,9 +38,15 @@ async function garmentMask(product: ProductType, color: GarmentColor) {
   return { mask, W, H, buf };
 }
 
-function bodyWidth(mask: Uint8Array, W: number, H: number) {
+// Rows (fractions of the photo height) just below the armpits, where the body is at its narrowest. The new
+// Oversized Black back photo (8 Nov 2026) has its armpits lower than the other three, so its rows start lower.
+function bodyRows(product: ProductType, color: GarmentColor): [number, number] {
+  return product === "OVERSIZED" && color === "BLACK" ? [0.66, 0.78] : [0.5, 0.62];
+}
+
+function bodyWidth(mask: Uint8Array, W: number, H: number, rows: [number, number]) {
   let minW = W;
-  for (let y = Math.round(H * 0.5); y <= Math.round(H * 0.62); y++) {
+  for (let y = Math.round(H * rows[0]); y <= Math.round(H * rows[1]); y++) {
     let mn = W, mx = -1;
     for (let x = Math.round(W * 0.1); x < Math.round(W * 0.9); x++) if (mask[y * W + x]) { if (x < mn) mn = x; if (x > mx) mx = x; }
     if (mx > 0) minW = Math.min(minW, mx - mn + 1);
@@ -69,14 +75,14 @@ export async function runAll() {
     tests[`${name}: frame is centred on the torso and sized to the body width`] = async () => {
       const { mask, W, H } = await garmentMask(v.product, v.color);
       const box = getPlacementBox(v.product, v.color, "FULL_BACK");
-      const body = bodyWidth(mask, W, H);
+      const body = bodyWidth(mask, W, H, bodyRows(v.product, v.color));
       const ratio = (box.widthPct * W) / body;
       ratios.push(ratio);
       assert.ok(Math.abs(ratio - 0.9) < 0.03, `${name}: frame is ${(ratio * 100).toFixed(0)}% of the body width`);
       const centre = (box.xPct + box.widthPct / 2) * W;
       // torso centre from the same rows
       let sum = 0, n = 0;
-      for (let y = Math.round(H * 0.5); y <= Math.round(H * 0.62); y++) {
+      for (let y = Math.round(H * bodyRows(v.product, v.color)[0]); y <= Math.round(H * bodyRows(v.product, v.color)[1]); y++) {
         let mn = W, mx = -1;
         for (let x = Math.round(W * 0.1); x < Math.round(W * 0.9); x++) if (mask[y * W + x]) { if (x < mn) mn = x; if (x > mx) mx = x; }
         if (mx > 0) { sum += (mn + mx) / 2; n++; }

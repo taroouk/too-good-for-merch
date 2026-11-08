@@ -4,7 +4,11 @@ import { createHmac } from "node:crypto";
 import { OrderStatus, PaymentStatus } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import {
+  baseOrderNumber,
+  buildIntentionBody,
   createPaymobPayment,
+  isDuplicateSpecialReferenceError,
+  paymobFlow,
   PaymobError,
   classifySuccessfulPayment,
   classifyTransaction,
@@ -312,6 +316,136 @@ export async function runAll() {
         // paidAt is preserved from the first charge, not reset to the retry's `now`.
         assert.deepEqual(retry.update.paidAt, now);
         assert.equal(retry.update.paymobTransactionId, "txn-A");
+      },
+
+      // ---- Payment Intention + Unified Checkout (documented Paymob flow). fetch is stubbed: no network, placeholder keys.
+      "paymobFlow: secret + public key select the intention flow, otherwise legacy; PAYMOB_FLOW overrides"() {
+        assert.equal(paymobFlow({}), "legacy");
+        assert.equal(paymobFlow({ PAYMOB_API_KEY: "a", PAYMOB_IFRAME_ID: "1" }), "legacy");
+        assert.equal(paymobFlow({ PAYMOB_SECRET_KEY: "s" }), "legacy");
+        assert.equal(paymobFlow({ PAYMOB_SECRET_KEY: "s", PAYMOB_PUBLIC_KEY: "p" }), "intention");
+        assert.equal(paymobFlow({ PAYMOB_SECRET_KEY: "s", PAYMOB_PUBLIC_KEY: "p", PAYMOB_FLOW: "legacy" }), "legacy");
+        assert.equal(paymobFlow({ PAYMOB_FLOW: "intention" }), "intention");
+      },
+
+      "intention request contract: endpoint, Token header, amount = sum of items, references, URLs (nothing is sent anywhere)"() {
+        const order = { id: "o1", orderNumber: "TGFM-T-9", currency: "EGP", subtotalCents: 190800, totalCents: 200000, customerName: "A B", customerEmail: "a@b.test", customerPhone: "+201000000000", items: [{}, {}] };
+        const body = buildIntentionBody(order as never, "CARD" as never, "TGFM-T-9", "https://shop.example", 111);
+        assert.equal(body.amount, 200000);
+        assert.equal(body.currency, "EGP");
+        assert.deepEqual(body.payment_methods, [111]);
+        assert.equal(body.items.reduce((sum, item) => sum + item.amount * item.quantity, 0), body.amount);
+        assert.equal(body.special_reference, "TGFM-T-9");
+        assert.equal(body.notification_url, "https://shop.example/api/payments/paymob/webhook");
+        assert.equal(body.redirection_url, "https://shop.example/orders/o1/success");
+        assert.ok(body.billing_data.phone_number);
+        assert.ok(!JSON.stringify(body).includes("secret"));
+      },
+
+      async "createPaymobPayment (intention): one POST to /v1/intention/ with the secret key header, returns the Unified Checkout URL"() {
+        const realFetch = globalThis.fetch;
+        const saved = { ...process.env };
+        const calls: Array<{ url: string; headers: Record<string, string>; body: Record<string, unknown> }> = [];
+        Object.assign(process.env, { PAYMOB_SECRET_KEY: "egy_sk_test_PLACEHOLDER", PAYMOB_PUBLIC_KEY: "egy_pk_test_PLACEHOLDER", PAYMOB_INTEGRATION_ID: "111", NEXTAUTH_URL: "https://shop.example/" });
+        delete process.env.PAYMOB_FLOW;
+        globalThis.fetch = (async (url: string, init: { body: string; headers: Record<string, string> }) => {
+          calls.push({ url, headers: init.headers, body: JSON.parse(init.body) });
+          return new Response(JSON.stringify({ client_secret: "cs_test_123", intention_order_id: 7788, id: "int_1" }), { status: 201, headers: { "content-type": "application/json" } });
+        }) as unknown as typeof fetch;
+        const order = { id: "o1", orderNumber: "TGFM-T-9", currency: "EGP", subtotalCents: 190800, totalCents: 200000, customerName: "A B", customerEmail: "a@b.test", customerPhone: "+201000000000", items: [] };
+        let result: { paymentUrl: string; paymobOrderId: string };
+        try {
+          result = await createPaymobPayment(order as never, "CARD" as never);
+        } finally {
+          globalThis.fetch = realFetch;
+          for (const key of ["PAYMOB_SECRET_KEY", "PAYMOB_PUBLIC_KEY", "PAYMOB_INTEGRATION_ID", "NEXTAUTH_URL", "PAYMOB_FLOW"]) {
+            if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+          }
+        }
+        assert.equal(calls.length, 1, "exactly one Paymob call (no auth-token / order / payment-key steps)");
+        assert.equal(new URL(calls[0].url).pathname, "/v1/intention/");
+        assert.equal(calls[0].headers.Authorization, "Token egy_sk_test_PLACEHOLDER");
+        assert.equal(calls[0].body.amount, 200000);
+        assert.equal(calls[0].body.special_reference, "TGFM-T-9");
+        assert.equal(result.paymobOrderId, "7788");
+        const url = new URL(result.paymentUrl);
+        assert.equal(url.origin, "https://eg.checkout.paymob.com");
+        assert.equal(url.searchParams.get("publicKey"), "egy_pk_test_PLACEHOLDER");
+        assert.equal(url.searchParams.get("clientSecret"), "cs_test_123");
+        assert.ok(!result.paymentUrl.includes("egy_sk_"), "the secret key never appears in the URL");
+      },
+
+      async "createPaymobPayment (intention): a rejected special_reference is retried once with a suffixed reference that maps back to the order"() {
+        const realFetch = globalThis.fetch;
+        const saved = { ...process.env };
+        const refs: string[] = [];
+        Object.assign(process.env, { PAYMOB_SECRET_KEY: "sk", PAYMOB_PUBLIC_KEY: "pk", PAYMOB_INTEGRATION_ID: "111", NEXTAUTH_URL: "https://shop.example" });
+        const originalError = console.error;
+        console.error = () => {};
+        globalThis.fetch = (async (_url: string, init: { body: string }) => {
+          refs.push(JSON.parse(init.body).special_reference);
+          if (refs.length === 1) return new Response(JSON.stringify({ special_reference: ["intention with this special reference already exists."] }), { status: 400 });
+          return new Response(JSON.stringify({ client_secret: "cs", intention_order_id: 1 }), { status: 201 });
+        }) as unknown as typeof fetch;
+        const order = { id: "o1", orderNumber: "TGFM-T-9", currency: "EGP", subtotalCents: 1000, totalCents: 1000, customerName: "A", customerEmail: "a@b.test", customerPhone: "+201000000000", items: [] };
+        try {
+          await createPaymobPayment(order as never, "CARD" as never);
+        } finally {
+          globalThis.fetch = realFetch;
+          console.error = originalError;
+          for (const key of ["PAYMOB_SECRET_KEY", "PAYMOB_PUBLIC_KEY", "PAYMOB_INTEGRATION_ID", "NEXTAUTH_URL"]) {
+            if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+          }
+        }
+        assert.equal(refs.length, 2);
+        assert.equal(refs[0], "TGFM-T-9");
+        assert.notEqual(refs[1], "TGFM-T-9");
+        assert.equal(baseOrderNumber(refs[1]), "TGFM-T-9");
+        assert.equal(isDuplicateSpecialReferenceError(new PaymobError("x", { stage: "intention", status: 401, response: { detail: "unique" } })), false, "only 400/422 count");
+      },
+
+      async "createPaymobPayment (intention): refuses non-EGP, bad amounts and missing keys before any network call; errors never contain the key"() {
+        const realFetch = globalThis.fetch;
+        const saved = { ...process.env };
+        let calls = 0;
+        globalThis.fetch = (async () => { calls++; return new Response("{}", { status: 401 }); }) as unknown as typeof fetch;
+        const originalError = console.error;
+        console.error = () => {};
+        const base = { id: "o1", orderNumber: "TGFM-T-9", customerName: "A", customerEmail: "a@b.test", customerPhone: "+201000000000", items: [] };
+        const messages: string[] = [];
+        try {
+          Object.assign(process.env, { PAYMOB_SECRET_KEY: "egy_sk_test_SECRETVALUE", PAYMOB_PUBLIC_KEY: "pk", PAYMOB_INTEGRATION_ID: "111", NEXTAUTH_URL: "https://shop.example" });
+          for (const order of [{ ...base, currency: "USD", subtotalCents: 1000, totalCents: 1000 }, { ...base, currency: "EGP", subtotalCents: 0, totalCents: 0 }, { ...base, currency: "EGP", subtotalCents: 10.5, totalCents: 10.5 }]) {
+            await createPaymobPayment(order as never, "CARD" as never).then(() => messages.push("NO ERROR"), (error: Error) => messages.push(error.message));
+          }
+          assert.equal(calls, 0, "no request was made for invalid orders");
+          delete process.env.PAYMOB_PUBLIC_KEY; // flow falls back to legacy, which needs its own keys -> clear error, still no network
+          process.env.PAYMOB_FLOW = "intention";
+          await createPaymobPayment({ ...base, currency: "EGP", subtotalCents: 1000, totalCents: 1000 } as never, "CARD" as never).then(() => messages.push("NO ERROR"), (error: Error) => messages.push(error.message));
+          process.env.PAYMOB_PUBLIC_KEY = "pk";
+          await createPaymobPayment({ ...base, currency: "EGP", subtotalCents: 1000, totalCents: 1000 } as never, "CARD" as never).then(() => messages.push("NO ERROR"), (error: Error) => messages.push(error.message)); // 401 from the stub
+        } finally {
+          globalThis.fetch = realFetch;
+          console.error = originalError;
+          for (const key of ["PAYMOB_SECRET_KEY", "PAYMOB_PUBLIC_KEY", "PAYMOB_INTEGRATION_ID", "NEXTAUTH_URL", "PAYMOB_FLOW"]) {
+            if (saved[key] === undefined) delete process.env[key]; else process.env[key] = saved[key];
+          }
+        }
+        assert.ok(messages.every((message) => message !== "NO ERROR"), messages.join(" | "));
+        assert.match(messages[0], /Only EGP/);
+        assert.match(messages[1], /amount is invalid/);
+        assert.match(messages[2], /amount is invalid/);
+        assert.match(messages[3], /PAYMOB_PUBLIC_KEY/);
+        assert.match(messages[4], /failed \(401\)/);
+        assert.ok(messages.every((message) => !message.includes("SECRETVALUE")), "no error message contains the secret key");
+      },
+
+      "an intention callback is the same signed transaction: its special_reference arrives as merchant_order_id and maps back to the order"() {
+        const object = { ...SAMPLE_TRANSACTION, order: { id: 7788, merchant_order_id: "TGFM-T-9-Rabc123x" } };
+        assert.equal(verifyPaymobHmac(object, sign(object)), true);
+        assert.equal(baseOrderNumber(String((object.order as { merchant_order_id: string }).merchant_order_id)), "TGFM-T-9");
+        const tampered = { ...object, amount_cents: 1 };
+        assert.equal(verifyPaymobHmac(tampered, sign(object)), false);
       },
 
       "classifySuccessfulPayment: does not regress a non-NEW order status (e.g. already in production) back to PAID-only bookkeeping"() {

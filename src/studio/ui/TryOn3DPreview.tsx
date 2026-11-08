@@ -166,7 +166,34 @@ export default function TryOn3DPreview({
   // artwork x/y are fractions of the preview container's own width -- track
   // the container's live rendered width to convert them to real px.
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const containerWidth = useContainerWidth(containerRef);
+  useContainerWidth(containerRef);
+
+  // The photo's own aspect ratio can be wider than the box the page leaves for it (the box is capped in width and
+  // fixed in height by CSS), and the photo is then letterboxed (object-fit: contain) while the artwork
+  // percentages were still laid out over the whole box: the print landed away from the garment (found 8 Nov 2026
+  // with the new 1024x1536 Oversized Black photo). So the photo and its artwork share ONE stage that has exactly
+  // the photo's ratio and is the largest such box that fits the content area.
+  const [contentBox, setContentBox] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+    const update = (rect: { width: number; height: number }) =>
+      setContentBox((prev) => (prev.w === rect.width && prev.h === rect.height ? prev : { w: rect.width, h: rect.height }));
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) update(entry.contentRect);
+    });
+    const cs = getComputedStyle(node);
+    update({
+      width: node.clientWidth - parseFloat(cs.paddingLeft || "0") - parseFloat(cs.paddingRight || "0"),
+      height: node.clientHeight - parseFloat(cs.paddingTop || "0") - parseFloat(cs.paddingBottom || "0"),
+    });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+  const stageWidth = contentBox.w > 0 && contentBox.h > 0 ? Math.min(contentBox.w, contentBox.h * previewAspectRatio) : 0;
+  const stageHeight = stageWidth > 0 ? stageWidth / previewAspectRatio : 0;
+  const containerWidth = stageWidth;
 
   function cnDot(active: boolean) {
     return active
@@ -190,6 +217,11 @@ export default function TryOn3DPreview({
         style={{ aspectRatio: previewAspectRatio }}
       >
         
+        <div
+          className="studio-preview-stage"
+          data-testid="preview-stage"
+          style={stageWidth > 0 ? { position: "relative", flex: "none", width: stageWidth, height: stageHeight } : { position: "relative", width: "100%", height: "100%" }}
+        >
         {/* دي صورتك الأصلية زي ما هي */}
         <img
           key={modelImage}
@@ -214,6 +246,7 @@ export default function TryOn3DPreview({
             containerWidth={containerWidth}
           />
         ))}
+        </div>
 
         <div className="studio-preview-side-switch" aria-label="Preview side switch">
           <button type="button" onClick={() => setPreviewSide(s => s === "front" ? "back" : "front")} className="studio-preview-side-arrow">‹</button>

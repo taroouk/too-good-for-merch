@@ -8331,3 +8331,10 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .studio-mockup-spinner, .studio-mockup-bar::after { animation-duration: 3s; }
 }
+
+/* Model preview stage: the photo and its artwork share one box with the photo's own ratio, so no transform or
+   alignment may shift the photo against the artwork. */
+.studio-preview-stage .studio-model-image {
+  transform: none !important;
+  object-position: center !important;
+}

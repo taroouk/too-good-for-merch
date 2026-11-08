@@ -270,7 +270,7 @@ function CheckoutContent() {
       }
 
       if (response.ok && data?.paymentUrl) {
-        if (method === "CARD") {
+        if (method === "CARD" && !data.redirect) {
           setCardFrameLoaded(false);
           setCardFrameUrl(data.paymentUrl);
           setSubmitting(false);
