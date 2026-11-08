@@ -33,43 +33,43 @@ export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<Ga
   FITTED: {
     WHITE: {
       front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.159, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
     BLACK: {
       front: { xPct: 0.185, yPct: 0.31, widthPct: 0.66, heightPct: 0.52 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
+      back: { xPct: 0.158, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
     },
     CUSTOM: {
       front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.159, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
   },
   OVERSIZED: {
     WHITE: {
       front: { xPct: 0.16, yPct: 0.295, widthPct: 0.68, heightPct: 0.54 },
-      back: { xPct: 0.15, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
+      back: { xPct: 0.148, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
     },
     BLACK: {
       front: { xPct: 0.18, yPct: 0.3, widthPct: 0.64, heightPct: 0.575 },
-      back: { xPct: 0.185, yPct: 0.3, widthPct: 0.62, heightPct: 0.63 },
+      back: { xPct: 0.183, yPct: 0.3, widthPct: 0.62, heightPct: 0.63 },
     },
     CUSTOM: {
       front: { xPct: 0.16, yPct: 0.295, widthPct: 0.68, heightPct: 0.54 },
-      back: { xPct: 0.15, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
+      back: { xPct: 0.148, yPct: 0.28, widthPct: 0.7, heightPct: 0.58 },
     },
   },
   CUSTOM: {
     WHITE: {
       front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.159, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
     BLACK: {
       front: { xPct: 0.185, yPct: 0.31, widthPct: 0.66, heightPct: 0.52 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
+      back: { xPct: 0.158, yPct: 0.3, widthPct: 0.66, heightPct: 0.535 },
     },
     CUSTOM: {
       front: { xPct: 0.185, yPct: 0.3, widthPct: 0.65, heightPct: 0.515 },
-      back: { xPct: 0.17, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
+      back: { xPct: 0.159, yPct: 0.3, widthPct: 0.66, heightPct: 0.52 },
     },
   },
 };
@@ -86,14 +86,15 @@ export const TEMPLATE_FRAMES: Record<ProductType, Record<GarmentColor, Record<Ga
 // photo here -- the earlier per-photo boxes covered ~94% of the torso for
 // Full Front/Back, i.e. seam to seam, out over the model's arms.
 const TORSO_PLACEMENTS: Partial<Record<PlacementType, PlacementBox>> = {
-  // Measured off the placement thumbnails (public/images/Frame 1-6.png): the
-  // placeholder in each thumbnail IS the placement frame, mapped onto the
-  // flat tee's torso. Centred placements are kept symmetric about the torso.
-  FULL_FRONT: { xPct: 0.14, yPct: 0.265, widthPct: 0.72 },
-  CENTER_FRONT: { xPct: 0.14, yPct: 0.265, widthPct: 0.72 },
-  LEFT_CHEST: { xPct: 0.14, yPct: 0.26, widthPct: 0.27 },
-  RIGHT_CHEST: { xPct: 0.59, yPct: 0.26, widthPct: 0.27 },
-  FULL_BACK: { xPct: 0.105, yPct: 0.388, widthPct: 0.79 },
+  // Read from the placement cards themselves (public/images/placements/*.svg, viewBox 100x112): the torso of the
+  // drawn tee is x 24..76, y 7..81 (shoulder line to hem) and each card's picture is the frame, e.g. Full Front
+  // x 31..69, y 26..38 tall => (31-24)/52 = .1346, (26-7)/74 = .2568, width 38/52 = .7308. The Full Back card is a
+  // taller frame (38 x 44, y 22..66 => y .2027), which the flat tee and the model photo must show in the same place.
+  FULL_FRONT: { xPct: 0.1346, yPct: 0.2568, widthPct: 0.7308 },
+  CENTER_FRONT: { xPct: 0.1346, yPct: 0.2568, widthPct: 0.7308 },
+  LEFT_CHEST: { xPct: 0.1154, yPct: 0.2568, widthPct: 0.2692 },
+  RIGHT_CHEST: { xPct: 0.6154, yPct: 0.2568, widthPct: 0.2692 },
+  FULL_BACK: { xPct: 0.1346, yPct: 0.2027, widthPct: 0.7308 },
   CENTER_BACK: { xPct: 0.145, yPct: 0.18, widthPct: 0.71 },
 };
 
@@ -101,9 +102,11 @@ const TORSO_PLACEMENTS: Partial<Record<PlacementType, PlacementBox>> = {
 // public/images/Frame 1-6.png). Only Center Front is a wide crop
 // (artwork-placeholder-2.png, 31x13); every other frame is square.
 export function getPlacementFrameAspect(placement: PlacementType): number {
-  return placement === "CENTER_FRONT" ? 13 / 31 : 1;
+  // Frame height / width as drawn on the placement cards: Center Front 38x17, Full Back 38x44, the rest square.
+  if (placement === "CENTER_FRONT") return 17 / 38;
+  if (placement === "FULL_BACK") return 44 / 38;
+  return 1;
 }
-
 export function getTemplateTorsoFrame(
   product: ProductType,
   color: GarmentColor,
@@ -192,39 +195,11 @@ export function getPlacementSide(placement: PlacementType): GarmentSide {
   return PLACEMENT_SIDES[placement];
 }
 
-// FULL BACK, per back photo, as an absolute box in the template's own
-// fractions. A single torso-relative spec could not suit all four back photos
-// (their torsos differ in width, centre and hem), and the old one hung the
-// print past the hem and out over the sleeves, arms and jeans. Each box below
-// is derived from the garment's own pixels (assets-work/fullback/derive.mjs):
-// centred on the torso, a square 90% of the body width (the width below the
-// armpits, between the arms), starting ~6% of the photo height under the neck
-// line -- verified to lie 100% on the garment, clear of sleeves, arms, hem and
-// background, in every variant. Same rule for Fitted and Oversized, so the
-// print sits in the same place relative to the garment. Re-derive if any back
-// photo is replaced. The Studio preview reads this same box (through
-// editor-surface.ts), so preview and print are one geometry.
-const FULL_BACK_BOXES: Record<"FITTED" | "OVERSIZED", Record<"WHITE" | "BLACK", PlacementBox>> = {
-  // Re-derived 8 Nov 2026 for the replaced model photos (assets-work/fullback/derive.mjs).
-  FITTED: {
-    WHITE: { xPct: 0.259, yPct: 0.33, widthPct: 0.4608 },
-    BLACK: { xPct: 0.245, yPct: 0.33, widthPct: 0.4859 },
-  },
-  OVERSIZED: {
-    WHITE: { xPct: 0.2444, yPct: 0.33, widthPct: 0.5079 },
-    BLACK: { xPct: 0.2788, yPct: 0.33, widthPct: 0.4289 },
-  },
-};
-
 export function getPlacementBox(
   product: ProductType,
   color: GarmentColor,
   placement: PlacementType,
 ): PlacementBox {
-  if (placement === "FULL_BACK") {
-    // CUSTOM resolves to the FITTED/WHITE photos, exactly as TEMPLATE_FILES does.
-    return FULL_BACK_BOXES[product === "OVERSIZED" ? "OVERSIZED" : "FITTED"][color === "BLACK" ? "BLACK" : "WHITE"];
-  }
   const torso = TORSO_PLACEMENTS[placement];
   if (torso) {
     const frame = getTemplateTorsoFrame(product, color, PLACEMENT_SIDES[placement]);

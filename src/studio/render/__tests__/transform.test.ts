@@ -53,16 +53,14 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      // CENTER_FRONT is defined on the torso (TORSO_PLACEMENTS in
-      // placement-config.ts, measured off the placement thumbnails): x .14 /
-      // y .265 / width .72 of FITTED WHITE front's torso frame (x .185,
-      // y .30, w .65, h .515 -- re-read 8 Nov 2026 for the replaced photos), so
-      // left = (.185 + .14*.65)*1000 = 276, top = (.30 + .265*.515)*1000 =
-      // 436.475, width = .72*.65*1000 = 468, height = width/2.
-      assert.equal(resolved.left, 276);
-      assert.equal(resolved.top, 436);
-      assert.equal(resolved.width, 468);
-      assert.equal(resolved.height, 234);
+      // CENTER_FRONT is defined on the torso (TORSO_PLACEMENTS in placement-config.ts, read off the placement
+      // cards): x .1346 / y .2568 / width .7308 of FITTED WHITE front's torso frame (x .185, y .30, w .65, h .515),
+      // so left = (.185 + .1346*.65)*1000 = 272.5, top = (.30 + .2568*.515)*1000 = 432.3, width = .7308*.65*1000 =
+      // 475.0, height = width/2 (the 200x100 artwork) = 237.5.
+      assert.equal(resolved.left, 272);
+      assert.equal(resolved.top, 432);
+      assert.equal(resolved.width, 475);
+      assert.equal(resolved.height, 238);
       assert.equal(resolved.rotation, 0);
     },
 
@@ -101,7 +99,7 @@ export async function runAll() {
         artworkWidth: 200,
         artworkHeight: 100,
       });
-      assert.equal(resolved.left, 776);
+      assert.equal(resolved.left, 772);
     },
 
     "resolvePlacement rejects x/y beyond TRANSFORM_BOUNDS"() {
