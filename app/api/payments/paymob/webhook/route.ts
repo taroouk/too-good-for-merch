@@ -13,6 +13,7 @@ import {
   verifyPaymobHmac,
   webhookEventKey,
 } from "src/lib/payments/paymob";
+import { claimWebhookEvent, isWebhookEventProcessed, refundedOrderUpdate } from "src/lib/payments/webhook-event";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { findSupersedingPaidOrder, orderBuildIds } from "src/lib/orders/superseded";
@@ -67,15 +68,17 @@ export async function POST(req: Request) {
   const transactionId = object.id == null ? null : String(object.id);
   const eventType = typeof body.type === "string" ? body.type : "TRANSACTION";
 
-  try {
-    await prisma.webhookEvent.create({
-      data: { eventKey, eventType, transactionId, validSignature, payload: eventPayload },
-    });
-  } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      return NextResponse.json({ received: true, duplicate: true });
-    }
-    throw error;
+  // An existing row only means "duplicate" once it was actually processed. If the first attempt died before
+  // finishing, Paymob's retry of the same payload must be processed (see webhook-event.ts).
+  const claim = await claimWebhookEvent(prisma.webhookEvent, {
+    eventKey,
+    eventType,
+    transactionId,
+    validSignature,
+    payload: eventPayload,
+  });
+  if (claim === "duplicate") {
+    return NextResponse.json({ received: true, duplicate: true });
   }
 
   if (!validSignature) {
@@ -146,6 +149,8 @@ export async function POST(req: Request) {
   const { succeeded, refunded, failed } = classifyTransaction(object);
   // Set inside the transaction below when this successful payment is for a design that was ALSO paid on another order.
   let duplicateDesignPayment: { orderNumber: string } | null = null;
+  // Set inside the transaction below when a concurrent delivery of this same event already finished it.
+  let processedByConcurrentDelivery = false;
 
   await prisma.$transaction(async (tx) => {
     // Every branch below is a read-then-write on the order's payment state,
@@ -162,10 +167,18 @@ export async function POST(req: Request) {
     await tx.$queryRaw`SELECT id FROM "Order" WHERE id = ${order.id} FOR UPDATE`;
     const current = await tx.order.findUniqueOrThrow({ where: { id: order.id } });
 
+    // Two deliveries of the SAME not-yet-processed event can both get here (see claimWebhookEvent); they queue on the
+    // lock above. The one that waited must not repeat the first one's side effects (admin notes/audit rows, refund
+    // timestamp), so re-read the event under the lock: if the winner already committed it, do nothing.
+    if (await isWebhookEventProcessed(tx.webhookEvent, eventKey)) {
+      processedByConcurrentDelivery = true;
+      return;
+    }
+
     if (refunded) {
       await tx.order.update({
         where: { id: current.id },
-        data: { paymentStatus: PaymentStatus.REFUNDED, refundedAt: new Date(), paymobTransactionId: transactionId },
+        data: refundedOrderUpdate(current, transactionId),
       });
     } else if (succeeded) {
       // classifySuccessfulPayment reads `current` -- fetched above under
@@ -285,6 +298,10 @@ export async function POST(req: Request) {
     maxWait: 10_000,
     timeout: 15_000,
   });
+
+  if (processedByConcurrentDelivery) {
+    return NextResponse.json({ received: true, duplicate: true });
+  }
 
   // After the payment state is durably committed: tell the customer. Fully
   // isolated -- never throws, and is idempotent per order, so a Paymob

@@ -16,6 +16,7 @@
     "../src/pricing/currency.ts",
     "../src/pricing/__tests__/**/*.ts",
     "../src/lib/payments/paymob.ts",
+    "../src/lib/payments/webhook-event.ts",
     "../src/lib/payments/__tests__/**/*.ts",
     "../src/lib/orders/display.ts",
     "../src/lib/orders/totals.ts",
