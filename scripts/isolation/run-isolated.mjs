@@ -15,6 +15,11 @@
 //   --env KEY=VALUE  extra environment variable (values are scanned for real-looking secrets)
 //   --fake-prisma    replace src/lib/prisma.ts in the COPY with the in-memory fake (scripts/isolation/fake-prisma)
 //   --qa-routes      install the QA-only test routes (copy only) and set TGFM_FAKE_QA=1
+//   --qa-routes-disarmed  install the QA routes (copy only) but do NOT set TGFM_FAKE_QA: proves the routes' own guard answers 404
+//   --paymob-sandbox-env <file>  pass the TEST Paymob settings from that env file (secret/public key, integration id, HMAC secret only --
+//                    never the legacy API key) and let the network guard reach exactly accept.paymob.com. Refused unless both keys carry
+//                    the test marker, and refused together with --os-sandbox (the OS profile is loopback-only).
+//   --gemini-stub-in-production  (copy only) let a production build use the loopback GEMINI_API_ENDPOINT stand-in, see qa/overlay-gemini-stub
 //   --log <file>     where the guard writes violations (default: inside the temp dir)
 //
 // Guarantees (see scripts/isolation/README.md for the limits):
@@ -198,6 +203,21 @@ export function removeCopy(tmp) {
 
 // ------------------------------------------------------------------ environment
 const DUMMY = "tgfm-test-dummy";
+// The only Paymob settings the sandbox run receives. PAYMOB_API_KEY (account-wide, refund-capable) is deliberately NOT passed.
+export const PAYMOB_SANDBOX_KEYS = ["PAYMOB_SECRET_KEY", "PAYMOB_PUBLIC_KEY", "PAYMOB_INTEGRATION_ID", "PAYMOB_HMAC_SECRET"];
+export function readPaymobSandboxVars(file) {
+  const found = {};
+  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+    const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*)$/.exec(line);
+    if (m && PAYMOB_SANDBOX_KEYS.includes(m[1])) found[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+  for (const k of PAYMOB_SANDBOX_KEYS) if (!found[k]) throw new Error(`--paymob-sandbox-env: ${k} is missing`);
+  if (!/^egy_sk_test_/.test(found.PAYMOB_SECRET_KEY)) throw new Error("--paymob-sandbox-env: PAYMOB_SECRET_KEY is not a TEST key (refusing)");
+  if (!/^egy_pk_test_/.test(found.PAYMOB_PUBLIC_KEY)) throw new Error("--paymob-sandbox-env: PAYMOB_PUBLIC_KEY is not a TEST key (refusing)");
+  if (!/^\d+$/.test(found.PAYMOB_INTEGRATION_ID)) throw new Error("--paymob-sandbox-env: PAYMOB_INTEGRATION_ID must be a number");
+  return found;
+}
+
 export function buildEnv({ tmp, port = 3100, log, extra = {} }) {
   const env = {
     // minimal OS essentials only -- the parent's environment is NOT inherited
@@ -329,7 +349,7 @@ export function assertNoRealPrisma(work) {
 
 // ------------------------------------------------------------------------ main
 function parseArgs(argv) {
-  const opts = { root: REPO_ROOT, keep: false, osSandbox: false, dryRun: false, fakePrisma: false, qaRoutes: false, port: 3100, extra: {}, log: undefined, command: [] };
+  const opts = { root: REPO_ROOT, keep: false, osSandbox: false, dryRun: false, fakePrisma: false, qaRoutes: false, geminiStubInProduction: false, port: 3100, extra: {}, log: undefined, command: [] };
   const i = argv.indexOf("--");
   const own = i === -1 ? argv : argv.slice(0, i);
   opts.command = i === -1 ? [] : argv.slice(i + 1);
@@ -339,7 +359,10 @@ function parseArgs(argv) {
     else if (a === "--os-sandbox") opts.osSandbox = true;
     else if (a === "--dry-run") opts.dryRun = true;
     else if (a === "--fake-prisma") opts.fakePrisma = true;
+    else if (a === "--paymob-sandbox-env") opts.paymobSandboxEnv = path.resolve(own[++k]);
     else if (a === "--qa-routes") opts.qaRoutes = true;
+    else if (a === "--qa-routes-disarmed") { opts.qaRoutes = true; opts.qaDisarmed = true; }
+    else if (a === "--gemini-stub-in-production") opts.geminiStubInProduction = true;
     else if (a === "--root") opts.root = path.resolve(own[++k]);
     else if (a === "--port") opts.port = Number(own[++k]);
     else if (a === "--log") opts.log = path.resolve(own[++k]);
@@ -370,13 +393,19 @@ export async function main(argv) {
       }
       fakeInfo = check;
     }
+    if (opts.geminiStubInProduction) fs.cpSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "qa", "overlay-gemini-stub"), work, { recursive: true });
     if (opts.qaRoutes) {
       // QA-only routes exist in the COPY only (see scripts/isolation/qa/overlay).
       fs.cpSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "qa", "overlay"), work, { recursive: true });
-      opts.extra.TGFM_FAKE_QA = "1";
+      if (!opts.qaDisarmed) opts.extra.TGFM_FAKE_QA = "1";
       // A throwaway LOCAL secret so signed webhook payloads can be produced by the QA scripts. It is not a Paymob key and
       // nothing here can reach Paymob; PAYMOB_API_KEY and the other credentials stay unset.
-      opts.extra.PAYMOB_HMAC_SECRET = "qa-local-hmac-secret-not-a-real-key";
+      if (!opts.qaDisarmed) opts.extra.PAYMOB_HMAC_SECRET = "qa-local-hmac-secret-not-a-real-key";
+    }
+    let sandboxEnv = null;
+    if (opts.paymobSandboxEnv) {
+      if (opts.osSandbox) throw new Error("--paymob-sandbox-env cannot be combined with --os-sandbox (the OS profile is loopback-only)");
+      sandboxEnv = { ...readPaymobSandboxVars(opts.paymobSandboxEnv), TGFM_GUARD_ALLOW_HOSTS: "accept.paymob.com" };
     }
     const hits = scanForSecrets(work);
     if (hits.length) {
@@ -390,6 +419,10 @@ export async function main(argv) {
     if (leftovers.length) { console.error("[isolated] ABORT: forbidden files in the copy:", leftovers); return 2; }
 
     const env = buildEnv({ tmp, port: opts.port, log, extra: opts.extra });
+    if (sandboxEnv) {
+      Object.assign(env, sandboxEnv); // after the secret scan of --env values: these were verified as TEST keys above; values are never logged
+      console.error("[isolated] PAYMOB SANDBOX: test keys passed (values hidden); network guard also allows accept.paymob.com; nothing else leaves localhost");
+    }
     console.error(`[isolated] copy: ${work}  (${copied} files, no .env*; node_modules: ${nodeModules ? `independent copy, ${nodeModules.files} files + ${nodeModules.symlinks} symlinks, all inside the copy` : "none"})`);
     console.error(`[isolated] env: from scratch (${Object.keys(env).length} keys), DATABASE_URL=${env.DATABASE_URL}`);
     if (fakeInfo) console.error(`[isolated] fake-prisma: src/lib/prisma.ts replaced in the copy; ${fakeInfo.scanned} run-path files scanned, no real Prisma client creation found`);

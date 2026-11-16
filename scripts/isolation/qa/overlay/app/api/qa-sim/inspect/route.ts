@@ -20,7 +20,9 @@ export async function POST(req: Request) {
     prisma.adminAuditLog.findMany({ where: { orderId: { in: mine } } }),
     prisma.paymentAttempt.findMany({ where: { orderId: { in: mine } } }),
   ]);
+  const bag = await prisma.bagItem.findMany({ where: { userId } });
   return NextResponse.json({
+    bagBuildIds: bag.map((item) => item.buildId),
     orders: orders.map((order) => ({
       id: order.id,
       orderNumber: order.orderNumber,
@@ -28,11 +30,16 @@ export async function POST(req: Request) {
       paymentStatus: order.paymentStatus,
       totalCents: order.totalCents,
       confirmationEmailSentAt: order.confirmationEmailSentAt,
+      paidAt: order.paidAt,
+      refundedAt: order.refundedAt,
+      paymobTransactionId: order.paymobTransactionId,
+      paymobOrderId: order.paymobOrderId,
       termsAcceptedAt: order.termsAcceptedAt,
       termsVersion: order.termsVersion,
       notes: notes.filter((note) => note.orderId === order.id).map((note) => note.body),
       audits: audits.filter((audit) => audit.orderId === order.id).map((audit) => audit.action),
-      attempts: attempts.filter((attempt) => attempt.orderId === order.id).map((attempt) => ({ status: attempt.status, hasLink: Boolean(attempt.paymentUrl) })),
+      auditDetails: audits.filter((audit) => audit.orderId === order.id).map((audit) => ({ action: audit.action, previousValue: audit.previousValue, newValue: audit.newValue, metadata: audit.metadata })),
+      attempts: attempts.filter((attempt) => attempt.orderId === order.id).map((attempt) => ({ status: attempt.status, externalId: attempt.externalId, paymentUrl: attempt.paymentUrl, hasLink: Boolean(attempt.paymentUrl), metadata: attempt.metadata, failureReason: attempt.failureReason })),
     })),
   });
 }

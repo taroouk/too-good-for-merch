@@ -18,9 +18,9 @@ const INVALID = "db.ep-test-123.invalid"; // stands in for Neon / Paymob / Gemin
 const TESTNET = "192.0.2.1";
 
 // Async on purpose: the local test server lives in THIS process and must keep answering while the probe runs.
-function run(script, { guard = true } = {}) {
+function run(script, { guard = true, extraEnv = {} } = {}) {
   const log = path.join(TMP, `log-${Math.random().toString(36).slice(2)}.jsonl`);
-  const env = { PATH: process.env.PATH, TGFM_GUARD_LOG: log };
+  const env = { PATH: process.env.PATH, TGFM_GUARD_LOG: log, ...extraEnv };
   if (guard) env.NODE_OPTIONS = `--require ${JSON.stringify(GUARD)}`;
   return new Promise((resolve) => {
     const child = spawn(process.execPath, ["-e", script], { env });
@@ -158,5 +158,25 @@ describe("control: without the guard the probe is not blocked (proves the tests 
     const script = `fetch('https://${INVALID}/').then(()=>process.exit(0)).catch(()=>process.exit(3))`;
     assert.equal((await run(script, { guard: false })).status, 3);
     assert.equal((await run(script, { guard: true })).status, 86);
+  });
+});
+
+describe("TGFM_GUARD_ALLOW_HOSTS (opt-in, exact names)", () => {
+  const ALLOWED = "allowed-host.example.invalid";
+  test("an allowed name is not a violation (the lookup simply fails: .invalid never resolves)", async () => {
+    const r = await run(`require('dns').lookup('${ALLOWED}',(e)=>{console.log(e&&e.code);process.exit(0)})`, { extraEnv: { TGFM_GUARD_ALLOW_HOSTS: ALLOWED } });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.violations.length, 0);
+  });
+  test("any other name is still killed, a sub-domain or a look-alike of the allowed one included", async () => {
+    for (const other of [INVALID, `sub.${ALLOWED}`, `x${ALLOWED}`, `${ALLOWED}.evil.invalid`]) {
+      const r = await run(`require('dns').lookup('${other}',()=>process.exit(0))`, { extraEnv: { TGFM_GUARD_ALLOW_HOSTS: ALLOWED } });
+      assert.equal(r.status, 86, `${other}: ${r.stderr}`);
+      assert.equal(r.violations.length, 1);
+    }
+  });
+  test("without the variable nothing extra is allowed", async () => {
+    const r = await run(`require('dns').lookup('${ALLOWED}',()=>process.exit(0))`);
+    assert.equal(r.status, 86);
   });
 });

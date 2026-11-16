@@ -39,6 +39,9 @@ let isMainThread = true;
 try { isMainThread = require("node:worker_threads").isMainThread; } catch {}
 
 // ------------------------------------------------------------------ policy
+// Opt-in, exact host names only (set by run-isolated.mjs --paymob-sandbox-env: "accept.paymob.com"). Everything else stays blocked.
+const ALLOWED_HOSTS = new Set(String(process.env.TGFM_GUARD_ALLOW_HOSTS || "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean));
+
 function isLoopbackHost(host) {
   if (host === undefined || host === null || host === "") return true; // Node's default is localhost
   let h = String(host).trim().toLowerCase();
@@ -50,6 +53,7 @@ function isLoopbackHost(host) {
   if (h.startsWith("::ffff:")) return isLoopbackHost(h.slice(7));
   const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(h);
   if (m) return Number(m[1]) === 127; // 127.0.0.0/8
+  if (ALLOWED_HOSTS.has(h)) return true; // an explicitly allowed host name (never a wildcard)
   return false; // any other name or address
 }
 

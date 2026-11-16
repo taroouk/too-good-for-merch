@@ -181,8 +181,8 @@ async function main() {
   const templateSubject = await subjectBBox(templateBuf);
 
   // The REAL resolvePlacement() call -- pure function of fixed inputs, so
-  // computed once. This is what the client preview and the deterministic
-  // Print Mockup both already use; not touched by this investigation.
+  // computed once. This is what the client preview and the server compositor
+  // both already use; not touched by this investigation.
   const resolved = resolvePlacement({
     product: PRODUCT,
     color: COLOR,

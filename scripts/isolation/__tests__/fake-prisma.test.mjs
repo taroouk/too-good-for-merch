@@ -55,8 +55,8 @@ describe("CRUD per model", () => {
   test("build / buildDraft / asset / mockup / artwork / wishlistItem / bagItem / design / designPlacement", async () => {
     const { p } = fresh();
     await base(p);
-    const m = await p.mockup.create({ data: { buildId: "b1", kind: "PRINT", data: Buffer.from("png"), fingerprint: "f" } });
-    assert.equal(m.kind, "PRINT");
+    const m = await p.mockup.create({ data: { buildId: "b1", kind: "AI", data: Buffer.from("png"), fingerprint: "f" } });
+    assert.equal(m.kind, "AI");
     const art = await p.artwork.create({ data: { userId: "u1", buildId: "b1", mimeType: "image/png", data: Buffer.from("x"), sha256: "h" } });
     await p.wishlistItem.create({ data: { userId: "u1", buildId: "b1", artworkId: art.id, placements: [] } });
     await p.bagItem.create({ data: { userId: "u1", buildId: "b1" } });
@@ -64,8 +64,8 @@ describe("CRUD per model", () => {
     assert.equal(await p.designPlacement.count({ where: { designId: d.id } }), 1);
     assert.equal((await p.bagItem.findFirst()).size, "M"); // default
     assert.equal((await p.buildDraft.findUnique({ where: { buildId: "b1" } })).quantity, 3);
-    await p.buildDraft.update({ where: { buildId: "b1" }, data: { quantity: 4, printMockupId: m.id } });
-    assert.equal((await p.buildDraft.findUnique({ where: { buildId: "b1" }, select: { quantity: true, printMockup: { select: { kind: true } } } })).printMockup.kind, "PRINT");
+    await p.buildDraft.update({ where: { buildId: "b1" }, data: { quantity: 4, aiMockupId: m.id } });
+    assert.equal((await p.buildDraft.findUnique({ where: { buildId: "b1" }, select: { quantity: true, aiMockup: { select: { kind: true } } } })).aiMockup.kind, "AI");
     await p.wishlistItem.deleteMany({ where: { userId: "u1" } });
     assert.equal(await p.wishlistItem.count(), 0);
   });
@@ -567,8 +567,8 @@ describe("shared state through globalThis.__TGFM_FAKE_DB__ (seeded entry point)"
     const build = await prisma.build.findFirst({ where: { userId: user.id, status: "ACTIVE" }, orderBy: { updatedAt: "desc" }, select: { id: true } });
     assert.ok([seed.IDS.cartBuild2, seed.IDS.cartBuild3, seed.IDS.multiBuild, seed.IDS.dupBuild, seed.IDS.liveBuild, seed.IDS.expiredBuild, seed.IDS.flightBuild, seed.IDS.webhookBuild].includes(build.id), "/studio resumes one of the most recently created builds of the user");
     assert.equal(await prisma.bagItem.count({ where: { userId: user.id } }), 3, "the seeded bag has three items");
-    const page = await prisma.build.findUnique({ where: { id: seed.IDS.savedBuild }, select: { id: true, name: true, draft: { select: { id: true, product: true, printMockup: { select: { id: true, mimeType: true } }, artworkLayers: true } }, designs: { select: { placements: { select: { id: true } } } } } });
-    assert.equal(page.draft.printMockup.mimeType, "image/png");
+    const page = await prisma.build.findUnique({ where: { id: seed.IDS.savedBuild }, select: { id: true, name: true, draft: { select: { id: true, product: true, aiMockup: { select: { id: true, mimeType: true } }, artworkLayers: true } }, designs: { select: { placements: { select: { id: true } } } } } });
+    assert.equal(page.draft.aiMockup.mimeType, "image/png");
     assert.equal(page.draft.artworkLayers.length, 1);
     const assets = await prisma.asset.findMany({ where: { url: { not: null }, hiddenAt: null, OR: [{ buildId: build.id }, { build: { userId: user.id } }], AND: [{ OR: [{ cropSourceAssetId: null }, { id: { in: [seed.IDS.savedAsset] } }] }] }, orderBy: { createdAt: "desc" }, take: 48, select: { id: true, url: true } });
     assert.equal(assets.length, 3, "the saved upload plus the uploads of the second bag design and the two-placement design");

@@ -1,0 +1,10 @@
+{
+  "name": "tgfm-local-postgres",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Disposable local PostgreSQL for the db-tests/ and e2e/ runs. Separate from the app's package.json and lockfile.",
+  "type": "module",
+  "dependencies": {
+    "embedded-postgres": "latest"
+  }
+}

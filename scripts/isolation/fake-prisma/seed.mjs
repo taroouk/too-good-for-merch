@@ -8,7 +8,7 @@ export const TEST_USER = { id: "usr_fake_test", email: "test@tgfm.test", passwor
 export const QA_ADMIN = { email: "qa-admin@tgfm.test", password: "qa-admin-oEMUOFH58pG8j-Uo" };
 export const OTHER_USER = { id: "usr_fake_other", email: "other@tgfm.test" };
 export const IDS = {
-  savedBuild: "bld_fake_saved", // owned by TEST_USER, has a design, an upload and a print mockup
+  savedBuild: "bld_fake_saved", // owned by TEST_USER, has a design, an upload and a Gemini mockup
   guestBuild: "bld_fake_guest", // no owner (guest cookie flow)
   otherBuild: "bld_fake_other", // owned by OTHER_USER (access-denied scenarios)
   savedAsset: "ast_fake_saved",
@@ -17,7 +17,6 @@ export const IDS = {
   cartBuild3: "bld_fake_cart3",
   cartAsset2: "ast_fake_cart2",
   otherAsset: "ast_fake_other", // belongs to OTHER_USER's build (cross-user access tests)
-  otherPrintMockup: "mck_fake_other_print",
   // payment-path fixtures (create-intent retry / duplicate-prevention / ownership tests)
   orderReuse: "ord_fake_pending_reuse", // PENDING + a fresh PENDING attempt with a payment link
   orderInFlight: "ord_fake_in_flight", // a CREATED attempt (no link yet) from the last few seconds
@@ -36,10 +35,16 @@ export const IDS = {
   expiredBuild: "bld_fake_expired", orderExpired1: "ord_fake_expired_link", orderExpired2: "ord_fake_expired_second",
   flightBuild: "bld_fake_flight", orderFlight1: "ord_fake_in_flight_first", orderFlight2: "ord_fake_in_flight_second",
   webhookBuild: "bld_fake_webhook", orderWebhook1: "ord_fake_webhook_1", orderWebhook2: "ord_fake_webhook_2", orderWebhook3: "ord_fake_webhook_3",
+  orderOldLink: "ord_fake_old_link", // the customer retried checkout: its CURRENT Paymob order id is the newer one; the older link is still open
   orderConsentOk: "ord_fake_consent_ok", orderConsentOld: "ord_fake_consent_old", orderConsentNone: "ord_fake_consent_none",
   multiBuild: "bld_fake_multi", // artworks on two placements (RIGHT_CHEST carries a price rule) and NO placement notes
   otherAiMockup: "mck_fake_other_ai",
 };
+
+// The Paymob order id this fixture pretends was returned when the payment was created (what Order.paymobOrderId and
+// PaymentAttempt.externalId persist, and what a signed webhook carries as order.id). Deterministic so QA scripts can compute it.
+export const paymobIdFor = (orderNumber) => String(9000000 + Number(String(orderNumber).replace(/\D/g, "")));
+const WEBHOOK_ORDERS = new Set(["TGFM-5001", "TGFM-5031", "TGFM-5032", "TGFM-5033", "TGFM-4103", "TGFM-5051"]);
 
 // A valid 1x1 PNG (generated artwork stand-in; no real image data from the project).
 export const TINY_PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -68,7 +73,7 @@ export async function seedDatabase(client) {
   await db.catalogProduct.create({ data: { product: "FITTED", name: "Fitted T-Shirt", tagline: "Classic" } });
   await db.catalogProduct.create({ data: { product: "OVERSIZED", name: "Oversized T-Shirt", tagline: "Relaxed" } });
 
-  // A saved design: Build + draft + upload + print mockup.
+  // A saved design: Build + draft + upload + Gemini mockup.
   await db.build.create({
     data: { id: IDS.savedBuild, userId: TEST_USER.id, name: "Saved design", status: "ACTIVE", draft: { create: { product: "FITTED", color: "BLACK", fabric: "SIGNATURE_200", quantity: 1 } } },
   });
@@ -79,7 +84,7 @@ export async function seedDatabase(client) {
     },
   });
   await db.mockup.create({
-    data: { id: IDS.savedMockup, buildId: IDS.savedBuild, kind: "PRINT", mimeType: "image/png", data: TINY_PNG, sha256: sha256(TINY_PNG), width: 1, height: 1, fingerprint: "fake-fingerprint", placement: "CENTER_FRONT" },
+    data: { id: IDS.savedMockup, buildId: IDS.savedBuild, kind: "AI", mimeType: "image/png", data: TINY_PNG, sha256: sha256(TINY_PNG), width: 1, height: 1, fingerprint: "fake-fingerprint", placement: "CENTER_FRONT" },
   });
   await db.buildDraft.update({
     where: { buildId: IDS.savedBuild },
@@ -87,7 +92,7 @@ export async function seedDatabase(client) {
       primaryAssetId: IDS.savedAsset,
       artworkLayers: [{ placement: "CENTER_FRONT", assetId: IDS.savedAsset, x: 0, y: 0, scale: 1, rotation: 0 }],
       artworkPlacement: { placement: "CENTER_FRONT", x: 0, y: 0, scale: 1, rotation: 0 },
-      printMockupId: IDS.savedMockup, printMockupFingerprint: "fake-fingerprint", printMockupGeneratedAt: new Date(),
+      aiMockupId: IDS.savedMockup, aiMockupFingerprint: "fake-fingerprint", aiMockupGeneratedAt: new Date(),
     },
   });
 
@@ -100,7 +105,7 @@ export async function seedDatabase(client) {
       artworkData: TINY_PNG, artworkSha256: sha256(TINY_PNG), url: `/api/assets/${IDS.otherAsset}/file`,
     },
   });
-  for (const [id, kind] of [[IDS.otherPrintMockup, "PRINT"], [IDS.otherAiMockup, "AI"]]) {
+  for (const [id, kind] of [[IDS.otherAiMockup, "AI"]]) {
     await db.mockup.create({ data: { id, buildId: IDS.otherBuild, kind, mimeType: "image/png", data: TINY_PNG, sha256: sha256(TINY_PNG), width: 1, height: 1, fingerprint: `fake-other-${kind}`, placement: "CENTER_FRONT" } });
   }
 
@@ -124,7 +129,7 @@ export async function seedDatabase(client) {
         items: {
           create: {
             product: "OVERSIZED", color: "BLACK", fabric: "SIGNATURE_200", quantity: 1, unitPriceCents: 990, totalCents: 990, placements: ["CENTER_FRONT"], assetId: IDS.savedAsset,
-            preview: { size: "M", taxCents: 0, shippingCents: 0, printMockupId: IDS.savedMockup, aiMockupId: null, layers: [{ placement: "CENTER_FRONT", assetId: IDS.savedAsset, x: 0, y: 0, scale: 1, rotation: 0 }] },
+            preview: { size: "M", taxCents: 0, shippingCents: 0, aiMockupId: IDS.savedMockup, layers: [{ placement: "CENTER_FRONT", assetId: IDS.savedAsset, x: 0, y: 0, scale: 1, rotation: 0 }] },
           },
         },
       },
@@ -139,6 +144,7 @@ export async function seedDatabase(client) {
       shippingCountry: "EG", shippingCity: "Cairo", shippingAddressLine1: "1 Test Street",
       items: { create: { product: "OVERSIZED", color: "BLACK", fabric: "SIGNATURE_200", quantity: 1, unitPriceCents: 990, totalCents: 990, placements: ["CENTER_FRONT"], preview: { size: "M" } } },
       ...(attempt ? { paymentAttempts: { create: attempt } } : {}),
+      ...(WEBHOOK_ORDERS.has(orderNumber) ? { paymobOrderId: paymobIdFor(orderNumber) } : {}),
       ...extra,
     },
   });
@@ -202,9 +208,9 @@ export async function seedDatabase(client) {
   // --- double payment / terms / webhook fixtures ---------------------------------------------------------------------
   const plainBuild = (id, name) => db.build.create({ data: { id, userId: TEST_USER.id, name, status: "ACTIVE", draft: { create: { product: "FITTED", color: "WHITE", fabric: "ESSENTIALS_170", quantity: 1 } } } });
   for (const [id, name] of [[IDS.liveBuild, "Live link"], [IDS.expiredBuild, "Expired link"], [IDS.flightBuild, "In flight"], [IDS.webhookBuild, "Webhook design"]]) await plainBuild(id, name);
-  const attempt = (status, minutesAgo, link) => ({ method: "CARD", status, amountCents: 49500, currency: "EGP", ...(link ? { paymentUrl: link, externalId: `fake-${minutesAgo}` } : {}), createdAt: ago(minutesAgo) });
+  const attempt = (status, minutesAgo, link, externalId) => ({ method: "CARD", status, amountCents: 49500, currency: "EGP", ...(link ? { paymentUrl: link, externalId: externalId ?? `fake-${minutesAgo}` } : {}), createdAt: ago(minutesAgo) });
   // 1. a payment link opened 5 minutes ago on one order; a second open order for the same design
-  await payOrder(IDS.orderLive1, "TGFM-5001", TEST_USER.id, { buildId: IDS.liveBuild, paymentStatus: "PENDING", paymentMethod: "CARD", paymentUrl: "https://payments.example.invalid/pay/5001", createdAt: ago(10) }, attempt("PENDING", 5, "https://payments.example.invalid/pay/5001"));
+  await payOrder(IDS.orderLive1, "TGFM-5001", TEST_USER.id, { buildId: IDS.liveBuild, paymentStatus: "PENDING", paymentMethod: "CARD", paymentUrl: "https://payments.example.invalid/pay/5001", createdAt: ago(10) }, attempt("PENDING", 5, "https://payments.example.invalid/pay/5001", paymobIdFor("TGFM-5001")));
   await payOrder(IDS.orderLive2, "TGFM-5002", TEST_USER.id, { buildId: IDS.liveBuild, paymentStatus: "UNPAID", createdAt: ago(8) });
   // 2. the first link is 90 minutes old (expired at Paymob), so the second order may start its own payment
   await payOrder(IDS.orderExpired1, "TGFM-5011", TEST_USER.id, { buildId: IDS.expiredBuild, paymentStatus: "PENDING", paymentMethod: "CARD", paymentUrl: "https://payments.example.invalid/pay/5011", createdAt: ago(100) }, attempt("PENDING", 90, "https://payments.example.invalid/pay/5011"));
@@ -215,8 +221,13 @@ export async function seedDatabase(client) {
   // 4. three open orders for one design, each waiting for a webhook (the first two arrive in different orders in the tests)
   for (const [i, id] of [IDS.orderWebhook1, IDS.orderWebhook2, IDS.orderWebhook3].entries()) {
     await payOrder(id, `TGFM-503${i + 1}`, TEST_USER.id, { buildId: IDS.webhookBuild, paymentStatus: "PENDING", paymentMethod: "CARD", createdAt: ago(20 - i) },
-      { method: "CARD", status: "PENDING", amountCents: 49500, currency: "EGP", paymentUrl: `https://payments.example.invalid/pay/503${i + 1}`, externalId: `fake-503${i + 1}`, createdAt: ago(15 - i) });
+      { method: "CARD", status: "PENDING", amountCents: 49500, currency: "EGP", paymentUrl: `https://payments.example.invalid/pay/503${i + 1}`, externalId: paymobIdFor(`TGFM-503${i + 1}`), createdAt: ago(15 - i) });
   }
+  // 4b. the customer retried checkout: two payment attempts, two Paymob orders. The order's CURRENT id is the newer one; the older
+  //     (abandoned but still open) link carries the id kept only in its PaymentAttempt.externalId.
+  await payOrder(IDS.orderOldLink, "TGFM-5051", TEST_USER.id, { buildId: null, paymentStatus: "PENDING", paymentMethod: "CARD", paymobOrderId: String(Number(paymobIdFor("TGFM-5051")) + 1), createdAt: ago(40) },
+    { method: "CARD", status: "FAILED", amountCents: 49500, currency: "EGP", paymentUrl: "https://payments.example.invalid/pay/5051-old", externalId: paymobIdFor("TGFM-5051"), createdAt: ago(35) });
+  await db.paymentAttempt.create({ data: { orderId: IDS.orderOldLink, method: "CARD", status: "PENDING", amountCents: 49500, currency: "EGP", paymentUrl: "https://payments.example.invalid/pay/5051-new", externalId: String(Number(paymobIdFor("TGFM-5051")) + 1), createdAt: ago(10) } });
   // 5. stored consent on three retry-able (FAILED) orders: matching revision, an old revision, none at all
   const consent = { buildId: null, paymentStatus: "FAILED", paymentFailureReason: "Paymob could not complete this payment." };
   await payOrder(IDS.orderConsentOk, "TGFM-5041", TEST_USER.id, { ...consent, termsAcceptedAt: ago(30), termsVersion: "terms:default-v1|refunds:default-v1" });

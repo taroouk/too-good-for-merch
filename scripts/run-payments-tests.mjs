@@ -54,6 +54,10 @@ async function run() {
     return;
   }
 
+  // The unit tests set exactly the Paymob variables they need. Variables inherited from the shell or a CI (a developer's PAYMOB_* keys,
+  // for instance) must not leak in: they change which Paymob flow the code chooses (paymobFlow()) and made a test fail on such a machine.
+  for (const name of Object.keys(process.env)) if (/^PAYMOB_/.test(name)) delete process.env[name];
+
   let totalPassed = 0;
   let totalFailed = 0;
 

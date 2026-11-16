@@ -1,0 +1,15 @@
+{
+  "name": "tgfm-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Playwright end-to-end tests for TGFM. Separate from the app's package.json so the app's lockfile and Vercel install are untouched.",
+  "scripts": {
+    "install:browsers": "playwright install chromium",
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "typescript": "^5"
+  }
+}

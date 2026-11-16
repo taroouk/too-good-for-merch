@@ -12,7 +12,7 @@ import path from "node:path";
 import { after, describe, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { buildEnv, prepareCopy, FAKE_PRISMA_STUB, REPO_ROOT, TEMP_PREFIX, assertNoRealPrisma, injectFakePrisma, removeCopy, sandboxAvailable, sandboxProfile, scanForSecrets, verifyNodeModulesCopy } from "../run-isolated.mjs";
+import { buildEnv, prepareCopy, FAKE_PRISMA_STUB, REPO_ROOT, TEMP_PREFIX, assertNoRealPrisma, injectFakePrisma, removeCopy, PAYMOB_SANDBOX_KEYS, readPaymobSandboxVars, sandboxAvailable, sandboxProfile, scanForSecrets, verifyNodeModulesCopy } from "../run-isolated.mjs";
 
 const RUNNER = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../run-isolated.mjs");
 // Built from parts so this file itself never contains a secret-looking string (the copy scan would, rightly, flag it).
@@ -339,6 +339,33 @@ describe("--qa-routes (QA-only test routes, installed in the copy only)", () => 
   });
 });
 
+describe("QA overlay routes are inert unless the harness switches them on", () => {
+  const overlay = path.join(REPO_ROOT, "scripts/isolation/qa/overlay/app/api/qa-sim");
+  const files = fs.readdirSync(overlay, { recursive: true }).filter((f) => String(f).endsWith("route.ts")).map((f) => path.join(overlay, String(f)));
+  test("every QA route answers 404 before doing anything unless TGFM_FAKE_QA=1 (checked ahead of any database or session access)", () => {
+    assert.ok(files.length >= 10, `found ${files.length} routes`);
+    for (const file of files) {
+      const text = fs.readFileSync(file, "utf8");
+      const guard = text.indexOf('process.env.TGFM_FAKE_QA !== "1"');
+      assert.ok(guard > 0, `${path.relative(REPO_ROOT, file)} has no TGFM_FAKE_QA guard`);
+      const firstUse = text.search(/await\s+(prisma|req\.json|request\.json|auth\(|getServerSession)|prisma\./);
+      assert.ok(firstUse === -1 || guard < firstUse, `${path.relative(REPO_ROOT, file)} touches data before checking the guard`);
+      assert.match(text.slice(guard, guard + 160), /404/, `${path.relative(REPO_ROOT, file)} guard must answer 404`);
+    }
+  });
+  test("--qa-routes alone, and no flag at all, never installs the Gemini production stand-in", () => {
+    const root = fixture({ "src/lib/prisma.ts": "export const prisma = {};\n", "app/page.tsx": "x", "src/lib/mockups/gemini-endpoint.ts": "// real\n" });
+    try {
+      for (const args of [[], ["--qa-routes"], ["--qa-routes", "--gemini-stub-in-production"]]) {
+        const r = runner(["--root", root, "--dry-run", "--keep", "--fake-prisma", ...args]);
+        assert.equal(r.status, 0, r.stderr);
+        const tmp = keptPath(r.stderr);
+        try { assert.equal(fs.readFileSync(path.join(tmp, "app", "src/lib/mockups/gemini-endpoint.ts"), "utf8").startsWith("// real"), !args.includes("--gemini-stub-in-production")); } finally { removeCopy(tmp); }
+      }
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  });
+});
+
 describe("prepareCopy cleans up after itself when it fails", () => {
   const leftovers = () => new Set(fs.readdirSync(os.tmpdir()).filter((name) => name.startsWith(TEMP_PREFIX)));
   const newOnes = (before) => [...leftovers()].filter((name) => !before.has(name));
@@ -376,5 +403,39 @@ describe("prepareCopy cleans up after itself when it fails", () => {
     const r = runner(["--root", path.join(os.tmpdir(), "tgfm-no-such-root-" + Date.now()), "--dry-run"]);
     assert.notEqual(r.status, 0);
     assert.deepEqual(newOnes(before), []);
+  });
+});
+
+describe("--paymob-sandbox-env", () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "tgfm-sbx-test-"));
+  after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  // Fake values built from parts (this file must never contain a secret-looking string).
+  const sk = (mode) => ["egy_sk_", mode, "_", "x".repeat(20)].join("");
+  const pk = (mode) => ["egy_pk_", mode, "_", "y".repeat(20)].join("");
+  const write = (name, lines) => { const f = path.join(tmp, name); fs.writeFileSync(f, lines.join("\n")); return f; };
+  const good = [`PAYMOB_SECRET_KEY="${sk("test")}"`, `PAYMOB_PUBLIC_KEY=${pk("test")}`, "PAYMOB_INTEGRATION_ID=123456", "PAYMOB_HMAC_SECRET=abc", "PAYMOB_API_KEY=must-never-be-passed", "DATABASE_URL=postgres://real", "PAYMOB_CURRENCY=EGP"];
+  test("passes exactly the four settings it needs, and nothing else (no API key, no database url)", () => {
+    const v = readPaymobSandboxVars(write("good.env", good));
+    assert.deepEqual(Object.keys(v).sort(), [...PAYMOB_SANDBOX_KEYS].sort());
+    assert.equal(v.PAYMOB_SECRET_KEY, sk("test"));
+  });
+  test("a live (or unmarked) secret or public key is refused", () => {
+    assert.throws(() => readPaymobSandboxVars(write("live-sk.env", good.map((l) => l.replace(sk("test"), sk("live"))))), /not a TEST key/);
+    assert.throws(() => readPaymobSandboxVars(write("live-pk.env", good.map((l) => l.replace(pk("test"), pk("live"))))), /not a TEST key/);
+    assert.throws(() => readPaymobSandboxVars(write("plain.env", good.map((l) => l.replace(sk("test"), "plainsecretvalue")))), /not a TEST key/);
+  });
+  test("a missing setting or a non-numeric integration id is refused", () => {
+    assert.throws(() => readPaymobSandboxVars(write("missing.env", good.filter((l) => !l.startsWith("PAYMOB_HMAC_SECRET")))), /PAYMOB_HMAC_SECRET is missing/);
+    assert.throws(() => readPaymobSandboxVars(write("badint.env", good.map((l) => l.replace("123456", "12ab")))), /must be a number/);
+  });
+  test("the runner refuses to combine it with the OS sandbox, and with live keys, before starting anything", () => {
+    const f = write("run.env", good);
+    const both = runner(["--paymob-sandbox-env", f, "--os-sandbox", "--dry-run", "--", "node", "-e", "0"]);
+    assert.notEqual(both.status, 0);
+    assert.match(both.stderr, /cannot be combined with --os-sandbox/);
+    const live = runner(["--paymob-sandbox-env", write("run-live.env", good.map((l) => l.replace(sk("test"), sk("live")))), "--dry-run", "--", "node", "-e", "0"]);
+    assert.notEqual(live.status, 0);
+    assert.match(live.stderr, /not a TEST key/);
+    assert.ok(!live.stderr.includes("x".repeat(20)) && !live.stdout.includes("x".repeat(20)), "no key value in the output");
   });
 });
