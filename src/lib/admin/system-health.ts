@@ -98,9 +98,12 @@ export async function getSystemHealth(): Promise<{ checks: HealthCheck[]; dbLate
   });
 
   try {
-    const [pricing, invalidWebhooks, failedWebhooks, unprocessedWebhooks, stuckPending, newBespoke, activeAdmins, failedCheckouts] = await Promise.all([
+    const [pricing, invalidWebhooks, missingSecretWebhooks, failedWebhooks, unprocessedWebhooks, stuckPending, newBespoke, activeAdmins, failedCheckouts] = await Promise.all([
       getPricingHealth(),
+      // Rejected requests are stored as one small marker row per reason per hour (see recordRejectedWebhook), so this counts
+      // hours-with-rejections, not individual requests.
       prisma.webhookEvent.count({ where: { validSignature: false, createdAt: { gte: new Date(now - 24 * HOUR) } } }),
+      prisma.webhookEvent.count({ where: { eventKey: { startsWith: "rejected:missing_secret:" }, createdAt: { gte: new Date(now - 24 * HOUR) } } }),
       prisma.webhookEvent.count({ where: { validSignature: true, processed: false, errorMessage: { not: null }, createdAt: { gte: new Date(now - 72 * HOUR) } } }),
       prisma.webhookEvent.count({ where: { validSignature: true, processed: false, errorMessage: null, createdAt: { lte: new Date(now - 15 * 60 * 1000), gte: new Date(now - 72 * HOUR) } } }),
       prisma.order.count({ where: { paymentStatus: PaymentStatus.PENDING, createdAt: { lte: new Date(now - 24 * HOUR) } } }),
@@ -158,8 +161,13 @@ export async function getSystemHealth(): Promise<{ checks: HealthCheck[]; dbLate
     checks.push({
       id: "webhook-signatures",
       label: "Rejected webhook signatures (24h)",
-      level: invalidWebhooks > 5 ? "warn" : "ok",
-      detail: invalidWebhooks ? `${invalidWebhooks} request(s) failed HMAC verification — check the HMAC secret or look for probing.` : "None.",
+      // A missing HMAC secret means EVERY real Paymob webhook is being rejected: payments cannot be confirmed.
+      level: missingSecretWebhooks > 0 ? "fail" : invalidWebhooks >= 3 ? "warn" : "ok",
+      detail: missingSecretWebhooks > 0
+        ? "Webhooks arrived but PAYMOB_HMAC_SECRET is not configured, so none can be verified — paid orders will not be marked paid."
+        : invalidWebhooks
+          ? `Webhook requests failed HMAC verification in ${invalidWebhooks} of the last 24 hours (grouped per hour and reason) — check the HMAC secret or look for probing.`
+          : "None.",
       href: "/admin/payments",
     });
     checks.push({

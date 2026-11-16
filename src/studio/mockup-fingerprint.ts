@@ -33,8 +33,8 @@ export function computeMockupFingerprint(input: {
   // hash for callers that don't (the AI mockup flow, which has no dpi
   // concept and no rotation control) stays byte-for-byte identical to
   // before this change -- no AI mockup persistence/API behavior changes.
-  // The Print Mockup flow always provides both, since both affect the
-  // rendered output and must invalidate the print cache when they change.
+  // The mockup flow always provides both, since both affect the
+  // rendered output and must invalidate the cached mockup when they change.
   if (input.rotation !== undefined) {
     parts.push(Math.round(input.rotation * 1000) / 1000);
   }

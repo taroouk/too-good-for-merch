@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz";
 import { getAdminUser } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { extensionForMime } from "src/lib/image/compress-mockup";
@@ -32,11 +32,11 @@ export async function GET(
     return NextResponse.json({ error: "Artwork not found." }, { status: 404 });
   }
 
-  const session = await auth();
-  const sessionUserId = session?.user?.id ?? null;
+  // The caller comes from the database (a blocked user is signed out), not from the session token.
+  const sessionUserId = await getUserId();
   const allowed =
     // DB-backed admin check, not the JWT role claim (stale after a demotion).
-    (session?.user?.id ? (await getAdminUser()) != null : false) ||
+    (sessionUserId ? (await getAdminUser()) != null : false) ||
     (artwork.userId != null && artwork.userId === sessionUserId) ||
     (artwork.userId == null &&
       artwork.build != null &&

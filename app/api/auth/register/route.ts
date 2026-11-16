@@ -7,6 +7,7 @@ import { apiError, readJsonObject } from "src/lib/api/responses";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { parseAdminEmails, resolveBootstrapRole } from "src/lib/auth/bootstrap-role";
+import { REGISTER_ACCEPTED_BODY, REGISTER_ACCEPTED_STATUS } from "src/lib/auth/register-response";
 
 type NewUser = { id: string; email: string | null; role: "ADMIN" | "USER"; createdAt: Date };
 
@@ -97,18 +98,22 @@ export async function POST(req: Request) {
       return apiError("Password must be between 8 and 128 characters.", 400);
     }
 
-    // Prevent duplicates
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return apiError("Email already in use.", 409);
+    // M4: an address that already has an account must be indistinguishable from a new one -- same status, same body, and the
+    // same work done (the argon2 hash is computed BEFORE the lookup, so the existing-account path is not measurably faster).
+    // The existing account is left completely untouched: no password change, no role change.
+    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+    const existing = await prisma.user.findUnique({ where: { email }, select: { id: true } });
+    if (!existing) {
+      try {
+        await createUserWithBootstrapRole(email, passwordHash);
+      } catch (err: unknown) {
+        // Two registrations for the same new address racing each other: the loser is just "already exists".
+        const duplicate = err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002";
+        if (!duplicate) throw err;
+      }
     }
 
-    // Hash password (argon2id)
-    const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
-
-    const user = await createUserWithBootstrapRole(email, passwordHash);
-
-    return NextResponse.json({ user }, { status: 201 });
+    return NextResponse.json(REGISTER_ACCEPTED_BODY, { status: REGISTER_ACCEPTED_STATUS });
   } catch (err: unknown) {
     console.error("REGISTER_ERROR:", err);
     return apiError("Server error.", 500);

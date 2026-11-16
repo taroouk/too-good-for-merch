@@ -19,14 +19,13 @@ export async function recoverDraftArtworkIfLost(buildId: string): Promise<boolea
       primaryAssetId: true,
       artworkLayers: true,
       artworkPlacement: true,
-      printMockup: { select: { assetId: true, placement: true } },
       aiMockup: { select: { assetId: true, placement: true } },
     },
   });
   if (!draft || draft.product === "CUSTOM") return false;
   if (draft.primaryAssetId || draftArtworkLayers(draft).length) return false;
 
-  const mockup = draft.printMockup?.assetId ? draft.printMockup : draft.aiMockup?.assetId ? draft.aiMockup : null;
+  const mockup = draft.aiMockup?.assetId ? draft.aiMockup : null;
   if (!mockup?.assetId) return false;
 
   const asset = await prisma.asset.findFirst({

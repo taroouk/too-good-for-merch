@@ -11,8 +11,6 @@ import { draftArtworkLayers, layersForSide, sideFingerprint, type ArtworkLayer }
 import { BASELINE_RENDER_DPI } from "../studio/render/transform";
 
 type MockupPointers = {
-  printMockupId?: string | null;
-  printMockupFingerprint?: string | null;
   aiMockupId?: string | null;
   aiMockupFingerprint?: string | null;
 };
@@ -50,7 +48,6 @@ export function freshMockupId(draft: PreviewDraft, layers?: ArtworkLayer[]): str
   });
   if (!expected) return null;
   if (draft.aiMockupId && draft.aiMockupFingerprint === expected) return draft.aiMockupId;
-  if (draft.printMockupId && draft.printMockupFingerprint === expected) return draft.printMockupId;
   return null;
 }
 
@@ -68,11 +65,11 @@ export function designPreviewUrl(draft: PreviewDraft, layers?: ArtworkLayer[]): 
 // were frozen cannot be checked and keep their recorded mockup.
 export function orderItemPreviewUrl(
   item: { product: string | null; color: string | null; preview: unknown },
-  mockupIds: { printMockupId: string | null; aiMockupId: string | null },
+  mockupIds: { aiMockupId: string | null },
   fingerprintById: Map<string, string | null>,
   layers: ArtworkLayer[],
 ): string {
-  const candidates = [mockupIds.aiMockupId, mockupIds.printMockupId].filter((id): id is string => Boolean(id));
+  const candidates = [mockupIds.aiMockupId].filter((id): id is string => Boolean(id));
   if (!layers.length) {
     return candidates.length ? `/api/mockups/${candidates[0]}/file` : plainGarmentImage(item.product, item.color);
   }
@@ -91,8 +88,6 @@ export function orderItemPreviewUrl(
 // different colour, cut or artwork than the one being bought.
 export function freshMockupPointers(
   draft: PreviewDraft & {
-    backPrintMockupId?: string | null;
-    backPrintMockupFingerprint?: string | null;
     backAiMockupId?: string | null;
     backAiMockupFingerprint?: string | null;
   },
@@ -110,9 +105,7 @@ export function freshMockupPointers(
   const keep = (id: string | null | undefined, fingerprint: string | null | undefined, want: string | null) =>
     id && want && fingerprint === want ? id : null;
   return {
-    printMockupId: keep(draft.printMockupId, draft.printMockupFingerprint, front),
     aiMockupId: keep(draft.aiMockupId, draft.aiMockupFingerprint, front),
-    backPrintMockupId: keep(draft.backPrintMockupId, draft.backPrintMockupFingerprint, back),
     backAiMockupId: keep(draft.backAiMockupId, draft.backAiMockupFingerprint, back),
   };
 }

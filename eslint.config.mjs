@@ -21,6 +21,8 @@ const eslintConfig = defineConfig([
     ".render-test-build/**",
     // Transient tsc output for the payments/pricing test runner (scripts/run-payments-tests.mjs)
     ".payments-test-build/**",
+    // Playwright project with its own dependencies (see e2e/README.md)
+    "e2e/**",
   ]),
 ]);
 

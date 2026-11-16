@@ -4,7 +4,7 @@ import { getStoreDisplay } from "src/lib/store-display";
 import { formatDisplayPrice } from "src/pricing/display";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { prisma } from "src/lib/prisma";
 import { actionRemoveFromBagForm } from "src/actions/bag-actions";
 import { quoteCart } from "src/lib/orders/cart-checkout";
@@ -24,9 +24,8 @@ function label(value: string | null): string {
 }
 
 export default async function BagPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login?callbackUrl=/bag");
-  const userId = session.user.id;
+  const userId = await getUserId();
+  if (!userId) redirect("/login?callbackUrl=/bag");
 
   const items = await prisma.bagItem.findMany({
     where: { userId },
@@ -50,8 +49,6 @@ export default async function BagPage() {
               primaryAssetId: true,
               artworkPlacement: true,
               artworkLayers: true,
-              printMockupId: true,
-              printMockupFingerprint: true,
               aiMockupId: true,
               aiMockupFingerprint: true,
             },

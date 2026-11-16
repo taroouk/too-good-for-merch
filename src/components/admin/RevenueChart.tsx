@@ -16,7 +16,7 @@ export default function RevenueChart({ data, currency }: { data: Array<{ label: 
           {[0, .25, .5, .75, 1].map((ratio) => <line key={ratio} x1="0" x2={width} y1={8 + ratio * (height - 24)} y2={8 + ratio * (height - 24)} stroke="#111827" strokeOpacity=".08" />)}
           {points.length > 1 ? <path d={`M ${points[0].x} ${height} L ${polyline.replaceAll(",", " ")} L ${points.at(-1)?.x} ${height} Z`} fill="url(#revenueFill)" /> : null}
           <polyline points={polyline} fill="none" stroke="#111827" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
-          {points.map((point) => <circle key={`${point.label}-${point.x}`} cx={point.x} cy={point.y} r="4" fill="white" stroke="#111827" strokeWidth="3"><title>{point.label}: {currency} {(point.value / 100).toFixed(2)}</title></circle>)}
+          {points.map((point) => <circle key={`${point.label}-${point.x}`} cx={point.x} cy={point.y} r="4" fill="white" stroke="#111827" strokeWidth="3"><title>{`${point.label}: ${currency} ${(point.value / 100).toFixed(2)}`}</title></circle>)}
         </svg>
       </div>
       <div className="mt-1 flex justify-between text-[10px] font-medium text-black/35">{points.filter((_, index) => index % Math.ceil(points.length / 6) === 0 || index === points.length - 1).map((point) => <span key={point.label}>{point.label}</span>)}</div>

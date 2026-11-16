@@ -292,8 +292,7 @@ export function resolvePlacement(params: {
 // output image, whose dimensions the model does not guarantee will match
 // the template it was given (observed empirically: a 1254x1254 template
 // can come back as, e.g., 1024x1024). Used only by the AI Mockup
-// post-compositor; the deterministic Print Mockup path never calls this
-// (its base image IS the template, so no remap is needed there).
+// post-compositor (when the base image IS the template, no remap is needed).
 //
 // Position (left/top) is remapped independently per axis -- it's just
 // "where does this box's corner sit" in the target canvas, on the

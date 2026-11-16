@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { prisma } from "src/lib/prisma";
 import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
 import AccountNav from "src/components/site/AccountNav";
@@ -21,17 +21,17 @@ const TONE_CLASS: Record<StatusTone, string> = {
 const titleCase = (value: string) => value.replaceAll("_", " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
 
 export default async function OrdersPage({ searchParams }: { searchParams: Promise<{ filter?: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login?callbackUrl=/orders");
+  const userId = await getUserId();
+  if (!userId) redirect("/login?callbackUrl=/orders");
   const filter = parseOrderFilter((await searchParams).filter);
 
   const rawOrders = await prisma.order.findMany({
-    where: { userId: session.user.id },
+    where: { userId: userId },
     orderBy: { createdAt: "desc" },
     include: { items: { orderBy: { createdAt: "asc" } } },
   });
   // Paid orders whose design was also paid on another order are shown as "Payment received — under review", not "Confirmed".
-  const reviewIds = await duplicateReviewIdsFor(session.user.id, rawOrders);
+  const reviewIds = await duplicateReviewIdsFor(userId, rawOrders);
   const orders = rawOrders.map((order) => ({ ...order, paymentUnderReview: reviewIds.has(order.id) }));
 
   // Each order's picture is the customer's own mockup, checked against what
@@ -41,7 +41,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
       orders.flatMap((order) =>
         order.items.flatMap((item) => {
           const ids = resolveOrderMockupIds(item.preview, null);
-          return [ids.printMockupId, ids.aiMockupId].filter((id): id is string => Boolean(id));
+          return [ids.aiMockupId].filter((id): id is string => Boolean(id));
         }),
       ),
     ),

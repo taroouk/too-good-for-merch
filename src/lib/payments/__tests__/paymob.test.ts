@@ -280,7 +280,7 @@ export async function runAll() {
         const now = new Date("2026-01-01T00:00:00Z");
         const first = classifySuccessfulPayment(pending, "txn-A", now);
         assert.equal(first.isDuplicateCharge, false);
-        if (first.isDuplicateCharge) throw new Error("unreachable");
+        if (first.isDuplicateCharge || first.afterRefund) throw new Error("unreachable");
         assert.deepEqual(first.update, {
           paymentStatus: PaymentStatus.PAID,
           status: OrderStatus.PAID,
@@ -299,7 +299,45 @@ export async function runAll() {
           paidAt: now,
         };
         const second = classifySuccessfulPayment(afterFirstCharge, "txn-B", now);
-        assert.deepEqual(second, { isDuplicateCharge: true });
+        assert.deepEqual(second, { afterRefund: false, isDuplicateCharge: true });
+      },
+
+      "webhookEventKey: two different large payloads get different keys (the key is computed from the full body, not a truncated stub)"() {
+        const big = (id: number) => ({ type: "TRANSACTION", obj: { id, success: true, pending: false, is_refunded: false, is_voided: false, padding: "x".repeat(70_000) } });
+        assert.notEqual(webhookEventKey(big(1) as never), webhookEventKey(big(2) as never));
+        // what the route used to key on for anything over 60 KB: identical for every large event
+        const stub = () => ({ truncated: true });
+        assert.equal(webhookEventKey(stub() as never), webhookEventKey(stub() as never), "documents the old collision");
+        // an ordinary payload keeps exactly the same key as before
+        const normal = { type: "TRANSACTION", obj: { id: 7, success: true } };
+        assert.equal(webhookEventKey(normal as never), webhookEventKey(JSON.parse(JSON.stringify(normal)) as never));
+      },
+
+      "classifySuccessfulPayment: a REFUNDED order is terminal -- a late success (any transaction id) yields no update and is not a duplicate charge"() {
+        const refunded = {
+          paymentStatus: PaymentStatus.REFUNDED,
+          paymobTransactionId: "txn-A",
+          status: OrderStatus.PAID,
+          paidAt: new Date("2026-01-01T00:00:00Z"),
+        };
+        for (const id of ["txn-A", "txn-B", null]) {
+          assert.deepEqual(classifySuccessfulPayment(refunded, id, new Date("2026-02-01T00:00:00Z")), {
+            afterRefund: true,
+            isDuplicateCharge: false,
+          });
+        }
+      },
+
+      "classifySuccessfulPayment: every other payment state still behaves as before (UNPAID/PENDING/FAILED -> PAID)"() {
+        for (const paymentStatus of [PaymentStatus.UNPAID, PaymentStatus.PENDING, PaymentStatus.FAILED]) {
+          const r = classifySuccessfulPayment(
+            { paymentStatus, paymobTransactionId: null, status: OrderStatus.NEW, paidAt: null },
+            "txn-A",
+            new Date("2026-01-01T00:00:00Z"),
+          );
+          assert.equal(r.afterRefund, false);
+          assert.equal(r.isDuplicateCharge, false);
+        }
       },
 
       "classifySuccessfulPayment: a retried delivery of the SAME transaction id is idempotent, not a double charge"() {
@@ -312,7 +350,7 @@ export async function runAll() {
         };
         const retry = classifySuccessfulPayment(afterFirstCharge, "txn-A", new Date("2026-01-01T00:05:00Z"));
         assert.equal(retry.isDuplicateCharge, false);
-        if (retry.isDuplicateCharge) throw new Error("unreachable");
+        if (retry.isDuplicateCharge || retry.afterRefund) throw new Error("unreachable");
         // paidAt is preserved from the first charge, not reset to the retry's `now`.
         assert.deepEqual(retry.update.paidAt, now);
         assert.equal(retry.update.paymobTransactionId, "txn-A");
@@ -457,7 +495,7 @@ export async function runAll() {
         };
         const result = classifySuccessfulPayment(current, "txn-A", new Date());
         assert.equal(result.isDuplicateCharge, false);
-        if (result.isDuplicateCharge) throw new Error("unreachable");
+        if (result.isDuplicateCharge || result.afterRefund) throw new Error("unreachable");
         assert.equal(result.update.status, OrderStatus.IN_PRODUCTION);
       },
     });

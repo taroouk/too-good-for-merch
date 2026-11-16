@@ -1,6 +1,7 @@
 "use client";
 
 import { alertDialog, confirmDialog } from "src/components/ui/dialog";
+import { SIGNUP_SIGNIN_FAILED_MESSAGE } from "src/lib/auth/register-response";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import type {
   ChangeEvent,
@@ -50,7 +51,7 @@ import {
 } from "src/studio/render/transform";
 import { getBespokeShirtImage } from "src/studio/render/bespoke-shirt-image";
 // The Bespoke popup designs on a FLAT tee, while everything outside it
-// (the Live Model Preview, the Print Mockup, the Gemini mockup) renders
+// (the Live Model Preview and the Gemini mockup) render
 // onto the photographed-model templates. The stored transform stays in
 // template space; these convert it to/from the flat tee's own canvas for
 // display and for drag input only. See src/studio/render/editor-surface.ts.
@@ -124,6 +125,10 @@ function withAssetFirst(list: UserAssetDTO[], asset: UserAssetDTO, alsoDrop?: st
 }
 
 type CreatedAssetDTO = Awaited<ReturnType<typeof actionCreateAssetForBuilder>>;
+// What a refused upload hands back (see actionCreateAssetForBuilder): the reason, written for the customer.
+function isRejectedUpload(value: CreatedAssetDTO): value is { ok: false; error: string } {
+  return Boolean(value) && typeof value === "object" && "ok" in (value as object) && (value as { ok?: unknown }).ok === false;
+}
 
 // One artwork in the design, with what the editor needs to draw it.
 type EditorLayer = ArtworkLayer & { url: string; fileName?: string; hash?: string | null };
@@ -148,8 +153,6 @@ type BuilderClientProps = {
   draft: DraftDTO;
   placementsCount: number;
   initialUserAssets?: UserAssetDTO[];
-  initialMockupUrl?: string | null;
-  initialMockupFingerprint?: string | null;
   initialAiMockupUrl?: string | null;
   initialAiMockupFingerprint?: string | null;
   // Admin-set Bespoke/Custom quote (src/actions/admin-bespoke-actions.ts).
@@ -177,10 +180,8 @@ type BuilderClientProps = {
   // Whether this build is already in the signed-in user's wishlist.
   initialInWishlist?: boolean;
   // Multi-artwork design (src/studio/artwork-layers.ts) and the back-side
-  // mockups (front ones are initialMockup*/initialAiMockup*).
+  // mockups (front ones are initialAiMockup*).
   initialLayers?: EditorLayer[];
-  initialBackMockupUrl?: string | null;
-  initialBackMockupFingerprint?: string | null;
   initialBackAiMockupUrl?: string | null;
   initialBackAiMockupFingerprint?: string | null;
 };
@@ -229,6 +230,7 @@ function cn(...parts: Array<string | false | null | undefined>) {
 }
 
 const PREVIEW_FAILED_MESSAGE = "We couldn't create your preview. Please try again.";
+const SIGN_IN_FOR_PREVIEW_MESSAGE = "Sign in to generate your preview.";
 
 function clampQty(qty: number) {
   if (!Number.isFinite(qty)) return 1;
@@ -261,8 +263,8 @@ function clampArtworkPosition(
 }
 
 // Bespoke ("CUSTOM") has no product/colour of its own yet -- that's the
-// whole point of it being a tailored request. The print/AI mockup routes
-// only know the FITTED/OVERSIZED templates in BLACK/WHITE (their own
+// whole point of it being a tailored request. The AI mockup route
+// only knows the FITTED/OVERSIZED templates in BLACK/WHITE (their own
 // PRODUCTS/COLORS enums reject anything else), so a Bespoke mockup needs
 // *some* concrete template to render onto. Reuses the exact same fallback
 // getBespokeShirtImage above already uses for the on-screen canvas preview
@@ -284,7 +286,7 @@ const UPLOAD_FAILED_MESSAGE = "This image couldn't be uploaded. Please try a PNG
 function uploadFailureMessage(error: unknown): string {
   const message = error instanceof Error ? error.message.trim() : "";
   if (!message) return UPLOAD_FAILED_MESSAGE;
-  if (/does not match its file type|server components render|digest|unexpected response|failed to fetch/i.test(message)) {
+  if (/does not match its file type|server components render|digest|unexpected response|failed to fetch|minified react error/i.test(message)) {
     return UPLOAD_FAILED_MESSAGE;
   }
   return message;
@@ -302,8 +304,6 @@ export default function BuilderClient({
   openDesignerOnLoad = false,
   editingBagItem = false,
   initialUserAssets = [],
-  initialMockupUrl = null,
-  initialMockupFingerprint = null,
   initialAiMockupUrl = null,
   initialAiMockupFingerprint = null,
   initialCustomQuoteUsdCents = null,
@@ -312,8 +312,6 @@ export default function BuilderClient({
   initialArtworkPlacement = null,
   initialInWishlist = false,
   initialLayers = [],
-  initialBackMockupUrl = null,
-  initialBackMockupFingerprint = null,
   initialBackAiMockupUrl = null,
   initialBackAiMockupFingerprint = null,
 }: BuilderClientProps) {
@@ -382,19 +380,9 @@ export default function BuilderClient({
   const [wishlistError, setWishlistError] = useState<string | null>(null);
   const [bagPending, setBagPending] = useState(false);
   const [bagNotice, setBagNotice] = useState<{ ok: boolean; text: string } | null>(null);
-  // printMockupUrl/printMockupFingerprint hold the deterministic compositor
-  // result (POST /api/mockups/print, persisted as Mockup(kind="PRINT")).
   // aiMockupUrl/aiMockupFingerprint hold the Gemini result (POST
-  // /api/mockups/nanobanana, persisted as Mockup(kind="AI")). These two used
-  // to collide: the state below named "generatedMockupUrl" was seeded from
-  // the print-sourced prop but written to by the AI generator -- kept
-  // genuinely separate now.
-  const [printMockupUrl, setPrintMockupUrl] = useState<string | null>(
-    initialMockupUrl,
-  );
-  const [printMockupFingerprint, setPrintMockupFingerprint] = useState<string | null>(
-    initialMockupFingerprint,
-  );
+  // /api/mockups/nanobanana, persisted as Mockup(kind="AI")). Gemini is the
+  // only way a mockup is made: there is no other generator and no fallback.
   // Falls back to the canonical saved-artwork URL so the preview still
   // shows the exact saved image if the Build-scoped aiMockup row is ever
   // pruned. The AI generator overwrites this with a fresh Gemini result.
@@ -405,10 +393,6 @@ export default function BuilderClient({
     initialAiMockupFingerprint ?? null,
   );
   // Back-of-garment mockups (the states above are the front).
-  const [backPrintMockupUrl, setBackPrintMockupUrl] = useState<string | null>(initialBackMockupUrl);
-  const [backPrintMockupFingerprint, setBackPrintMockupFingerprint] = useState<string | null>(
-    initialBackMockupFingerprint,
-  );
   const [backAiMockupUrl, setBackAiMockupUrl] = useState<string | null>(initialBackAiMockupUrl);
   const [backAiMockupFingerprint, setBackAiMockupFingerprint] = useState<string | null>(
     initialBackAiMockupFingerprint,
@@ -552,23 +536,14 @@ export default function BuilderClient({
     );
   }, [artworkUrl, state.primaryAssetId, userAssets]);
 
-  // The AI mockup is now 100% derived from the Print Mockup (POST
-  // /api/mockups/nanobanana resolves the Print Mockup server-side from
-  // draftId and stamps the AI mockup with the Print Mockup's own
-  // fingerprint verbatim -- see app/api/mockups/nanobanana/route.ts). So
-  // there is exactly one live fingerprint, using the same rotation (the live
-  // artworkTransform.rotation, which round-trips through the persisted
-  // placement -- see P3-21c) and dpi (BASELINE_RENDER_DPI,
-  // since generatePrintMockup never overrides it) the server will actually
-  // use, so a fresh print mockup doesn't immediately appear stale against
-  // its own just-persisted fingerprint. Both isPrintMockupStale and
-  // isAiMockupStale compare against it.
+  // One live fingerprint per garment side. It uses the same rotation (the live artworkTransform.rotation, which round-trips
+  // through the persisted placement) and dpi (BASELINE_RENDER_DPI) the AI route computes, so a freshly generated mockup is
+  // never immediately stale against its own just-persisted fingerprint.
   // One fingerprint per garment side, over every artwork on that side
   // (src/studio/artwork-layers.ts) -- identical to the old single-artwork
   // fingerprint for a one-artwork side, so existing mockups stay fresh.
   // Resolved product/color (never "CUSTOM") and the baseline dpi: exactly
-  // what the print/AI routes compute, so a freshly generated mockup is never
-  // immediately stale against its own fingerprint.
+  // what the AI route computes.
   const mockupProduct = resolveMockupProduct(state.product);
   const mockupColor = resolveMockupColor(state.color);
   const liveFingerprints = useMemo(
@@ -581,8 +556,8 @@ export default function BuilderClient({
 
   // Generated mockups per side (front = the original state names).
   const sideMockups = {
-    front: { printUrl: printMockupUrl, printFp: printMockupFingerprint, aiUrl: aiMockupUrl, aiFp: aiMockupFingerprint },
-    back: { printUrl: backPrintMockupUrl, printFp: backPrintMockupFingerprint, aiUrl: backAiMockupUrl, aiFp: backAiMockupFingerprint },
+    front: { aiUrl: aiMockupUrl, aiFp: aiMockupFingerprint },
+    back: { aiUrl: backAiMockupUrl, aiFp: backAiMockupFingerprint },
   } as const;
 
   function isSideAiFresh(side: "front" | "back") {
@@ -998,7 +973,8 @@ export default function BuilderClient({
 
     startTransition(() => {
       actionCreateAssetForBuilder(buildId, fd).then((res: CreatedAssetDTO) => {
-        if (res && res.id) {
+        if (isRejectedUpload(res)) throw new Error(res.error);
+        if (res && "id" in res && res.id) {
           const persistedUrl = res.url;
           // Re-uploading an image that's already in "Your uploads" (same
           // content hash) replaces its tile rather than adding a second one.
@@ -1011,6 +987,9 @@ export default function BuilderClient({
             cropSourceId: res.cropSourceAssetId ?? null,
             crop: parseCropMeta(res.cropMeta),
           };
+          // Recorded synchronously, BEFORE any state update is queued: "Place it" can be pressed after this callback ran but before React
+          // rendered the swap, and its handler is then still the previous render's one, which only knows the temporary copy (see placeStaged).
+          resolvedUploadsRef.current.set(tempId, persisted);
           setUserAssets((prev) => withAssetFirst(prev, persisted, tempId));
           const placedEarly = placeWhenReadyRef.current === tempId;
           if (placedEarly) placeWhenReadyRef.current = null;
@@ -1073,6 +1052,8 @@ export default function BuilderClient({
   // shirt until it is dropped there (or "Place it" is pressed).
   const [staged, setStaged] = useState<UserAssetDTO | null>(null);
   const placeWhenReadyRef = useRef<string | null>(null);
+  // temporary upload id -> the saved copy, for uploads that finished (read by placeStaged, which may run with a stale `staged`)
+  const resolvedUploadsRef = useRef(new Map<string, UserAssetDTO>());
 
   function stageAsset(asset: UserAssetDTO) {
     setMockupError(null);
@@ -1080,8 +1061,11 @@ export default function BuilderClient({
   }
 
   function placeStaged() {
-    const asset = staged;
+    let asset = staged;
     if (!asset) return;
+    // The upload may have finished after the render this handler belongs to (its blob: URL is already revoked): use the saved copy.
+    const saved = resolvedUploadsRef.current.get(asset.id);
+    if (saved) asset = saved;
     if (!canAddArtworkToActivePlacement()) return;
     setStaged(null);
     if (asset.id.startsWith("temp-upload-")) {
@@ -1160,6 +1144,14 @@ export default function BuilderClient({
 
   async function selectAsset(asset: UserAssetDTO) {
     if (!canAddArtworkToActivePlacement()) return;
+    // What the customer had before, to put back if the picked image cannot be attached.
+    const previousView = { url: artworkUrl, name: activeArtworkAsset?.fileName ?? "", transform: artworkTransform };
+    const restorePreviousView = () => {
+      pendingFitRef.current = false;
+      setArtworkUrl(previousView.url);
+      setUploadName(previousView.name);
+      setArtworkTransform(previousView.transform);
+    };
     setArtworkUrl(asset.url);
     setUploadName(asset.fileName);
     pendingFitRef.current = true;
@@ -1176,7 +1168,12 @@ export default function BuilderClient({
 
     try {
       const attached = await actionAttachExistingAsset(buildId, asset.id);
-      if (!attached?.id || !attached.url) return;
+      if (!attached?.id || !attached.url) {
+        // The image is gone (or cannot be read): say so and leave the shirt as it was, instead of silently showing it.
+        restorePreviousView();
+        void alertDialog({ title: "Couldn't load artwork", message: "This artwork is no longer available. Please upload it again." });
+        return;
+      }
 
       const nextAsset: UserAssetDTO = {
         id: attached.id,
@@ -1193,6 +1190,7 @@ export default function BuilderClient({
       setUploadName(nextAsset.fileName);
       save({ ...state, primaryAssetId: nextAsset.id });
     } catch {
+      restorePreviousView();
       void alertDialog({ title: "Couldn't load artwork", message: "Could not load this artwork. Please try again." });
     } finally {
       setAttachingAssetId(null);
@@ -1282,12 +1280,7 @@ export default function BuilderClient({
 
   function handleArtworkPointerDown(event: ReactPointerEvent<HTMLImageElement>) {
     // The draggable overlay <img> only exists in the DOM when it's meant
-    // to be interactive (BespokeModal renders it only when
-    // !generatedMockupUrl || isMockupStale) -- gating on printMockupUrl
-    // here too was redundant, and actively wrong now that "Generate AI
-    // Mockup" always (re)generates a Print Mockup first: printMockupUrl
-    // would stay permanently truthy after the very first click, silently
-    // blocking every subsequent drag for the rest of the session.
+    // to be interactive, so nothing more needs to gate the drag here.
     if (!artworkUrl) return;
     event.preventDefault();
     dragStateRef.current = {
@@ -1477,9 +1470,7 @@ export default function BuilderClient({
     setUploadName("");
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
     setActivePlacement("CENTER_FRONT");
-    setPrintMockupUrl(null);
     setAiMockupUrl(null);
-    setBackPrintMockupUrl(null);
     setBackAiMockupUrl(null);
     setStaged(null);
     setMockupError(null);
@@ -1546,7 +1537,7 @@ export default function BuilderClient({
       });
 
       if (!result) throw new Error("Unknown error.");
-      if (result.error) throw new Error("Invalid email or password.");
+      if (result.error) throw new Error(authMode === "signup" ? SIGNUP_SIGNIN_FAILED_MESSAGE : "Invalid email or password.");
 
       setShowAuthModal(false);
       setAuthPassword("");
@@ -1729,9 +1720,7 @@ export default function BuilderClient({
     setArtworkUrl(null);
     setUploadName("");
     setArtworkTransform(DEFAULT_ARTWORK_TRANSFORM);
-    setPrintMockupUrl(null);
     setAiMockupUrl(null);
-    setBackPrintMockupUrl(null);
     setBackAiMockupUrl(null);
     setMockupError(null);
 
@@ -1752,12 +1741,8 @@ export default function BuilderClient({
         setUploadName(first.fileName ?? "");
         setArtworkTransform({ x: first.x, y: first.y, scale: first.scale, rotation: first.rotation });
       }
-      setPrintMockupUrl(result.mockups.front.printUrl);
-      setPrintMockupFingerprint(result.mockups.front.printFp);
       setAiMockupUrl(result.mockups.front.aiUrl);
       setAiMockupFingerprint(result.mockups.front.aiFp);
-      setBackPrintMockupUrl(result.mockups.back.printUrl);
-      setBackPrintMockupFingerprint(result.mockups.back.printFp);
       setBackAiMockupUrl(result.mockups.back.aiUrl);
       setBackAiMockupFingerprint(result.mockups.back.aiFp);
       // The loaded design is exactly what the server now holds -- don't
@@ -1858,7 +1843,7 @@ export default function BuilderClient({
   // button) is also the FITTED/OVERSIZED artwork editor, not only the
   // Bespoke request flow, so overwriting product here silently downgraded
   // an already-chosen FITTED/OVERSIZED selection to CUSTOM on every save,
-  // which then failed generatePrintMockup's product check on the next
+  // which then failed the mockup route's product check on the next
   // "Generate AI Mockup" click even though the user never touched product.
   // continueCustomRequest() above is the only place that should set CUSTOM.
   // Save T-Shirt is the popup's single action: it generates the AI mockup
@@ -1899,6 +1884,12 @@ export default function BuilderClient({
   // back-only design simply has none). Also what "Try again" runs.
   async function runPreviewGeneration(layers: EditorLayer[]): Promise<boolean> {
     if (mockupPending) return false;
+    // Gemini mockups are for signed-in customers (the server refuses guests too); ask before calling it.
+    if (status !== "authenticated") {
+      requestAuth("login");
+      setMockupError(SIGN_IN_FOR_PREVIEW_MESSAGE);
+      return false;
+    }
     if (sidesNeedingGeneration.length) {
       setMockupPending(true);
       setMockupError(null);
@@ -2119,34 +2110,21 @@ export default function BuilderClient({
     return getEditorPlacementStyle(state.product, state.color, activePlacement);
   }, [activePlacement, state.product, state.color]);
 
-  // What the Live Model Preview (outside the popup) shows on the model.
-  //
-  // The popup's own canvas is now permanently the flat editor tee -- it is
-  // where the t-shirt gets BUILT, so it has to stay the thing being built
-  // and stay draggable. That makes this preview the only place a photoreal
-  // result can land, so it shows the best available one: the Gemini AI
-  // mockup while it is fresh, otherwise the deterministic Print Mockup,
-  // otherwise (both stale/absent) TryOn3DPreview's own model photo with
-  // the live artwork overlay.
-  //
-  // Preferring the AI mockup only while it is FRESH matters: both mockups
-  // are invalidated by the same live fingerprint (see isAiMockupStale /
-  // isPrintMockupStale), so the instant the user drags, zooms or swaps
-  // artwork this falls back rather than leaving a stale photo of the
-  // previous design on the model.
-  // Per garment side: the fresh AI mockup, else the print mockup (stale
-  // when its fingerprint no longer matches that side's live design).
+  // What the Live Model Preview (outside the popup) shows on the model, per garment side: the Gemini mockup while it is FRESH
+  // for that side's live design, otherwise nothing -- TryOn3DPreview then shows its own model photo with the live artwork
+  // overlay (a live editor view, not a generated mockup). Preferring the mockup only while fresh matters: the instant the user
+  // drags, zooms or swaps artwork it is dropped rather than leaving a stale photo of the previous design on the model.
   const modelPreviewMockups = useMemo(() => {
     const pick = (side: "front" | "back") => {
       const live = liveFingerprints[side];
       const m = sideMockups[side];
       if (live && m.aiUrl && m.aiFp === live) return { url: m.aiUrl, isStale: false };
-      return { url: live ? m.printUrl : null, isStale: !live || m.printFp !== live };
+      return { url: null, isStale: true };
     };
     return { front: pick("front"), back: pick("back") };
     // sideMockups is rebuilt every render from the state values listed here.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [liveFingerprints, printMockupUrl, printMockupFingerprint, aiMockupUrl, aiMockupFingerprint, backPrintMockupUrl, backPrintMockupFingerprint, backAiMockupUrl, backAiMockupFingerprint]);
+  }, [liveFingerprints, aiMockupUrl, aiMockupFingerprint, backAiMockupUrl, backAiMockupFingerprint]);
 
   // The other artworks on the side being edited, drawn on the popup's flat
   // tee exactly like the active one (editor-space placement box + the
@@ -2198,28 +2176,10 @@ export default function BuilderClient({
     state.product,
   ]);
 
-  // Single user-facing action: "Generate AI Mockup" always (re)generates a
-  // fresh, deterministic Print Mockup from the CURRENT Studio artwork state
-  // first, then feeds that into Gemini -- there is no separate
-  // user-triggered Print Mockup step. This is unconditional (not gated on
-  // isPrintMockupStale) so the AI mockup can never be generated against a
-  // Print Mockup that doesn't correspond to what's currently on screen;
-  // when nothing changed, /api/mockups/print's own fingerprint cache makes
-  // the repeat call a cheap no-op re-render. The AI route
-  // (app/api/mockups/nanobanana/route.ts) then consumes only {buildId,
-  // draftId} and resolves the Print Mockup, garment reference, product,
-  // color, and placement itself, server-side, from rows the draft already
-  // owns -- no client-captured DOM screenshot, raw artwork, or transform
-  // numbers are ever sent to it.
-  // Resolves true when a fresh AI mockup was generated. Returned directly
-  // (not read back from aiMockupUrl state) because saveBespokeTShirt awaits
-  // this and its own closure would still see the pre-generation state.
-  // Generates one garment side's mockups for the CURRENT design: the
-  // deterministic Print Mockup (what the model preview shows meanwhile),
-  // then the Gemini AI mockup with every artwork on that side. Resolves
-  // true on success. Returns its result directly rather than via state:
-  // saveBespokeTShirt awaits it and its own closure would still see the
-  // pre-generation state.
+  // Generates one garment side's Gemini mockup for the CURRENT design. Gemini is the only generator: a failure is reported to
+  // the customer, nothing else stands in for it. The route requires a signed-in user (also enforced on the server); a 401 here
+  // opens the sign-in dialog. Resolves true on success; the result is returned directly rather than via state because the
+  // callers await it and their own closures would still see the pre-generation state.
   async function generateSideMockups(side: "front" | "back", layers: EditorLayer[]): Promise<boolean> {
     const sideLayers = layersForSide(layers, side).map(({ placement, assetId, x, y, scale, rotation }) => ({
       placement,
@@ -2233,47 +2193,31 @@ export default function BuilderClient({
     const body = JSON.stringify({ buildId, draftId, product: mockupProduct, color: mockupColor, layers: sideLayers });
 
     try {
-      const printRes = await fetch("/api/mockups/print", {
+      const aiRes = await fetch("/api/mockups/nanobanana", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body,
       });
-      const print = await printRes.json().catch(() => null);
-      if (!printRes.ok || !print?.ok || typeof print.imageUrl !== "string") {
-        throw new Error(print?.error ?? "Could not generate print mockup.");
+      const ai = await aiRes.json().catch(() => null);
+      if (aiRes.status === 401) {
+        requestAuth("login");
+        setMockupError(typeof ai?.error === "string" ? ai.error : SIGN_IN_FOR_PREVIEW_MESSAGE);
+        return false;
       }
-      const printFp = typeof print.fingerprint === "string" ? print.fingerprint : null;
+      if (aiRes.status === 429 || aiRes.status === 503) {
+        // A usage limit: the server's wording tells the customer what happened.
+        setMockupError(typeof ai?.error === "string" ? ai.error : PREVIEW_FAILED_MESSAGE);
+        return false;
+      }
+      if (!aiRes.ok || !ai?.ok) throw new Error(ai?.error ?? "Could not generate mockup.");
+      if (typeof ai.imageUrl !== "string" || !ai.imageUrl) throw new Error("Gemini did not return a mockup image.");
+      const aiFp = typeof ai.fingerprint === "string" && ai.fingerprint ? ai.fingerprint : null;
       if (side === "back") {
-        setBackPrintMockupUrl(print.imageUrl);
-        setBackPrintMockupFingerprint(printFp);
+        setBackAiMockupUrl(ai.imageUrl);
+        setBackAiMockupFingerprint(aiFp);
       } else {
-        setPrintMockupUrl(print.imageUrl);
-        setPrintMockupFingerprint(printFp);
-      }
-
-      // The Print Mockup above is already the real print: the customer's own artwork pixels at the exact chosen
-      // placement on the model photo. The Gemini step only makes the blank garment more photoreal, so when it is
-      // unavailable or fails the Print Mockup stands in (the preview already falls back to it) instead of the whole
-      // preview failing.
-      try {
-        const aiRes = await fetch("/api/mockups/nanobanana", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body,
-        });
-        const ai = await aiRes.json().catch(() => null);
-        if (!aiRes.ok || !ai?.ok) throw new Error(ai?.error ?? "Could not generate mockup.");
-        if (typeof ai.imageUrl !== "string" || !ai.imageUrl) throw new Error("Gemini did not return a mockup image.");
-        const aiFp = typeof ai.fingerprint === "string" && ai.fingerprint ? ai.fingerprint : null;
-        if (side === "back") {
-          setBackAiMockupUrl(ai.imageUrl);
-          setBackAiMockupFingerprint(aiFp);
-        } else {
-          setAiMockupUrl(ai.imageUrl);
-          setAiMockupFingerprint(aiFp);
-        }
-      } catch (aiError) {
-        console.warn("[studio] Photoreal garment step unavailable; showing the print mockup instead", aiError);
+        setAiMockupUrl(ai.imageUrl);
+        setAiMockupFingerprint(aiFp);
       }
       return true;
     } catch (error) {

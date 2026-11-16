@@ -38,7 +38,7 @@
 // DETERMINISM: no RNG, no synthesized noise, no generated grain -- every
 // value below is derived from the base image's own pixels, so identical
 // input still produces byte-identical output. That is a hard requirement:
-// the Print Mockup is fingerprint-cached (see /api/mockups/print), so a
+// a mockup is fingerprint-cached, so a
 // renderer that produced even slightly different bytes for the same
 // request would defeat the cache and, worse, mean the customer could
 // approve one image and be shipped another.

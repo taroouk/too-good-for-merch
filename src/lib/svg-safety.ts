@@ -17,6 +17,13 @@ const DANGEROUS_SVG_PATTERNS = [
   /\bxlink:href\s*=\s*["']?\s*(https?:|ftp:|file:|javascript:)/i,
   /\bhref\s*=\s*["']?\s*(https?:|ftp:|file:|javascript:)/i,
   /<\s*(iframe|foreignobject|embed|object)\b/i,
+  // Found by the site-wide test pass: constructs the list above let through.
+  /<\s*[\w.-]+\s*:\s*(script|iframe|foreignobject|embed|object)\b/i, // namespace-prefixed elements, e.g. <svg:script>
+  /\b(to|from|by|values)\s*=\s*["']?\s*javascript:/i, // <set>/<animate> that animate an href to a javascript: URL
+  /\bhref\s*=\s*["']?\s*\/\//i, // protocol-relative remote reference
+  /\bhref\s*=\s*["'][^"']*&#/i, // entity-encoded href (hides the scheme from the checks above)
+  /@import\b/i, // CSS @import
+  /\burl\(\s*["']?\s*(https?:|ftp:|file:|javascript:|\/\/)/i, // CSS url() to a remote or script target
 ];
 
 export function isSvgContentSafe(buffer: Buffer) {

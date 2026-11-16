@@ -13,7 +13,8 @@
     "db:seed:admins": "node scripts/seed-admins.mjs",
     "build": "prisma generate && next build",
     "build:production": "node scripts/check-production-env.mjs && prisma generate && next build",
-    "start": "next start"
+    "start": "next start",
+    "test:db": "node scripts/db-test.mjs"
   },
   "engines": {
     "node": "24.x"

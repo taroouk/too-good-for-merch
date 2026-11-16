@@ -12,7 +12,7 @@
 // output -- the same "ground truth by detection" technique
 // scripts/investigate-geometry.mjs uses against real Gemini output) and
 // compares requested/resolved placement -> actual composited bounds within
-// a stated tolerance. This validates the deterministic Print Mockup path
+// a stated tolerance. This validates the deterministic template-render path
 // end-to-end; it does not call Gemini (see the audit's own "remaining
 // limitation" note -- Gemini's per-generation variance is not something a
 // deterministic test can characterize).
@@ -145,7 +145,7 @@ export async function runAll() {
       const transform = { x: 0, y: 0, scale: c.scale };
 
       // "Requested" and "resolved" collapse to the same computation for the
-      // deterministic Print Mockup path (no Gemini garment-bbox remap step
+      // deterministic template-render path (no Gemini garment-bbox remap step
       // here) -- this is resolvePlacement's own ground truth, independent
       // of the renderer.
       const resolved = resolvePlacement({

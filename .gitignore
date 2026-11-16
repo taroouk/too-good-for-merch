@@ -59,3 +59,7 @@ next-env.d.ts
 tmp/
 .render-test-build/
 .payments-test-build/
+
+# Playwright (e2e/) and local test database artefacts
+e2e/test-results/
+e2e/playwright-report/

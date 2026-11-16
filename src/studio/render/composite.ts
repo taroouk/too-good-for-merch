@@ -10,9 +10,9 @@ import {
 } from "./fabric-shading";
 import type { ResolvedPlacement } from "./types";
 
-// Shared by both the deterministic Print Mockup renderer (artwork onto the
-// clean template) and the AI Mockup post-compositor (artwork onto Gemini's
-// photorealistic garment) -- the actual pixel-level compositing mechanics
+// Used by the AI Mockup post-compositor (artwork onto Gemini's
+// photorealistic garment) and by the internal template renderer in engines/
+// (artwork onto the clean template, no route uses it) -- the actual pixel-level compositing mechanics
 // (resize artwork to the resolved box, rotate around its own center if
 // requested, recompute the post-rotation offset, composite onto the base
 // image) must be identical in both places; only the base image and the
@@ -26,8 +26,7 @@ export async function compositeArtworkOntoBase(
   // Fabric realism (see fabric-shading.ts): the garment's own light, shade
   // and folds re-applied to the print, plus ink absorption. Pass
   // `{ ...DEFAULT_FABRIC_SHADING, strength: 0 }` -- or null -- for the
-  // bare geometric composite. Defaulted ON deliberately: both callers (the
-  // Print Mockup and the AI Mockup post-composite) put artwork onto a
+  // bare geometric composite. Defaulted ON deliberately: both callers put artwork onto a
   // photograph of real fabric, and both looked like stickers without it.
   shading: FabricShadingOptions | null = DEFAULT_FABRIC_SHADING,
 ): Promise<Buffer> {

@@ -50,7 +50,7 @@ export async function runAll() {
     "derives the customer-facing product name"() {
       assert.equal(productDisplayName({ product: "CUSTOM" }), "Bespoke T-shirt");
       assert.equal(productDisplayName({ product: "FITTED", primaryAssetId: "a1" }), "Customised T-shirt");
-      assert.equal(productDisplayName({ product: "OVERSIZED", printMockupId: "m1" }), "Customised T-shirt");
+      assert.equal(productDisplayName({ product: "OVERSIZED", aiMockupId: "m1" }), "Customised T-shirt");
       assert.equal(productDisplayName({ product: "FITTED" }), "Plain T-shirt");
     },
 

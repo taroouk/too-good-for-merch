@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { PaymentStatus, Role } from "@prisma/client";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
@@ -9,11 +9,11 @@ import SuccessStatusWatcher from "./SuccessStatusWatcher";
 
 export default async function SuccessPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
-  const session = await auth();
-  if (!session?.user?.id) redirect(`/login?callbackUrl=${encodeURIComponent(`/orders/${orderId}/success`)}`);
+  const userId = await getUserId();
+  if (!userId) redirect(`/login?callbackUrl=${encodeURIComponent(`/orders/${orderId}/success`)}`);
 
   const order = await prisma.order.findUnique({ where: { id: orderId } });
-  if (!order || (order.userId !== session.user.id && !(await isAdminSession()))) notFound();
+  if (!order || (order.userId !== userId && !(await isAdminSession()))) notFound();
   if (order.paymentStatus !== PaymentStatus.PAID) redirect(`/orders/${order.id}`);
   const items = await prisma.orderItem.findMany({ where: { orderId: order.id }, select: { preview: true } });
   const underReview = (await duplicateReviewIdsFor(order.userId, [{ ...order, items }])).has(order.id);

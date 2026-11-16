@@ -1,6 +1,5 @@
-import { Role } from "@prisma/client";
 import { NextResponse } from "next/server";
-import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import {
   getProductionEnvStatus,
@@ -25,8 +24,8 @@ export async function GET() {
   // otherwise information an attacker could use to time attacks (e.g. a
   // missing webhook HMAC secret). Only reveal those details to an
   // authenticated admin; unauthenticated callers get a plain ok/not-ok.
-  const session = await auth();
-  const isAdmin = session?.user?.role === Role.ADMIN;
+  // The role comes from the database (an admin demoted or blocked after signing in loses this at once), not the token.
+  const isAdmin = await isAdminSession();
 
   return NextResponse.json(
     {

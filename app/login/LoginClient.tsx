@@ -1,6 +1,7 @@
 "use client";
 
 import "../auth.css";
+import { safeCallbackPath, safeResultPath } from "src/lib/auth/safe-redirect";
 import { useEffect, useMemo, useState } from "react";
 import { signIn, useSession } from "next-auth/react";
 import Link from "next/link";
@@ -12,7 +13,8 @@ export default function LoginClient() {
   const { status } = useSession();
 
   const callbackUrl = useMemo(() => {
-    return searchParams?.get("callbackUrl") || "/studio";
+    // Only a same-site path is ever followed: callbackUrl is attacker-controllable (/login?callbackUrl=https://evil.example).
+    return safeCallbackPath(searchParams?.get("callbackUrl"), "/studio");
   }, [searchParams]);
 
   const [email, setEmail] = useState("");
@@ -43,7 +45,7 @@ export default function LoginClient() {
     if (!res) return setError("Unknown error");
     if (res.error) return setError("Invalid email or password");
 
-    router.replace(res.url || callbackUrl);
+    router.replace(safeResultPath(res.url, window.location.origin, callbackUrl));
   }
 
   return (

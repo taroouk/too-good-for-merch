@@ -49,9 +49,7 @@ export type DesignSignature = {
   // frozen snapshot still points at the OLD mockups. Absent on orders
   // placed before this existed (treated as "none").
   savedArtworkId?: string | null;
-  printMockupId?: string | null;
   aiMockupId?: string | null;
-  backPrintMockupId?: string | null;
   backAiMockupId?: string | null;
 };
 
@@ -66,9 +64,7 @@ export function buildDesignSignature(input: {
   transform: ArtworkPlacement | null;
   layers?: SignatureLayer[] | null;
   savedArtworkId?: string | null;
-  printMockupId?: string | null;
   aiMockupId?: string | null;
-  backPrintMockupId?: string | null;
   backAiMockupId?: string | null;
 }): DesignSignature {
   return {
@@ -85,9 +81,7 @@ export function buildDesignSignature(input: {
     // Order-independent, like placements.
     layers: input.layers ? [...input.layers].sort((a, b) => a.placement.localeCompare(b.placement)) : null,
     savedArtworkId: input.savedArtworkId ?? null,
-    printMockupId: input.printMockupId ?? null,
     aiMockupId: input.aiMockupId ?? null,
-    backPrintMockupId: input.backPrintMockupId ?? null,
     backAiMockupId: input.backAiMockupId ?? null,
   };
 }
@@ -106,9 +100,7 @@ export function designSignaturesMatch(a: DesignSignature | null, b: DesignSignat
     transformsMatch(a.transform, b.transform) &&
     layersMatch(a.layers ?? null, b.layers ?? null) &&
     (a.savedArtworkId ?? null) === (b.savedArtworkId ?? null) &&
-    (a.printMockupId ?? null) === (b.printMockupId ?? null) &&
     (a.aiMockupId ?? null) === (b.aiMockupId ?? null) &&
-    (a.backPrintMockupId ?? null) === (b.backPrintMockupId ?? null) &&
     (a.backAiMockupId ?? null) === (b.backAiMockupId ?? null)
   );
 }

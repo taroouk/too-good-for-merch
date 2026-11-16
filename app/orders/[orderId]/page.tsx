@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { duplicateReviewIdsFor } from "src/lib/orders/duplicate-review-db";
@@ -42,12 +42,12 @@ function Card({ title, children, className = "" }: { title: string; children: Re
 
 export default async function OrderPage({ params }: { params: Promise<{ orderId: string }> }) {
   const { orderId } = await params;
-  const session = await auth();
-  if (!session?.user?.id) redirect(`/login?callbackUrl=${encodeURIComponent(`/orders/${orderId}`)}`);
+  const userId = await getUserId();
+  if (!userId) redirect(`/login?callbackUrl=${encodeURIComponent(`/orders/${orderId}`)}`);
 
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: { orderBy: { createdAt: "asc" } } } });
   if (!order) notFound();
-  if (order.userId !== session.user.id && !(await isAdminSession())) notFound();
+  if (order.userId !== userId && !(await isAdminSession())) notFound();
 
   // Paymob's payment link expires after an hour (see createPaymobPayment); the
   // client uses the last attempt time to offer a fresh link instead of
@@ -154,8 +154,8 @@ export default async function OrderPage({ params }: { params: Promise<{ orderId:
               {order.items.map((item, index) => {
                 const extras = orderItemExtras(item.preview);
                 const mockups = resolveOrderMockupIds(item.preview, null);
-                const front = mockups.printMockupId ?? mockups.aiMockupId;
-                const back = mockups.backPrintMockupId ?? mockups.backAiMockupId;
+                const front = mockups.aiMockupId;
+                const back = mockups.backAiMockupId;
                 const images = [
                   front ? `/api/mockups/${front}/file` : extras.savedArtworkId ? `/api/artworks/${extras.savedArtworkId}/file` : null,
                   back ? `/api/mockups/${back}/file` : null,

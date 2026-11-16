@@ -162,34 +162,6 @@ export async function actionUpdateDraft(buildId: string, formData: FormData) {
   });
 }
 
-// Persists ONLY the canvas transform to BuildDraft.artworkPlacement.
-// Deliberately decoupled from actionSaveArtwork (src/actions/artwork-actions.ts),
-// which additionally snapshots the AI-generated mockup bytes into a new
-// Artwork row and therefore no-ops until an AI mockup exists. Per the
-// schema comment on BuildDraft.artworkPlacement / the Artwork model,
-// placement is meant to survive a refresh independently of that image --
-// so a user who drags/resizes artwork but hasn't generated an AI mockup
-// yet must still have their positioning saved. Safe to call repeatedly;
-// same upsert-free single-row update as actionUpdateDraft.
-export async function actionSaveArtworkPlacement(buildId: string, placement: unknown) {
-  const userId = await getUserId();
-  await assertBuildAccess(userId, buildId);
-
-  const normalized = normalizeArtworkPlacement(placement);
-  if (!normalized) return;
-
-  const draft = await prisma.buildDraft.findUnique({
-    where: { buildId },
-    select: { id: true },
-  });
-  if (!draft) return;
-
-  await prisma.buildDraft.update({
-    where: { id: draft.id },
-    data: { artworkPlacement: normalized },
-  });
-}
-
 // Persists a multi-artwork design (src/studio/artwork-layers.ts): the full
 // layer list, plus the legacy single-artwork mirrors (primaryAssetId +
 // artworkPlacement = the first layer) and the priced placements in
@@ -261,12 +233,8 @@ export async function actionSaveArtworkLayers(buildId: string, layersInput: unkn
 // another product is the current one.
 type StoredProductDesign = {
   layers: ReturnType<typeof normalizeArtworkLayers>;
-  printMockupId: string | null;
-  printMockupFingerprint: string | null;
   aiMockupId: string | null;
   aiMockupFingerprint: string | null;
-  backPrintMockupId: string | null;
-  backPrintMockupFingerprint: string | null;
   backAiMockupId: string | null;
   backAiMockupFingerprint: string | null;
 };
@@ -277,12 +245,8 @@ function storedDesign(value: unknown): StoredProductDesign | null {
   const str = (key: string) => (typeof v[key] === "string" ? (v[key] as string) : null);
   return {
     layers: normalizeArtworkLayers(v.layers),
-    printMockupId: str("printMockupId"),
-    printMockupFingerprint: str("printMockupFingerprint"),
     aiMockupId: str("aiMockupId"),
     aiMockupFingerprint: str("aiMockupFingerprint"),
-    backPrintMockupId: str("backPrintMockupId"),
-    backPrintMockupFingerprint: str("backPrintMockupFingerprint"),
     backAiMockupId: str("backAiMockupId"),
     backAiMockupFingerprint: str("backAiMockupFingerprint"),
   };
@@ -290,7 +254,7 @@ function storedDesign(value: unknown): StoredProductDesign | null {
 
 // Switches the build to another product type (FITTED / OVERSIZED / CUSTOM)
 // while keeping every product's design separate: the current product's
-// design (artworks + its front/back print and AI mockups) is parked in
+// design (artworks + its front/back AI mockups) is parked in
 // productDesigns, and the target product's own design -- or an empty one the
 // first time -- becomes the current design. Mockups therefore only ever show
 // on the model of the product they were generated for. `currentLayers` is
@@ -316,12 +280,8 @@ export async function actionSwitchProduct(
       artworkLayers: true,
       primaryAssetId: true,
       artworkPlacement: true,
-      printMockupId: true,
-      printMockupFingerprint: true,
       aiMockupId: true,
       aiMockupFingerprint: true,
-      backPrintMockupId: true,
-      backPrintMockupFingerprint: true,
       backAiMockupId: true,
       backAiMockupFingerprint: true,
       productDesigns: true,
@@ -354,12 +314,8 @@ export async function actionSwitchProduct(
     }
     designs[draft.product] = {
       layers: currentLayers,
-      printMockupId: draft.printMockupId,
-      printMockupFingerprint: draft.printMockupFingerprint,
       aiMockupId: draft.aiMockupId,
       aiMockupFingerprint: draft.aiMockupFingerprint,
-      backPrintMockupId: draft.backPrintMockupId,
-      backPrintMockupFingerprint: draft.backPrintMockupFingerprint,
       backAiMockupId: draft.backAiMockupId,
       backAiMockupFingerprint: draft.backAiMockupFingerprint,
     } satisfies StoredProductDesign;
@@ -370,12 +326,8 @@ export async function actionSwitchProduct(
       ? null
       : storedDesign(designs[nextProduct]) ?? {
           layers: [],
-          printMockupId: null,
-          printMockupFingerprint: null,
           aiMockupId: null,
           aiMockupFingerprint: null,
-          backPrintMockupId: null,
-          backPrintMockupFingerprint: null,
           backAiMockupId: null,
           backAiMockupFingerprint: null,
         };
@@ -407,12 +359,8 @@ export async function actionSwitchProduct(
               ? { placement: first.placement, x: first.x, y: first.y, scale: first.scale, rotation: first.rotation }
               : Prisma.DbNull,
             customNotes: upsertPlacementsInNotes(draft.customNotes, targetLayers.map((l) => l.placement)),
-            printMockupId: target.printMockupId,
-            printMockupFingerprint: target.printMockupFingerprint,
             aiMockupId: target.aiMockupId,
             aiMockupFingerprint: target.aiMockupFingerprint,
-            backPrintMockupId: target.backPrintMockupId,
-            backPrintMockupFingerprint: target.backPrintMockupFingerprint,
             backAiMockupId: target.backAiMockupId,
             backAiMockupFingerprint: target.backAiMockupFingerprint,
           }
@@ -427,12 +375,8 @@ export async function actionSwitchProduct(
       fabric: true,
       customNotes: true,
       primaryAssetId: true,
-      printMockupId: true,
-      printMockupFingerprint: true,
       aiMockupId: true,
       aiMockupFingerprint: true,
-      backPrintMockupId: true,
-      backPrintMockupFingerprint: true,
       backAiMockupId: true,
       backAiMockupFingerprint: true,
     },
@@ -458,14 +402,10 @@ export async function actionSwitchProduct(
     }),
     mockups: {
       front: {
-        printUrl: fileUrl(updated.printMockupId),
-        printFp: updated.printMockupFingerprint,
         aiUrl: fileUrl(updated.aiMockupId),
         aiFp: updated.aiMockupFingerprint,
       },
       back: {
-        printUrl: fileUrl(updated.backPrintMockupId),
-        printFp: updated.backPrintMockupFingerprint,
         aiUrl: fileUrl(updated.backAiMockupId),
         aiFp: updated.backAiMockupFingerprint,
       },

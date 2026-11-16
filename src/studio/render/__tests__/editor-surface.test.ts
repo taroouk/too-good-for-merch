@@ -1,7 +1,7 @@
 // file: src/studio/render/__tests__/editor-surface.test.ts
 //
 // The Bespoke popup designs on a FLAT tee while everything downstream of
-// it (the Live Model Preview, the Print Mockup, the Gemini mockup) renders
+// it (the Live Model Preview and the Gemini mockup) render
 // onto a photographed-model template. editor-surface.ts is the only thing
 // standing between those two coordinate systems, so the properties this
 // suite locks in are exactly the ones that make "what I built in the popup

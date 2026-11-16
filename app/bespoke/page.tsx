@@ -3,7 +3,7 @@ import AccountNav from "src/components/site/AccountNav";
 import { formatDisplayPrice, type StoreDisplay } from "src/pricing/display";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { prisma } from "src/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -23,12 +23,12 @@ function money(cents: number | null, display: StoreDisplay): string {
 }
 
 export default async function BespokeListPage() {
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login?callbackUrl=/bespoke");
+  const userId = await getUserId();
+  if (!userId) redirect("/login?callbackUrl=/bespoke");
   const display = await getStoreDisplay();
 
   const requests = await prisma.bespokeRequest.findMany({
-    where: { userId: session.user.id },
+    where: { userId: userId },
     orderBy: { createdAt: "desc" },
     select: {
       id: true,

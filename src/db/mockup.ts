@@ -11,12 +11,11 @@ export type MockupInput = {
   model: string | null;
   placement: string | null;
   prompt: string | null;
-  // The Print Mockup this AI mockup was generated from -- null only for
-  // legacy rows predating the Print Mockup flow.
+  // Lineage link to an earlier mockup row, when there is one.
   parentId?: string | null;
-  // Which garment side this mockup shows. The draft's printMockup*/
-  // aiMockup* columns are the FRONT (and every pre-layers single-artwork
-  // mockup); "back" writes the backPrintMockup*/backAiMockup* columns.
+  // Which garment side this mockup shows. The draft's aiMockup* columns are
+  // the FRONT (and every pre-layers single-artwork mockup); "back" writes the
+  // backAiMockup* columns.
   side?: "front" | "back";
 };
 
@@ -101,102 +100,3 @@ export async function getDraftMockupUrl(draftId: string): Promise<string | null>
   if (!draft?.aiMockupId || !draft.aiMockup) return null;
   return `/api/mockups/${draft.aiMockup.id}/file`;
 }
-
-// --- Print Mockup (deterministic compositor) persistence ---
-// Kept separate from the AI-mockup functions above rather than merging
-// them: nanobanana/route.ts depends on the AI-side functions and stays
-// frozen (Rendering Architecture Redesign Phase 1 governance), so Print
-// gets its own parallel set of functions instead of a shared, kind-aware
-// rewrite of upsertMockupForDraft.
-
-export type PrintMockupInput = MockupInput & {
-  width: number;
-  height: number;
-};
-
-export async function upsertPrintMockup(
-  draftId: string,
-  input: PrintMockupInput,
-): Promise<MockupRecord> {
-  const id = randomUUID();
-
-  const created = await prisma.mockup.create({
-    data: {
-      id,
-      kind: "PRINT",
-      buildId: input.buildId,
-      assetId: input.assetId,
-      mimeType: input.mimeType,
-      data: input.data,
-      width: input.width,
-      height: input.height,
-      sha256: createHash("sha256").update(input.data).digest("hex"),
-      model: input.model,
-      placement: input.placement,
-      fingerprint: input.fingerprint,
-      prompt: input.prompt ? input.prompt.slice(0, 4000) : null,
-    },
-    select: { id: true, mimeType: true, createdAt: true },
-  });
-
-  await prisma.buildDraft.update({
-    where: { id: draftId },
-    data:
-      input.side === "back"
-        ? { backPrintMockupId: created.id, backPrintMockupFingerprint: input.fingerprint }
-        : {
-            printMockupId: created.id,
-            printMockupFingerprint: input.fingerprint,
-            printMockupGeneratedAt: created.createdAt,
-          },
-    select: { id: true },
-  });
-
-  return {
-    id: created.id,
-    url: `/api/mockups/${created.id}/file`,
-    mimeType: created.mimeType ?? "image/png",
-    createdAt: created.createdAt,
-  };
-}
-
-// Returns the persisted print mockup for a draft only if its fingerprint
-// still matches the requested one -- lets the API route skip a re-render
-// when nothing relevant has changed since the last generation.
-export async function getFreshPrintMockup(
-  draftId: string,
-  fingerprint: string,
-  side: "front" | "back" = "front",
-): Promise<MockupRecord | null> {
-  if (side === "back") {
-    const backDraft = await prisma.buildDraft.findUnique({
-      where: { id: draftId },
-      select: { backPrintMockupId: true, backPrintMockupFingerprint: true },
-    });
-    if (!backDraft?.backPrintMockupId || backDraft.backPrintMockupFingerprint !== fingerprint) return null;
-    const row = await prisma.mockup.findUnique({
-      where: { id: backDraft.backPrintMockupId },
-      select: { id: true, mimeType: true, createdAt: true },
-    });
-    if (!row) return null;
-    return { id: row.id, url: `/api/mockups/${row.id}/file`, mimeType: row.mimeType ?? "image/png", createdAt: row.createdAt };
-  }
-
-  const draft = await prisma.buildDraft.findUnique({
-    where: { id: draftId },
-    select: {
-      printMockupFingerprint: true,
-      printMockup: { select: { id: true, mimeType: true, createdAt: true } },
-    },
-  });
-
-  if (!draft?.printMockup || draft.printMockupFingerprint !== fingerprint) return null;
-
-  return {
-    id: draft.printMockup.id,
-    url: `/api/mockups/${draft.printMockup.id}/file`,
-    mimeType: draft.printMockup.mimeType ?? "image/png",
-    createdAt: draft.printMockup.createdAt,
-  };
-}
-

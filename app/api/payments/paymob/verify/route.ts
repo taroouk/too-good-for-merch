@@ -75,11 +75,15 @@ export async function GET(req: Request) {
   const remoteOrderId = url.searchParams.get("order") ?? url.searchParams.get("order_id");
   if (!remoteOrderId) return NextResponse.json({ error: "Order reference is required." }, { status: 400 });
 
+  // The Paymob order number is not a secret (it is a small sequential integer), so this endpoint must not turn it into an internal order
+  // id or a payment state for just anyone: the specific destination is only revealed to the order's own customer (their session is
+  // present: this is their browser coming back). Everyone else lands on the generic list, which asks them to sign in.
+  const session = await auth();
   const order = await prisma.order.findFirst({
     where: { paymobOrderId: remoteOrderId },
-    select: { id: true, paymentStatus: true },
+    select: { id: true, userId: true, paymentStatus: true },
   });
-  if (!order) return topLevelRedirect("/orders");
+  if (!order || !session?.user?.id || order.userId !== session.user.id) return topLevelRedirect("/orders");
 
   const destination =
     order.paymentStatus === PaymentStatus.PAID

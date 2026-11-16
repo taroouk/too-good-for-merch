@@ -4,8 +4,8 @@
 //
 // This used to resolve to one of the 8 photographed-model TEMPLATE files
 // (placement-config.ts's TEMPLATE_FILES, via getGarmentTemplate) -- the
-// same photos the outer Live Model Preview, the Print Mockup and the
-// Gemini AI mockup are rendered against. It now resolves to the popup's
+// same photos the outer Live Model Preview and the Gemini AI mockup
+// are rendered against. It now resolves to the popup's
 // own EDITOR SURFACE instead: the flat, laid-out t-shirt the customer
 // actually designs on (src/studio/render/editor-surface.ts).
 //

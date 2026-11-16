@@ -121,7 +121,7 @@ export function sidesWithLayers(layers: Pick<ArtworkLayer, "placement">[]): Garm
   return sides;
 }
 
-// Fingerprint of one side's design (what a print/AI mockup of that side was
+// Fingerprint of one side's design (what the mockup of that side was
 // rendered from): every layer's own fingerprint (order-independent), stamped
 // with MOCKUP_PIPELINE_VERSION.
 export function sideFingerprint(input: {

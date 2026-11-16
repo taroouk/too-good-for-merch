@@ -4,7 +4,7 @@
 // customer actually designs on (public/images/"front -tshirt 1.png" and
 // "t-shirt back 1.png"), as opposed to the photographed-model TEMPLATES
 // (placement-config.ts's TEMPLATE_FILES) that the outer Live Model
-// Preview, the deterministic Print Mockup and the Gemini AI mockup are all
+// Preview and the Gemini AI mockup are both
 // rendered against.
 //
 // WHY THIS EXISTS -- the two surfaces are geometrically unrelated. A model
@@ -17,7 +17,7 @@
 //
 // WHAT IS CANONICAL -- nothing here is. The stored/persisted artwork
 // transform stays in TEMPLATE space exactly as before (BuildDraft
-// .artworkPlacement, /api/mockups/print, /api/mockups/nanobanana,
+// .artworkPlacement, /api/mockups/nanobanana,
 // resolvePlacement, TryOn3DPreview), so the server compositor, every
 // existing tuned placement box and every geometry test are untouched by
 // this module. This is purely a DISPLAY-SIDE bijection applied at the

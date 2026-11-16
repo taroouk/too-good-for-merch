@@ -91,9 +91,7 @@ export async function loadCartLines(userId: string): Promise<CartLine[]> {
       transform,
       layers,
       savedArtworkId: draft.savedArtworkId ?? null,
-      printMockupId: mockups.printMockupId,
       aiMockupId: mockups.aiMockupId,
-      backPrintMockupId: mockups.backPrintMockupId,
       backAiMockupId: mockups.backAiMockupId,
     });
     lines.push({
@@ -239,10 +237,8 @@ export async function createCartCheckoutOrder(
               ...(index === 0 ? { cartSignature: signature } : {}),
               transform: line.transform,
               savedArtworkId: line.savedArtworkId,
-              printMockupId: line.mockups.printMockupId,
               aiMockupId: line.mockups.aiMockupId,
               layers: line.layers,
-              backPrintMockupId: line.mockups.backPrintMockupId,
               backAiMockupId: line.mockups.backAiMockupId,
             } as unknown as Prisma.InputJsonValue,
           })),

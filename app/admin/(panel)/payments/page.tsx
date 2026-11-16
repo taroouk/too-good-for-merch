@@ -257,7 +257,7 @@ export default async function PaymentsPage({
           className="mt-6"
           padded={false}
           title="Webhook log"
-          subtitle={`Invalid signatures are retained for investigation and never update orders. ${invalidWebhookCount} invalid signature${invalidWebhookCount === 1 ? "" : "s"} in the last ${webhooks.length} event${webhooks.length === 1 ? "" : "s"}.`}
+          subtitle={`Requests with an invalid signature never update orders and are not stored with their payload: they appear here as one marker row per hour and reason. ${invalidWebhookCount} marker${invalidWebhookCount === 1 ? "" : "s"} in the last ${webhooks.length} event${webhooks.length === 1 ? "" : "s"}.`}
         >
           <TableCardSwitch
             minWidth={900}

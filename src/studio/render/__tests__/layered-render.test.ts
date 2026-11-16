@@ -1,6 +1,6 @@
 // file: src/studio/render/__tests__/layered-render.test.ts
 //
-// Multi-artwork print mockups (renderLayeredMockup): several artworks on
+// Multi-artwork template renders (renderLayeredMockup): several artworks on
 // one garment side, against the REAL template photo. Checked by detecting
 // two differently coloured marker artworks in the output -- each must land
 // where its own placement resolves, and a single layer must produce

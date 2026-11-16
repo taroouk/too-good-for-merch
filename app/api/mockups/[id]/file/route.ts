@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz";
 import { isAdminSession } from "src/lib/admin/auth";
 import { prisma } from "src/lib/prisma";
 import { canAccessBuild } from "src/studio/permissions";
@@ -26,10 +26,9 @@ export async function GET(
     return NextResponse.json({ error: "Mockup not found." }, { status: 404 });
   }
 
-  const session = await auth();
-  const allowed =
-    (session?.user?.id ? await isAdminSession() : false) ||
-    (await canAccessBuild(session?.user?.id ?? null, mockup.build));
+  // The caller comes from the database (a blocked user is signed out), not from the session token.
+  const userId = await getUserId();
+  const allowed = (userId ? await isAdminSession() : false) || (await canAccessBuild(userId, mockup.build));
   if (!allowed) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
 
   const file = await getMockup(mockup.id);

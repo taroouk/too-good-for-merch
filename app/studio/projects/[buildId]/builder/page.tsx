@@ -50,15 +50,10 @@ export default async function BuilderPage({
           customQuoteNote: true,
           savedArtworkId: true,
           artworkPlacement: true,
-          printMockupId: true,
-          printMockupFingerprint: true,
-          printMockup: { select: { id: true, mimeType: true } },
           aiMockupId: true,
           aiMockupFingerprint: true,
           aiMockup: { select: { id: true, mimeType: true } },
           artworkLayers: true,
-          backPrintMockupId: true,
-          backPrintMockupFingerprint: true,
           backAiMockupId: true,
           backAiMockupFingerprint: true,
         },
@@ -128,11 +123,6 @@ export default async function BuilderPage({
     0
   );
 
-  const initialMockupUrl =
-    build.draft.printMockupId && build.draft.printMockup
-      ? `/api/mockups/${build.draft.printMockup.id}/file`
-      : null;
-  const initialMockupFingerprint = build.draft.printMockupFingerprint ?? null;
   const initialAiMockupUrl =
     build.draft.aiMockupId && build.draft.aiMockup
       ? `/api/mockups/${build.draft.aiMockup.id}/file`
@@ -195,8 +185,6 @@ export default async function BuilderPage({
       draft={build.draft}
       placementsCount={placementsCount}
       initialUserAssets={initialUserAssets}
-      initialMockupUrl={initialMockupUrl}
-      initialMockupFingerprint={initialMockupFingerprint}
       initialAiMockupUrl={initialAiMockupUrl ?? null}
       initialAiMockupFingerprint={initialAiMockupFingerprint}
       initialCustomQuoteUsdCents={build.draft.customQuoteUsdCents ?? null}
@@ -205,8 +193,6 @@ export default async function BuilderPage({
       initialArtworkPlacement={initialArtworkPlacement}
       initialInWishlist={initialInWishlist}
       initialLayers={initialLayers}
-      initialBackMockupUrl={mockupFileUrl(build.draft.backPrintMockupId)}
-      initialBackMockupFingerprint={build.draft.backPrintMockupFingerprint ?? null}
       initialBackAiMockupUrl={mockupFileUrl(build.draft.backAiMockupId)}
       initialBackAiMockupFingerprint={build.draft.backAiMockupFingerprint ?? null}
     />

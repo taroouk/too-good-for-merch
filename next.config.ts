@@ -7,7 +7,7 @@ const nextConfig: NextConfig = {
   compress: true,
   experimental: {
     // Builder artwork uploads go through a Server Action
-    // (actionCreateAssetForBuilder / actionCreateAsset), and the client +
+    // (actionCreateAssetForBuilder), and the client +
     // src/lib/storage.ts already allow files up to MAX_ARTWORK_BYTES (10MB).
     // Next's default Server Action body limit is 1MB, so any artwork over
     // 1MB was rejected with a 413 before the action ran -- the upload
@@ -61,6 +61,13 @@ const nextConfig: NextConfig = {
           { key: "Content-Security-Policy", value: csp },
         ],
       },
+      // User-uploaded files and mockups. These routes set their own sandboxing CSP, but the catch-all rule above REPLACES a
+      // header a route handler sets, so they were being served with the page CSP (script-src 'unsafe-inline') instead. Later
+      // entries win, so this one puts the sandbox back: a file opened directly can run no script and load nothing.
+      ...["/api/assets/:id/file", "/api/artworks/:id/file", "/api/mockups/:id/file"].map((source) => ({
+        source,
+        headers: [{ key: "Content-Security-Policy", value: "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'" }],
+      })),
       // Paymob's response callback (see app/api/payments/paymob/verify)
       // loads inside the embedded card iframe on /checkout, so it alone may
       // be framed -- by our own origin only. Later entries override the

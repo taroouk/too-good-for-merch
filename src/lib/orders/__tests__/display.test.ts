@@ -57,46 +57,52 @@ export async function runAll() {
 
     // P1-8 regression: a paid order must keep showing the mockups the
     // customer actually purchased, even if they keep editing the same
-    // Build afterwards (BuildDraft.printMockupId/aiMockupId can be
+    // Build afterwards (BuildDraft.aiMockupId can be
     // reassigned to a newer Mockup row at any time).
     "resolveOrderMockupIds prefers the purchase-time snapshot over the live BuildDraft pointers"() {
-      const preview = { printMockupId: "print-at-purchase", aiMockupId: "ai-at-purchase" };
-      const liveDraft = { printMockupId: "print-after-edit", aiMockupId: "ai-after-edit" };
+      const preview = { aiMockupId: "ai-at-purchase" };
+      const liveDraft = { aiMockupId: "ai-after-edit" };
       assert.deepEqual(resolveOrderMockupIds(preview, liveDraft), {
-        printMockupId: "print-at-purchase",
         aiMockupId: "ai-at-purchase",
-        backPrintMockupId: null,
         backAiMockupId: null,
       });
     },
 
     "resolveOrderMockupIds falls back to the live BuildDraft pointers for orders placed before the snapshot existed"() {
-      const liveDraft = { printMockupId: "print-legacy", aiMockupId: "ai-legacy" };
-      const expected = { printMockupId: "print-legacy", aiMockupId: "ai-legacy", backPrintMockupId: null, backAiMockupId: null };
+      const liveDraft = { aiMockupId: "ai-legacy" };
+      const expected = { aiMockupId: "ai-legacy", backAiMockupId: null };
       assert.deepEqual(resolveOrderMockupIds(null, liveDraft), expected);
       assert.deepEqual(resolveOrderMockupIds({}, liveDraft), expected);
     },
 
     "resolveOrderMockupIds returns nulls when neither a snapshot nor a live draft has a mockup"() {
-      const none = { printMockupId: null, aiMockupId: null, backPrintMockupId: null, backAiMockupId: null };
+      const none = { aiMockupId: null, backAiMockupId: null };
       assert.deepEqual(resolveOrderMockupIds(null, null), none);
-      assert.deepEqual(resolveOrderMockupIds({}, { printMockupId: null, aiMockupId: null }), none);
+      assert.deepEqual(resolveOrderMockupIds({}, { aiMockupId: null }), none);
     },
 
     "resolveOrderMockupIds ignores malformed preview data instead of throwing"() {
-      const none = { printMockupId: null, aiMockupId: null, backPrintMockupId: null, backAiMockupId: null };
+      const none = { aiMockupId: null, backAiMockupId: null };
       assert.deepEqual(resolveOrderMockupIds("not-an-object", null), none);
-      assert.deepEqual(resolveOrderMockupIds({ printMockupId: 123, aiMockupId: true, backAiMockupId: 5 }, null), none);
+      assert.deepEqual(resolveOrderMockupIds({ aiMockupId: true, backAiMockupId: 5 }, null), none);
+    },
+
+    // Print Mockup removal: a legacy order whose snapshot still carries print pointers never resolves to one.
+    "resolveOrderMockupIds ignores legacy Print Mockup pointers in old snapshots and live drafts"() {
+      const preview = { printMockupId: "legacy-print", backPrintMockupId: "legacy-back-print" };
+      const liveDraft = { printMockupId: "legacy-live-print", aiMockupId: null } as { aiMockupId: string | null };
+      const ids = resolveOrderMockupIds(preview, liveDraft);
+      assert.deepEqual(ids, { aiMockupId: null, backAiMockupId: null });
+      assert.equal("printMockupId" in ids, false);
+      assert.equal("backPrintMockupId" in ids, false);
     },
 
     // Multi-artwork orders: back-of-garment mockups come only from the
     // purchase-time snapshot (there is no live-draft fallback for them).
     "resolveOrderMockupIds returns the back mockups frozen at checkout"() {
-      const preview = { printMockupId: "pf", aiMockupId: "af", backPrintMockupId: "pb", backAiMockupId: "ab" };
+      const preview = { aiMockupId: "af", backAiMockupId: "ab" };
       assert.deepEqual(resolveOrderMockupIds(preview, null), {
-        printMockupId: "pf",
         aiMockupId: "af",
-        backPrintMockupId: "pb",
         backAiMockupId: "ab",
       });
     },

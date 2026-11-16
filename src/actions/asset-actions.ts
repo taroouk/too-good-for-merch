@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "src/lib/prisma";
 import { getUserId } from "src/studio/authz";
 import { assertBuildAccess } from "src/studio/permissions";
-import { hashArtworkData, uploadArtwork } from "src/lib/storage";
+import { ArtworkRejectedError, hashArtworkData, uploadArtwork } from "src/lib/storage";
 import { clientIpFromHeaders } from "src/lib/rate-limit";
 import { rateLimitByKey } from "src/lib/rate-limit-db";
 import { parseCropMeta } from "src/studio/ui/modals/crop-math";
@@ -24,13 +24,16 @@ import { parseCropMeta } from "src/studio/ui/modals/crop-math";
 const UPLOAD_LIMIT = 30;
 const UPLOAD_WINDOW_MS = 10 * 60 * 1000;
 
-async function enforceUploadRateLimit(userId: string | null) {
+// Returns the message to show when the caller is over the limit, or null. It is RETURNED, not thrown: in a production build Next
+// replaces the message of any error thrown by a server action, so the customer would never see it.
+async function uploadRateLimitMessage(userId: string | null): Promise<string | null> {
   const key = userId ?? `ip:${clientIpFromHeaders(await headers())}`;
   const limit = await rateLimitByKey("asset:upload", key, UPLOAD_LIMIT, UPLOAD_WINDOW_MS);
-  if (!limit.ok) {
-    throw new Error("Too many uploads. Please wait a few minutes and try again.");
-  }
+  return limit.ok ? null : "Too many uploads. Please wait a few minutes and try again.";
 }
+
+// What a refused upload hands back to the client. Never thrown (see above); no Asset row exists for a refused file.
+export type UploadRejection = { ok: false; error: string };
 
 async function createAssetRecord(buildId: string, formData: FormData, userId: string | null) {
   const file = formData.get("file");
@@ -56,17 +59,25 @@ async function createAssetRecord(buildId: string, formData: FormData, userId: st
     } catch {
       meta = null;
     }
-    if (!meta) throw new Error("Invalid crop data.");
+    if (!meta) return { rejected: "Invalid crop data." } as const;
     const source = await prisma.asset.findFirst({
       where: { id: cropSourceRaw, OR: userId ? [{ buildId }, { build: { userId } }] : [{ buildId }] },
       select: { id: true, cropSourceAssetId: true },
     });
-    if (!source) throw new Error("The original artwork for this crop was not found.");
+    if (!source) return { rejected: "The original artwork for this crop was not found." } as const;
     cropSourceAssetId = source.cropSourceAssetId ?? source.id;
     cropMeta = meta as unknown as Prisma.InputJsonValue;
   }
 
-  const stored = uploadedFile ? await uploadArtwork(uploadedFile) : null;
+  let stored: Awaited<ReturnType<typeof uploadArtwork>> | null = null;
+  if (uploadedFile) {
+    try {
+      stored = await uploadArtwork(uploadedFile);
+    } catch (error) {
+      if (error instanceof ArtworkRejectedError) return { rejected: error.message } as const;
+      throw error;
+    }
+  }
 
   return prisma.asset.create({
     data: {
@@ -87,26 +98,18 @@ async function createAssetRecord(buildId: string, formData: FormData, userId: st
   });
 }
 
-export async function actionCreateAsset(buildId: string, formData: FormData) {
-  const userId = await getUserId();
-  await assertBuildAccess(userId, buildId);
-  await enforceUploadRateLimit(userId);
-
-  await createAssetRecord(buildId, formData, userId);
-
-  revalidatePath(`/studio/projects/${buildId}/assets`);
-  revalidatePath(`/studio/projects/${buildId}/designs`);
-}
-
 export async function actionCreateAssetForBuilder(
   buildId: string,
   formData: FormData,
 ) {
   const userId = await getUserId();
   await assertBuildAccess(userId, buildId);
-  await enforceUploadRateLimit(userId);
+  const limited = await uploadRateLimitMessage(userId);
+  if (limited) return { ok: false as const, error: limited };
 
   const asset = await createAssetRecord(buildId, formData, userId);
+  // A refused file is RETURNED ({ rejected: message }), not thrown, so its message survives a production build.
+  if (asset && "rejected" in asset) return { ok: false as const, error: asset.rejected };
 
   revalidatePath(`/studio/projects/${buildId}/assets`);
   revalidatePath(`/studio/projects/${buildId}/designs`);
@@ -158,6 +161,15 @@ export async function actionAttachExistingAsset(
     };
   }
 
+  // Selecting the same image from another project twice (or a replayed call) must not copy up to 10 MB again each time: if this build
+  // already holds that image, hand that one back.
+  const sha = source.artworkSha256 ?? hashArtworkData(source.artworkData);
+  const already = await prisma.asset.findFirst({
+    where: { buildId, hiddenAt: null, artworkSha256: sha, url: { not: null }, cropSourceAssetId: null },
+    select: { id: true, buildId: true, fileName: true, url: true, artworkSha256: true },
+  });
+  if (already) return already;
+
   const copiedId = randomUUID();
   const copied = await prisma.asset.create({
     data: {
@@ -168,7 +180,7 @@ export async function actionAttachExistingAsset(
       sizeBytes: source.sizeBytes,
       uploadedAt: source.uploadedAt,
       artworkData: source.artworkData,
-      artworkSha256: source.artworkSha256 ?? hashArtworkData(source.artworkData),
+      artworkSha256: sha,
       storageKey: null,
       status: source.status,
       url: `/api/assets/${copiedId}/file`,

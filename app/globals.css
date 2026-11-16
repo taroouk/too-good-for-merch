@@ -1840,7 +1840,7 @@ h6,
    overlay's percentage-based box (see BuilderClient.tsx
    bespokeArtworkStyle, sourced from the same canonical
    placement-config.ts the Sharp renderer uses) lands in the same relative
-   position here as it does in the Print Mockup and TryOn3DPreview. */
+   position here as it does in TryOn3DPreview. */
 .studio-bespoke-shirt {
   object-fit: contain;
 }

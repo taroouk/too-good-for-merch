@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { Role } from "@prisma/client";
-import { auth } from "src/auth";
+import { isAdminSession } from "src/lib/admin/auth";
+import { getUserId } from "src/studio/authz";
 import { prisma } from "src/lib/prisma";
 
 function label(value: string | null): string {
@@ -15,8 +15,9 @@ export default async function BespokeSubmittedPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const session = await auth();
-  if (!session?.user?.id) {
+  // Identity and role come from the database (a blocked user is signed out; a demoted admin is no longer an admin), not the token.
+  const userId = await getUserId();
+  if (!userId) {
     redirect(`/login?callbackUrl=${encodeURIComponent(`/bespoke/${id}/submitted`)}`);
   }
 
@@ -39,7 +40,7 @@ export default async function BespokeSubmittedPage({
   });
 
   if (!request) notFound();
-  if (session.user.role !== Role.ADMIN && request.userId !== session.user.id) notFound();
+  if (request.userId !== userId && !(await isAdminSession())) notFound();
 
   const placements = Array.isArray(request.placements)
     ? request.placements.filter((p): p is string => typeof p === "string")

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { auth } from "src/auth";
+import { getUserId } from "src/studio/authz"; // database-backed: a blocked user is signed out
 import { prisma } from "src/lib/prisma";
 import { actionOpenWishlistItem, actionRemoveFromWishlistForm } from "src/actions/wishlist-actions";
 import { designTitle } from "src/lib/design-title";
@@ -22,11 +22,11 @@ function label(value: string | null): string {
 
 export default async function WishlistPage({ searchParams }: { searchParams: Promise<{ notice?: string }> }) {
   const notice = (await searchParams).notice;
-  const session = await auth();
-  if (!session?.user?.id) redirect("/login?callbackUrl=/wishlist");
+  const userId = await getUserId();
+  if (!userId) redirect("/login?callbackUrl=/wishlist");
 
   const items = await prisma.wishlistItem.findMany({
-    where: { userId: session.user.id },
+    where: { userId: userId },
     orderBy: { updatedAt: "desc" },
     select: {
       id: true,
@@ -86,8 +86,6 @@ export default async function WishlistPage({ searchParams }: { searchParams: Pro
                 {
                   product: item.product,
                   color: item.color,
-                  printMockupId: mockups.printMockupId,
-                  printMockupFingerprint: mockups.printMockupFingerprint,
                   aiMockupId: mockups.aiMockupId,
                   aiMockupFingerprint: mockups.aiMockupFingerprint,
                 },

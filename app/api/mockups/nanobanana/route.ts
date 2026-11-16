@@ -1,12 +1,19 @@
 import { compressMockupImage, MOCKUP_MAX_SIDE } from "src/lib/image/compress-mockup";
-import { Role } from "@prisma/client";
 import sharp, { type Metadata } from "sharp";
-import { auth } from "src/auth";
 import { apiError, apiOk, readJsonObject } from "src/lib/api/responses";
 import { prisma } from "src/lib/prisma";
 import { rateLimitHeaders } from "src/lib/rate-limit";
-import { rateLimit } from "src/lib/rate-limit-db";
+import { rateLimit, rateLimitByKey } from "src/lib/rate-limit-db";
 import { canAccessBuild } from "src/studio/permissions";
+import { resolveMockupActor } from "src/lib/mockups/actor";
+import { resolveGeminiEndpoint } from "src/lib/mockups/gemini-endpoint";
+import {
+  AI_MOCKUP_DAY_MS,
+  AI_MOCKUP_GLOBAL_LIMIT_MESSAGE,
+  AI_MOCKUP_USER_LIMIT_MESSAGE,
+  aiMockupSignInGate,
+  parseAiMockupCaps,
+} from "src/lib/mockups/ai-policy";
 import { getArtwork, validateMockupData } from "src/lib/storage";
 import { upsertMockupForDraft } from "src/db/mockup";
 import { PLACEMENTS, type PlacementKey } from "src/pricing/placements";
@@ -85,8 +92,8 @@ type ParsedGeminiImage = {
   location: string;
 };
 
-const GEMINI_INTERACTIONS_ENDPOINT =
-  "https://generativelanguage.googleapis.com/v1beta/interactions";
+// Google's endpoint, or (non-production only, loopback only) the local test stub -- see src/lib/mockups/gemini-endpoint.ts.
+const GEMINI_INTERACTIONS_ENDPOINT = resolveGeminiEndpoint(process.env);
 const DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image";
 
 // Gemini occasionally returns its own internal "Deadline expired before
@@ -444,10 +451,15 @@ function logGeminiResponse({
 
 export async function POST(req: Request) {
   try {
-    const session = await auth();
+    // M3: who is calling comes from the DATABASE (blocked -> signed out, current role), never from the session token's frozen claims.
+    const actor = await resolveMockupActor();
 
-    const limitKey = session?.user?.id ?? "anon";
-    const limit = await rateLimit(req, `mockups:ai:${limitKey}`, 20, 10 * 60 * 1000);
+    // M8: this route spends Gemini credit, and Gemini is the only way a mockup is made, so it is for signed-in customers only:
+    // a guest gets 401 (the Studio asks them to sign in). There is no other mockup route and no fallback.
+    const gate = aiMockupSignInGate(actor);
+    if (!gate.ok) return apiError(gate.message, gate.status);
+
+    const limit = await rateLimit(req, `mockups:ai:${actor.userId}`, 20, 10 * 60 * 1000);
     if (!limit.ok) {
       return apiError("Too many AI mockup requests. Please try again later.", 429, rateLimitHeaders(limit));
     }
@@ -455,7 +467,6 @@ export async function POST(req: Request) {
     const body = await readJsonObject(req);
     if (!body) return apiError("Invalid JSON body.", 400);
 
-    // Same request shape as /api/mockups/print, and for the same reason:
     // artworkTransform is ephemeral client state (never persisted to
     // BuildDraft), so the server cannot know the CURRENT Studio transform
     // any other way. This is what guarantees the AI Mockup always
@@ -516,12 +527,29 @@ export async function POST(req: Request) {
     }
 
     const allowed =
-      session?.user?.role === Role.ADMIN || (await canAccessBuild(session?.user?.id ?? null, assets[0].build));
+      actor.isAdmin || (await canAccessBuild(actor.userId, assets[0].build));
     if (!allowed) {
       return apiError("Forbidden.", 403);
     }
 
-    // Same fingerprint as the print route for identical state (same fixed
+    // The draft the result is written to must belong to THIS build. `draftId` comes from the client, and the mockup is saved
+    // with `BuildDraft.update({ id: draftId })`: without this check a caller who may use build A could name build B's draft and
+    // overwrite its mockup pointer.
+    const draftOwned = await prisma.buildDraft.findFirst({ where: { id: draftId, buildId }, select: { id: true } });
+    if (!draftOwned) return apiError("Draft not found.", 404);
+
+    // M8: daily cost caps, counted only for requests that passed authorization. Per user first (so one user hitting their cap
+    // does not use up the store-wide budget), then store-wide. Both are shared across serverless instances (database-backed).
+    const caps = parseAiMockupCaps(process.env);
+    const userDay = await rateLimitByKey("mockups:ai-day:user", actor.userId as string, caps.perUserPerDay, AI_MOCKUP_DAY_MS);
+    if (!userDay.ok) return apiError(AI_MOCKUP_USER_LIMIT_MESSAGE, 429, rateLimitHeaders(userDay));
+    const globalDay = await rateLimitByKey("mockups:ai-day:global", "all", caps.globalPerDay, AI_MOCKUP_DAY_MS);
+    if (!globalDay.ok) {
+      console.error("[mockup] Store-wide daily AI mockup cap reached", { cap: caps.globalPerDay });
+      return apiError(AI_MOCKUP_GLOBAL_LIMIT_MESSAGE, 503, rateLimitHeaders(globalDay));
+    }
+
+    // The fingerprint for this exact state (same fixed
     // dpi baseline) -- the client compares both mockups against one value.
     const fingerprint = sideFingerprint({ layers, product, color, dpi: BASELINE_RENDER_DPI }) as string;
 
@@ -755,9 +783,8 @@ export async function POST(req: Request) {
     // artwork from its ORIGINAL pixels directly at the larger size, so the
     // print stays crisp. Placement is the same geometry, scaled.
     // The target is the canonical reference width for this garment side times
-    // MOCKUP_OUTPUT_SCALE (the same sizing the print mockup uses), so the two
-    // mockups of one design come out the same size whatever the photo's own
-    // native width.
+    // MOCKUP_OUTPUT_SCALE, so the front and back mockups of one design come out
+    // the same size whatever the photo's own native width.
     const outputFactor = (getTemplateReferenceWidth(product, side) / templateMeta.width) * MOCKUP_OUTPUT_SCALE;
     finalImage = await sharp(finalImage)
       .resize({
@@ -782,14 +809,6 @@ export async function POST(req: Request) {
     finalImage = compressedMockup.data;
     const storedMimeType = validateMockupData(finalImage, compressedMockup.mimeType);
 
-    // Best-effort lineage link to the draft's current Print Mockup (for
-    // display/debugging only) -- this route's own correctness never
-    // depends on the Print Mockup existing or being read.
-    const draftRow = await prisma.buildDraft.findFirst({
-      where: { id: draftId, buildId },
-      select: { printMockupId: true, backPrintMockupId: true },
-    });
-
     const mockup = await upsertMockupForDraft(draftId, {
       buildId,
       assetId,
@@ -799,7 +818,6 @@ export async function POST(req: Request) {
       model,
       placement: layers.map((layer) => layer.placement).join(","),
       prompt,
-      parentId: (side === "back" ? draftRow?.backPrintMockupId : draftRow?.printMockupId) ?? null,
       side,
     });
 

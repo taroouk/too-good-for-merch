@@ -8,7 +8,7 @@ import type { Prisma } from "@prisma/client";
 import { draftArtworkLayers, normalizeArtworkLayers } from "src/studio/artwork-layers";
 import { upsertPlacementsInNotes } from "src/pricing/placements";
 import { prisma } from "src/lib/prisma";
-import { getUserId, requireUserId } from "src/studio/authz";
+import { requireUserId } from "src/studio/authz";
 import { canAccessBuild } from "src/studio/permissions";
 import { placementsFromCustomNotes, placementsOrDefault } from "src/pricing/placements";
 import { normalizeArtworkPlacement } from "src/lib/artwork/save";
@@ -42,12 +42,8 @@ export async function actionAddToWishlist(buildId: string, size?: string | null)
           artworkPlacement: true,
           primaryAssetId: true,
           artworkLayers: true,
-          printMockupId: true,
-          printMockupFingerprint: true,
           aiMockupId: true,
           aiMockupFingerprint: true,
-          backPrintMockupId: true,
-          backPrintMockupFingerprint: true,
           backAiMockupId: true,
           backAiMockupFingerprint: true,
         },
@@ -83,12 +79,8 @@ export async function actionAddToWishlist(buildId: string, size?: string | null)
     layers: draftArtworkLayers(draft),
     customNotes: draft.customNotes ?? null,
     mockups: {
-      printMockupId: draft.printMockupId,
-      printMockupFingerprint: draft.printMockupFingerprint,
       aiMockupId: draft.aiMockupId,
       aiMockupFingerprint: draft.aiMockupFingerprint,
-      backPrintMockupId: draft.backPrintMockupId,
-      backPrintMockupFingerprint: draft.backPrintMockupFingerprint,
       backAiMockupId: draft.backAiMockupId,
       backAiMockupFingerprint: draft.backAiMockupFingerprint,
     },
@@ -137,19 +129,6 @@ export async function actionRemoveFromWishlist(
 // this directly without a client component.
 export async function actionRemoveFromWishlistForm(formData: FormData): Promise<void> {
   await actionRemoveFromWishlist(String(formData.get("itemId") ?? ""));
-}
-
-// Used by the Builder to render the button's initial state. Returns false
-// for a signed-out visitor rather than redirecting.
-export async function actionIsInWishlist(buildId: string): Promise<boolean> {
-  const userId = await getUserId();
-  const cleanBuildId = typeof buildId === "string" ? buildId.trim().slice(0, 128) : "";
-  if (!userId || !cleanBuildId) return false;
-  const row = await prisma.wishlistItem.findUnique({
-    where: { userId_buildId: { userId, buildId: cleanBuildId } },
-    select: { id: true },
-  });
-  return Boolean(row);
 }
 
 // "Open in Studio" on a wishlist card: starts a NEW build from the saved

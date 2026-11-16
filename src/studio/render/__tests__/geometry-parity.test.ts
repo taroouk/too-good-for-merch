@@ -1,7 +1,7 @@
 // file: src/studio/render/__tests__/geometry-parity.test.ts
 //
 // Proves the invariant this redesign exists for: Studio preview geometry
-// === deterministic Print Mockup geometry, for every (product, placement,
+// === the server compositor's geometry, for every (product, placement,
 // x, y, scale) combination -- not just at one hand-picked value.
 //
 // The Studio preview (TryOn3DPreview.tsx / BuilderClient.tsx's bespoke

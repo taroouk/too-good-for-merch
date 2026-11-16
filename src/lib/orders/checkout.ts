@@ -136,9 +136,7 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
     transform,
     layers,
     savedArtworkId: build.draft.savedArtworkId ?? null,
-    printMockupId: mockups.printMockupId,
     aiMockupId: mockups.aiMockupId,
-    backPrintMockupId: mockups.backPrintMockupId,
     backAiMockupId: mockups.backAiMockupId,
   });
 
@@ -295,12 +293,10 @@ export async function createCheckoutOrder(userId: string, input: CheckoutInput) 
               // The saved (AI) artwork itself, so production can open the
               // original file -- the mockups above are only previews.
               savedArtworkId: build.draft?.savedArtworkId ?? null,
-              printMockupId: mockups.printMockupId,
               aiMockupId: mockups.aiMockupId,
               // Multi-artwork: every layer, and the back-of-garment mockups
               // (the two above are the front).
               layers,
-              backPrintMockupId: mockups.backPrintMockupId,
               backAiMockupId: mockups.backAiMockupId,
             } as unknown as Prisma.InputJsonValue,
             assetId: primaryAssetId,

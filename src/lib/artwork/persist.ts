@@ -21,15 +21,9 @@ export type PersistArtworkResult = {
 const DRAFT_SELECT = {
   id: true,
   aiMockupId: true,
-  printMockupId: true,
   savedArtworkId: true,
   artworkPlacement: true,
   aiMockup: {
-    select: { id: true, mimeType: true, data: true, model: true, prompt: true },
-  },
-  // The Print Mockup is the real print (the customer's artwork at the chosen placement on the model photo). It is
-  // saved when there is no photoreal AI mockup (Gemini unavailable), so a design can always be saved.
-  printMockup: {
     select: { id: true, mimeType: true, data: true, model: true, prompt: true },
   },
 } as const;
@@ -47,7 +41,7 @@ export async function saveArtworkForBuild(
     select: { id: true, userId: true, draft: { select: DRAFT_SELECT } },
   });
   if (!build?.draft) return null;
-  const source = build.draft.aiMockup ?? build.draft.printMockup;
+  const source = build.draft.aiMockup;
   if (!source) return null;
 
   // The saved copy is stored compressed (older mockups are still big PNGs).
@@ -100,11 +94,11 @@ export async function resolveArtworkIdForBuild(
 ): Promise<string | null> {
   const draft = await prisma.buildDraft.findUnique({
     where: { buildId },
-    select: { savedArtworkId: true, aiMockupId: true, printMockupId: true },
+    select: { savedArtworkId: true, aiMockupId: true },
   });
   if (!draft) return null;
   if (draft.savedArtworkId) return draft.savedArtworkId;
-  if (!draft.aiMockupId && !draft.printMockupId) return null;
+  if (!draft.aiMockupId) return null;
   const saved = await saveArtworkForBuild(buildId, { ownerUserId, placement });
   return saved?.artworkId ?? null;
 }

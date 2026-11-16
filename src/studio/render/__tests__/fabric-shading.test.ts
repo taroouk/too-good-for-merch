@@ -9,7 +9,7 @@
 //   - it is provably a NO-OP when switched off, and on flat fabric;
 //   - it is bounded, so no garment pixel can crush or blow out the print;
 //   - it never touches the print's SHAPE (alpha carries geometry);
-//   - it is deterministic, which the Print Mockup's fingerprint cache
+//   - it is deterministic, which a fingerprint-cached mockup
 //     depends on.
 //
 // Plus the reason it exists at all: dark fabric and light fabric must both

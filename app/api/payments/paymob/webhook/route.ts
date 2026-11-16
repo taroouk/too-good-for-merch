@@ -13,7 +13,22 @@ import {
   verifyPaymobHmac,
   webhookEventKey,
 } from "src/lib/payments/paymob";
-import { claimWebhookEvent, isWebhookEventProcessed, refundedOrderUpdate } from "src/lib/payments/webhook-event";
+import {
+  ORDER_BINDING_MESSAGES,
+  checkOrderBinding,
+  claimWebhookEvent,
+  isWebhookEventProcessed,
+  lateSuccessAfterRefund,
+  lateSuccessNoteBody,
+  mergeAttemptMetadata,
+  refundAttemptMetadata,
+  refundAuditMetadata,
+  recordRejectedWebhook,
+  refundedOrderUpdate,
+  signedPaymobOrderId,
+  webhookRejectionReason,
+} from "src/lib/payments/webhook-event";
+import { BodyTooLargeError, readTextWithLimit } from "src/lib/http/read-limited-body";
 import { rateLimitHeaders } from "src/lib/rate-limit";
 import { rateLimit } from "src/lib/rate-limit-db";
 import { findSupersedingPaidOrder, orderBuildIds } from "src/lib/orders/superseded";
@@ -48,9 +63,14 @@ export async function POST(req: Request) {
     return apiError("Too many webhook requests.", 429, rateLimitHeaders(limit));
   }
 
-  const raw = await req.text();
-  if (Buffer.byteLength(raw, "utf8") > MAX_WEBHOOK_BYTES) {
-    return apiError("Webhook payload is too large.", 413);
+  // The size limit is enforced WHILE the body streams in (a chunked request, a missing Content-Length or a false one cannot get
+  // past it, and nothing beyond the limit is buffered).
+  let raw: string;
+  try {
+    raw = await readTextWithLimit(req, MAX_WEBHOOK_BYTES);
+  } catch (error) {
+    if (error instanceof BodyTooLargeError) return apiError("Webhook payload is too large.", 413);
+    throw error;
   }
 
   let body: Record<string, unknown>;
@@ -59,12 +79,26 @@ export async function POST(req: Request) {
   } catch {
     return apiError("Invalid JSON.", 400);
   }
+  // `null`, a number or an array parses fine but is not a webhook: refuse it here (it used to throw further down).
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return apiError("Invalid JSON.", 400);
+  }
 
   const object = asObject(body.obj ?? body);
   const signature = new URL(req.url).searchParams.get("hmac") ?? (typeof body.hmac === "string" ? body.hmac : null);
-  const validSignature = verifyPaymobHmac(object, signature);
+  // M1: the signature is checked BEFORE anything is written. A request that fails it never creates a row with its
+  // payload (see recordRejectedWebhook for the one bounded marker row that keeps the rejections visible to admins).
+  if (!verifyPaymobHmac(object, signature)) {
+    const reason = webhookRejectionReason(Boolean(process.env.PAYMOB_HMAC_SECRET?.trim()), signature);
+    await recordRejectedWebhook(prisma.webhookEvent, reason);
+    console.warn("PAYMOB_WEBHOOK_REJECTED", { reason, bytes: Buffer.byteLength(raw, "utf8") });
+    return apiError("Invalid signature.", 401);
+  }
+  const validSignature = true;
   const eventPayload = safePayload(body) as Prisma.JsonObject;
-  const eventKey = webhookEventKey(eventPayload);
+  // The key is derived from the FULL body, not the stored copy: safePayload() replaces a payload over 60 KB with a stub, and
+  // keying on the stub would give every large event the same key (the second one would be dropped as a "duplicate").
+  const eventKey = webhookEventKey(body as Prisma.JsonObject);
   const transactionId = object.id == null ? null : String(object.id);
   const eventType = typeof body.type === "string" ? body.type : "TRANSACTION";
 
@@ -81,46 +115,40 @@ export async function POST(req: Request) {
     return NextResponse.json({ received: true, duplicate: true });
   }
 
-  if (!validSignature) {
-    await prisma.webhookEvent.update({
-      where: { eventKey },
-      data: { errorMessage: "Invalid HMAC signature" },
-    });
-    return apiError("Invalid signature.", 401);
-  }
-
   const remoteOrder = asObject(object.order);
-  const paymobOrderId =
-    remoteOrder.id == null ? (typeof object.order === "number" ? String(object.order) : "") : String(remoteOrder.id);
+  const paymobOrderId = signedPaymobOrderId(object);
   const merchantOrderId =
     remoteOrder.merchant_order_id == null ? "" : baseOrderNumber(String(remoteOrder.merchant_order_id));
-  const order = await prisma.order.findFirst({
-    where: {
-      OR: [
-        ...(paymobOrderId ? [{ paymobOrderId }] : []),
-        ...(merchantOrderId ? [{ orderNumber: merchantOrderId }] : []),
-      ],
-    },
-  });
 
-  if (!order) {
+  // The order is identified by the SIGNED Paymob order id only (never by the unsigned merchant_order_id, and never with an OR
+  // that lets one identifier override the other): see checkOrderBinding. It is matched against the ids persisted when the
+  // payments were created -- the order's current paymobOrderId and each attempt's externalId.
+  const candidates = paymobOrderId
+    ? await prisma.order.findMany({
+        where: { OR: [{ paymobOrderId }, { paymentAttempts: { some: { externalId: paymobOrderId } } }] },
+        take: 2,
+      })
+    : [];
+  const binding = checkOrderBinding(paymobOrderId, candidates, merchantOrderId);
+
+  if (!binding.ok) {
+    // Nothing is modified: no order, no payment attempt, no payment status. The event is recorded for the admin payments page and
+    // acknowledged with 200 -- a retry cannot fix a payload whose identifiers are fixed (same convention as before).
     await prisma.webhookEvent.update({
       where: { eventKey },
-      data: { errorMessage: "Order not found", processedAt: new Date() },
+      data: {
+        ...(binding.problem === "order_identifier_conflict" && candidates[0] ? { orderId: candidates[0].id } : {}),
+        errorMessage: ORDER_BINDING_MESSAGES[binding.problem],
+        processedAt: new Date(),
+      },
     });
-    // P3-21j: this used to be a 404. paymobOrderId/merchantOrderId are fixed
-    // by the payload Paymob is redelivering, and the merchant_order_id
-    // lookup fallback above already closes the only plausible order-not-
-    // yet-committed race (orderNumber is written before Paymob is ever told
-    // about the order -- see createCheckoutOrder/create-intent). So a
-    // missing order here is permanent (test webhook, deleted order,
-    // misconfigured env), not something a Paymob retry can ever fix --
-    // returning non-2xx just makes Paymob retry-storm a condition retrying
-    // cannot resolve. It's already durably recorded above (errorMessage +
-    // processedAt) and surfaced in app/admin/payments for manual review, so
-    // acknowledge receipt with 200 instead of inviting endless redelivery.
-    return NextResponse.json({ received: true, unresolved: "order_not_found" });
+    console.warn("PAYMOB_WEBHOOK_UNRESOLVED", { problem: binding.problem });
+    return NextResponse.json({
+      received: true,
+      unresolved: binding.problem === "unknown_signed_order_id" || binding.problem === "missing_signed_order_id" ? "order_not_found" : binding.problem,
+    });
   }
+  const order = candidates[0];
 
   const knownIntegrationIds = [process.env.PAYMOB_INTEGRATION_ID, process.env.PAYMOB_WALLET_INTEGRATION_ID]
     .map((v) => v?.trim())
@@ -151,6 +179,9 @@ export async function POST(req: Request) {
   let duplicateDesignPayment: { orderNumber: string } | null = null;
   // Set inside the transaction below when a concurrent delivery of this same event already finished it.
   let processedByConcurrentDelivery = false;
+  // Set inside the transaction below when a successful transaction arrives for an order that is already REFUNDED. REFUNDED is
+  // terminal: the order, the payment attempt, the bag and the confirmation e-mail are all left alone.
+  let successAfterRefund = false;
 
   await prisma.$transaction(async (tx) => {
     // Every branch below is a read-then-write on the order's payment state,
@@ -180,6 +211,16 @@ export async function POST(req: Request) {
         where: { id: current.id },
         data: refundedOrderUpdate(current, transactionId),
       });
+      // The order keeps the original charge id; the refund's own id is recorded in the audit log (and, below, on the attempt).
+      await tx.adminAuditLog.create({
+        data: {
+          orderId: current.id,
+          action: "PAYMOB_REFUND_RECORDED",
+          previousValue: current.paymobTransactionId,
+          newValue: transactionId,
+          metadata: refundAuditMetadata(current, transactionId) as Prisma.InputJsonValue,
+        },
+      });
     } else if (succeeded) {
       // classifySuccessfulPayment reads `current` -- fetched above under
       // this same transaction's `FOR UPDATE` lock -- so a concurrent
@@ -187,7 +228,50 @@ export async function POST(req: Request) {
       // never both observe the pre-write state; see its own comment.
       const classification = classifySuccessfulPayment(current, transactionId);
 
-      if (classification.isDuplicateCharge) {
+      if (classification.afterRefund) {
+        // Out-of-order delivery: the refund was processed first. Never move a REFUNDED order back to PAID. Record it once per
+        // incoming transaction (a redelivery of the same late success must not add a second record).
+        successAfterRefund = true;
+        const late = lateSuccessAfterRefund(current, transactionId);
+        const already = await tx.adminAuditLog.findFirst({
+          where: { orderId: current.id, action: "PAYMOB_SUCCESS_AFTER_REFUND", newValue: transactionId },
+          select: { id: true },
+        });
+        if (!already) {
+          if (late.possibleSecondCharge) {
+            console.warn("PAYMOB_POSSIBLE_DOUBLE_CHARGE_AFTER_REFUND", {
+              orderId: current.id,
+              orderNumber: current.orderNumber,
+              storedTransactionId: late.storedTransactionId,
+              chargeRecorded: late.chargeRecorded,
+              incomingTransactionId: late.incomingTransactionId,
+            });
+            await tx.adminNote.create({
+              data: {
+                orderId: current.id,
+                body: lateSuccessNoteBody(late),
+              },
+            });
+          }
+          await tx.adminAuditLog.create({
+            data: {
+              orderId: current.id,
+              action: "PAYMOB_SUCCESS_AFTER_REFUND",
+              previousValue: late.storedTransactionId,
+              newValue: transactionId,
+              metadata: {
+                storedTransactionId: late.storedTransactionId,
+                chargeRecorded: late.chargeRecorded,
+                // null when no charge was ever recorded (the stored id may then be the refund's id)
+                originalChargeTransactionId: late.originalChargeTransactionId,
+                incomingTransactionId: late.incomingTransactionId,
+                possibleSecondCharge: late.possibleSecondCharge,
+                note: "A successful Paymob transaction arrived for an order that was already REFUNDED. The order was not changed.",
+              } as Prisma.InputJsonValue,
+            },
+          });
+        }
+      } else if (classification.isDuplicateCharge) {
         console.warn("PAYMOB_POSSIBLE_DOUBLE_CHARGE", {
           orderId: current.id,
           orderNumber: current.orderNumber,
@@ -268,10 +352,12 @@ export async function POST(req: Request) {
       });
     }
 
-    const attempt = await tx.paymentAttempt.findFirst({
-      where: { orderId: current.id },
-      orderBy: { createdAt: "desc" },
-    });
+    const attempt = successAfterRefund
+      ? null
+      : await tx.paymentAttempt.findFirst({
+          where: { orderId: current.id },
+          orderBy: { createdAt: "desc" },
+        });
     if (attempt) {
       await tx.paymentAttempt.update({
         where: { id: attempt.id },
@@ -282,7 +368,10 @@ export async function POST(req: Request) {
               ? PaymentAttemptStatus.FAILED
               : PaymentAttemptStatus.PENDING,
           failureReason: failed ? paymentFailureReason(object) : null,
-          metadata: { transactionId, paymobOrderId } as Prisma.InputJsonValue,
+          // Existing metadata is kept. A refund records its own id as refundTransactionId and never replaces the charge's.
+          metadata: (refunded
+            ? refundAttemptMetadata(attempt.metadata, transactionId, paymobOrderId)
+            : mergeAttemptMetadata(attempt.metadata, { transactionId, paymobOrderId })) as Prisma.InputJsonValue,
         },
       });
     }
@@ -306,7 +395,8 @@ export async function POST(req: Request) {
   // After the payment state is durably committed: tell the customer. Fully
   // isolated -- never throws, and is idempotent per order, so a Paymob
   // redelivery can't email twice or fail the webhook.
-  if (succeeded) {
+  // A late success for a REFUNDED order sends no e-mail and touches no bag.
+  if (succeeded && !refunded && !successAfterRefund) {
     // No "your order is confirmed" e-mail for a payment that is under review as a possible duplicate.
     if (!duplicateDesignPayment) await sendOrderConfirmationEmail(order.id);
     await removePaidBagItem(order.id);

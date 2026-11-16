@@ -44,33 +44,43 @@ export function looksLikeAllowedArtwork(buffer: Buffer, mimeType: string) {
 // (src/studio/render/engines/sharp-renderer.ts, composite.ts) for
 // server-side print-mockup rasterization via libvips/librsvg.
 
+// A file refused on purpose (wrong type, too big, content that does not match, an unsafe SVG...). Its message is written for the
+// customer. The upload action RETURNS it instead of throwing it: in a production build Next replaces the message of any error thrown by
+// a server action with a generic one, so the customer would never see the reason.
+export class ArtworkRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ArtworkRejectedError";
+  }
+}
+
 export async function uploadArtwork(file: File) {
   const contentType = normalizeArtworkMimeType(file.type);
 
   if (!ALLOWED_MIME_TYPES.has(contentType)) {
-    throw new Error("Artwork must be PNG, JPG, WEBP, or SVG.");
+    throw new ArtworkRejectedError("Artwork must be PNG, JPG, WEBP, or SVG.");
   }
   if (file.size <= 0 || file.size > MAX_ARTWORK_BYTES) {
-    throw new Error("Artwork file must be 10MB or smaller.");
+    throw new ArtworkRejectedError("Artwork file must be 10MB or smaller.");
   }
 
   const buffer = Buffer.from(await file.arrayBuffer());
   if (buffer.byteLength <= 0 || buffer.byteLength > MAX_ARTWORK_BYTES) {
-    throw new Error("Artwork file must be 10MB or smaller.");
+    throw new ArtworkRejectedError("Artwork file must be 10MB or smaller.");
   }
   if (!looksLikeAllowedArtwork(buffer, contentType)) {
-    throw new Error("Artwork file content does not match its file type.");
+    throw new ArtworkRejectedError("Artwork file content does not match its file type.");
   }
   if (contentType !== "image/svg+xml") {
     // Header-only read (cheap). If the dimensions can't be read the file is
     // left to fail later exactly as before; only known-oversized is refused.
     const meta = await sharp(buffer).metadata().catch(() => null);
     if (meta?.width && meta?.height && artworkExceedsDimensionLimits(meta.width, meta.height)) {
-      throw new Error("Artwork image is too large in pixels. Please use an image up to 6000 x 6000 pixels.");
+      throw new ArtworkRejectedError("Artwork image is too large in pixels. Please use an image up to 6000 x 6000 pixels.");
     }
   }
   if (contentType === "image/svg+xml" && !isSvgContentSafe(buffer)) {
-    throw new Error("This SVG file contains unsupported content (scripts, external references, or embedded elements) and cannot be uploaded.");
+    throw new ArtworkRejectedError("This SVG file contains unsupported content (scripts, external references, or embedded elements) and cannot be uploaded.");
   }
 
   const id = randomUUID();

@@ -49,6 +49,29 @@ export async function runAll() {
       assert.equal(isSvgContentSafe(buf(svg)), false);
     },
 
+    "an SVG using a namespace-prefixed <svg:script> is rejected (it runs as a script)"() {
+      const svg = `<svg:svg xmlns:svg="http://www.w3.org/2000/svg"><svg:script>alert(1)</svg:script></svg:svg>`;
+      assert.equal(isSvgContentSafe(buf(svg)), false);
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><x:foreignObject xmlns:x="http://www.w3.org/2000/svg"/></svg>`)), false);
+    },
+
+    "an SVG that animates an href to a javascript: URL (<set>/<animate>) is rejected"() {
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><a><set attributeName="href" to="javascript:alert(1)"/><text y="9">x</text></a></svg>`)), false);
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><a href="#"><animate attributeName="href" values="javascript:alert(1)"/><text>x</text></a></svg>`)), false);
+    },
+
+    "protocol-relative, entity-encoded and CSS-borne remote references are rejected"() {
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><image href="//evil.example/x.png"/></svg>`)), false);
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><image href="&#104;ttp://evil.example/x.png"/></svg>`)), false);
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><style>@import url(http://evil.example/a.css);</style></svg>`)), false);
+      assert.equal(isSvgContentSafe(buf(`<svg xmlns="http://www.w3.org/2000/svg"><rect style="fill:url(//evil.example/p)"/></svg>`)), false);
+    },
+
+    "ordinary artwork SVGs (gradients, local url(#id) references, text, transforms, data: images) stay allowed"() {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><linearGradient id="g"><stop offset="0" stop-color="#f00"/><stop offset="1" stop-color="#00f"/></linearGradient></defs><rect width="100" height="100" fill="url(#g)" transform="rotate(5)"/><text x="5" y="50" font-size="12">Hello &amp; welcome</text><image href="data:image/png;base64,AAAA"/><animate attributeName="opacity" from="0" to="1" values="0;1" dur="1s"/></svg>`;
+      assert.equal(isSvgContentSafe(buf(svg)), true);
+    },
+
     "an SVG containing a foreignObject element is rejected"() {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg"><foreignObject><div>hi</div></foreignObject></svg>`;
       assert.equal(isSvgContentSafe(buf(svg)), false);

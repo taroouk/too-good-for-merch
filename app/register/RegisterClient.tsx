@@ -3,12 +3,16 @@
 import "../auth.css";
 import { signIn } from "next-auth/react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { SIGNUP_SIGNIN_FAILED_MESSAGE } from "src/lib/auth/register-response";
+import { safeCallbackPath } from "src/lib/auth/safe-redirect";
 
 export default function RegisterClient() {
+  const router = useRouter();
   const sp = useSearchParams();
-  const callbackUrl = useMemo(() => sp.get("callbackUrl") ?? "/studio", [sp]);
+  // Only a same-site path is ever followed (callbackUrl is attacker-controllable).
+  const callbackUrl = useMemo(() => safeCallbackPath(sp.get("callbackUrl"), "/studio"), [sp]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,9 +38,16 @@ export default function RegisterClient() {
       return;
     }
 
-    // auto login
-    await signIn("credentials", { email, password, redirect: true, callbackUrl });
-    setPending(false);
+    // auto login. The register endpoint answers the same for a new and an existing address, so a failed sign-in here gets a
+    // neutral message that fits both (it never says the address is registered).
+    const result = await signIn("credentials", { email, password, redirect: false, callbackUrl });
+    if (!result || result.error) {
+      setError(SIGNUP_SIGNIN_FAILED_MESSAGE);
+      setPending(false);
+      return;
+    }
+    router.push(callbackUrl);
+    router.refresh();
   }
 
   return (

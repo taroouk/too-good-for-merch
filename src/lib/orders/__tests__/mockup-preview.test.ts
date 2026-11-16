@@ -26,7 +26,7 @@ export async function runAll() {
     },
     "a mockup of different artwork is NOT used"() {
       const other: ArtworkLayer[] = [{ ...layers[0], assetId: "asset-2" }];
-      const draft = { product: "FITTED", color: "WHITE", artworkLayers: layers, printMockupId: "p1", printMockupFingerprint: fp("FITTED", "WHITE", other) };
+      const draft = { product: "FITTED", color: "WHITE", artworkLayers: layers, aiMockupId: "m1", aiMockupFingerprint: fp("FITTED", "WHITE", other) };
       assert.equal(freshMockupId(draft, layers), null);
     },
     "no artwork means no mockup is used"() {
@@ -36,15 +36,19 @@ export async function runAll() {
     "an order item uses its frozen mockup only when its fingerprint matches the item's own design"() {
       const item = { product: "OVERSIZED", color: "BLACK", preview: {} };
       const good = new Map([["m1", fp("OVERSIZED", "BLACK")]]);
-      assert.equal(orderItemPreviewUrl(item, { aiMockupId: "m1", printMockupId: null }, good, layers), "/api/mockups/m1/file");
+      assert.equal(orderItemPreviewUrl(item, { aiMockupId: "m1" }, good, layers), "/api/mockups/m1/file");
       const bad = new Map([["m1", fp("FITTED", "WHITE")]]);
-      assert.equal(orderItemPreviewUrl(item, { aiMockupId: "m1", printMockupId: null }, bad, layers), "/images/Oversized Black.png");
+      assert.equal(orderItemPreviewUrl(item, { aiMockupId: "m1" }, bad, layers), "/images/Oversized Black.png");
     },
     "an order never records a mockup of a different colour, cut or artwork"() {
-      const draft = { product: "OVERSIZED", color: "BLACK", aiMockupId: "m1", aiMockupFingerprint: fp("FITTED", "WHITE"), printMockupId: "p1", printMockupFingerprint: fp("OVERSIZED", "BLACK") };
+      const draft = { product: "OVERSIZED", color: "BLACK", aiMockupId: "m1", aiMockupFingerprint: fp("FITTED", "WHITE") };
       const pointers = freshMockupPointers(draft, layers);
       assert.equal(pointers.aiMockupId, null);
-      assert.equal(pointers.printMockupId, "p1");
+      // a legacy Print Mockup pointer on the draft is ignored: only the Gemini mockup is ever used
+      const legacy = { ...draft, printMockupId: "p1", printMockupFingerprint: fp("OVERSIZED", "BLACK") };
+      assert.equal(freshMockupPointers(legacy as never, layers).aiMockupId, null);
+      assert.equal("printMockupId" in freshMockupPointers(legacy as never, layers), false);
+      assert.equal(freshMockupId(legacy as never, layers), null);
     },
   });
 }

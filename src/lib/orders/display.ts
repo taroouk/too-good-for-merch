@@ -99,16 +99,14 @@ export const ORDER_TOTAL_FILTER_HINT =
   `Amount filters match the ${PAYMENT_CURRENCY} payment total, not the canonical USD total.`;
 
 export type OrderMockupIds = {
-  printMockupId: string | null;
   aiMockupId: string | null;
   // Multi-artwork designs with artwork on the back (purchase-time snapshot
   // only -- older orders have none).
-  backPrintMockupId: string | null;
   backAiMockupId: string | null;
 };
 
 // P1-8: Mockup rows are append-only (src/db/mockup.ts always creates a new
-// row and only reassigns the BuildDraft.printMockupId/aiMockupId pointer),
+// row and only reassigns the BuildDraft.aiMockupId pointer),
 // so a purchase-time pointer frozen onto OrderItem.preview (see
 // src/lib/orders/checkout.ts) stays valid forever even if the customer
 // keeps editing the same Build after paying. Prefer that frozen snapshot;
@@ -116,16 +114,13 @@ export type OrderMockupIds = {
 // this snapshot existed.
 export function resolveOrderMockupIds(
   itemPreview: unknown,
-  liveDraft: { printMockupId: string | null; aiMockupId: string | null } | null | undefined,
+  liveDraft: { aiMockupId: string | null } | null | undefined,
 ): OrderMockupIds {
   const preview = itemPreview && typeof itemPreview === "object" ? (itemPreview as Record<string, unknown>) : null;
-  const snapshotPrintMockupId = typeof preview?.printMockupId === "string" ? preview.printMockupId : null;
   const snapshotAiMockupId = typeof preview?.aiMockupId === "string" ? preview.aiMockupId : null;
 
   return {
-    printMockupId: snapshotPrintMockupId ?? liveDraft?.printMockupId ?? null,
     aiMockupId: snapshotAiMockupId ?? liveDraft?.aiMockupId ?? null,
-    backPrintMockupId: typeof preview?.backPrintMockupId === "string" ? preview.backPrintMockupId : null,
     backAiMockupId: typeof preview?.backAiMockupId === "string" ? preview.backAiMockupId : null,
   };
 }
@@ -146,12 +141,11 @@ export function productDisplayName(draft: {
   product: string | null;
   primaryAssetId?: string | null;
   savedArtworkId?: string | null;
-  printMockupId?: string | null;
   aiMockupId?: string | null;
 }): string {
   if (draft.product === "CUSTOM") return "Bespoke T-shirt";
   const hasArtwork = Boolean(
-    draft.primaryAssetId || draft.savedArtworkId || draft.printMockupId || draft.aiMockupId,
+    draft.primaryAssetId || draft.savedArtworkId || draft.aiMockupId,
   );
   return hasArtwork ? "Customised T-shirt" : "Plain T-shirt";
 }

@@ -91,7 +91,7 @@ export default async function AdminOrderDetailsPage({
           // snapshotted these pointers (see resolveOrderMockupIds below) --
           // never treat this live BuildDraft state as authoritative for a
           // paid order.
-          draft: { select: { printMockupId: true, aiMockupId: true } },
+          draft: { select: { aiMockupId: true } },
         },
       },
       items: {
@@ -142,8 +142,6 @@ export default async function AdminOrderDetailsPage({
       // Multi-artwork orders: every artwork with its placement and position, as frozen at checkout.
       layers: orderArtworkLayers(item.preview),
       mockupCards: [
-        { id: ids.printMockupId, title: "Print mockup — front", note: "Deterministic compositor output, used for production." },
-        { id: ids.backPrintMockupId, title: "Print mockup — back", note: "Deterministic compositor output, used for production." },
         { id: ids.aiMockupId, title: "AI mockup — front", note: "AI-enhanced preview shown to the customer." },
         { id: ids.backAiMockupId, title: "AI mockup — back", note: "AI-enhanced preview shown to the customer." },
       ].filter((card): card is { id: string; title: string; note: string } => Boolean(card.id)),
@@ -221,16 +219,14 @@ export default async function AdminOrderDetailsPage({
                     const extras = orderItemExtras(item.preview);
                     const itemMockups = resolveOrderMockupIds(item.preview, order.build?.draft);
                     // Best picture of what was ordered: the uploaded artwork, else the
-                    // saved AI artwork, else the print / AI mockup of the garment.
+                    // saved AI artwork, else the AI mockup of the garment.
                     const thumb = item.asset?.url
                       ? { src: item.asset.url, alt: item.asset.fileName }
                       : extras.savedArtworkId
                         ? { src: `/api/artworks/${extras.savedArtworkId}/file`, alt: "Saved artwork" }
-                        : itemMockups.printMockupId
-                          ? { src: `/api/mockups/${itemMockups.printMockupId}/file`, alt: "Print mockup" }
-                          : itemMockups.aiMockupId
-                            ? { src: `/api/mockups/${itemMockups.aiMockupId}/file`, alt: "AI mockup" }
-                            : null;
+                        : itemMockups.aiMockupId
+                          ? { src: `/api/mockups/${itemMockups.aiMockupId}/file`, alt: "AI mockup" }
+                          : null;
                     return (
                     <div key={item.id} className="rounded-2xl border border-admin-border p-5">
                       <div className="flex flex-col gap-5 sm:flex-row">

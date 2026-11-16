@@ -461,8 +461,11 @@ export function classifyTransaction(object: Record<string, unknown>): Transactio
 }
 
 export type SuccessfulPaymentClassification =
-  | { isDuplicateCharge: true }
+  // REFUNDED is terminal for webhook processing: a late success must not touch the order (see the route).
+  | { afterRefund: true; isDuplicateCharge: false }
+  | { afterRefund: false; isDuplicateCharge: true }
   | {
+      afterRefund: false;
       isDuplicateCharge: false;
       update: {
         paymentStatus: typeof PaymentStatus.PAID;
@@ -498,6 +501,10 @@ export function classifySuccessfulPayment(
   transactionId: string | null,
   now: Date = new Date(),
 ): SuccessfulPaymentClassification {
+  if (current.paymentStatus === PaymentStatus.REFUNDED) {
+    return { afterRefund: true, isDuplicateCharge: false };
+  }
+
   const isDuplicateCharge =
     current.paymentStatus === PaymentStatus.PAID &&
     current.paymobTransactionId != null &&
@@ -505,10 +512,11 @@ export function classifySuccessfulPayment(
     current.paymobTransactionId !== transactionId;
 
   if (isDuplicateCharge) {
-    return { isDuplicateCharge: true };
+    return { afterRefund: false, isDuplicateCharge: true };
   }
 
   return {
+    afterRefund: false,
     isDuplicateCharge: false,
     update: {
       paymentStatus: PaymentStatus.PAID,

@@ -2,6 +2,7 @@ import { PaymentStatus, Prisma } from "@prisma/client";
 import { NextResponse } from "next/server";
 import { prisma } from "src/lib/prisma";
 import { getAdminUser } from "src/lib/admin/auth";
+import { exportCents, exportDate } from "src/lib/admin/export-filters";
 import { formatShippingAddress, orderItemExtras } from "src/lib/orders/display";
 
 const EXPORT_LIMIT = 5000;
@@ -23,24 +24,13 @@ export async function GET(req: Request) {
   const q = (url.searchParams.get("q") ?? "").trim().slice(0, 120);
   const filter = (url.searchParams.get("status") ?? "all").toLowerCase();
   const status = filter === "pending" ? { in: [PaymentStatus.UNPAID, PaymentStatus.PENDING] } : ["paid", "failed", "refunded"].includes(filter) ? { equals: filter.toUpperCase() as PaymentStatus } : undefined;
-  const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-  const from = url.searchParams.get("from") ?? "";
-  const to = url.searchParams.get("to") ?? "";
-  const createdAt: Prisma.DateTimeFilter | undefined = isDate(from) || isDate(to)
-    ? {
-        ...(isDate(from) ? { gte: new Date(`${from}T00:00:00.000Z`) } : {}),
-        ...(isDate(to) ? { lte: new Date(`${to}T23:59:59.999Z`) } : {}),
-      }
-    : undefined;
-  const minRaw = url.searchParams.get("minTotal") ?? "";
-  const maxRaw = url.searchParams.get("maxTotal") ?? "";
-  const minCents = Number(minRaw);
-  const maxCents = Number(maxRaw);
-  const totalCents: Prisma.IntFilter | undefined = minRaw || maxRaw
-    ? {
-        ...(minRaw && Number.isFinite(minCents) ? { gte: Math.round(minCents * 100) } : {}),
-        ...(maxRaw && Number.isFinite(maxCents) ? { lte: Math.round(maxCents * 100) } : {}),
-      }
+  const gte = exportDate(url.searchParams.get("from") ?? "", false);
+  const lte = exportDate(url.searchParams.get("to") ?? "", true);
+  const createdAt: Prisma.DateTimeFilter | undefined = gte || lte ? { ...(gte ? { gte } : {}), ...(lte ? { lte } : {}) } : undefined;
+  const minCents = exportCents(url.searchParams.get("minTotal") ?? "");
+  const maxCents = exportCents(url.searchParams.get("maxTotal") ?? "");
+  const totalCents: Prisma.IntFilter | undefined = minCents !== undefined || maxCents !== undefined
+    ? { ...(minCents !== undefined ? { gte: minCents } : {}), ...(maxCents !== undefined ? { lte: maxCents } : {}) }
     : undefined;
   const where: Prisma.OrderWhereInput = {
     ...(status ? { paymentStatus: status } : {}),
